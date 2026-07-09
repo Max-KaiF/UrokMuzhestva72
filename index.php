@@ -126,6 +126,8 @@ if($a==='approve_subfund'){ require_role('fund'); db()->prepare("UPDATE users SE
 if($a==='approve_speaker'){ require_role('fund'); db()->prepare("UPDATE users SET active=1, age_groups=? WHERE id=? AND role='speaker' AND fund_user_id=?")->execute([implode(',',array_keys($_POST['groups']??[])),(int)$_POST['uid'],$u['id']]); flash_set('Спикер подтверждён.'); redirect('?p=fund&tab=speakers'); }
 if($a==='approve_applicant'){ require_role('operator'); [$ok,$msg]=approve_applicant($u,(int)($_POST['uid']??0)); flash_set($msg); redirect('?p=operator&tab=moderation'); }
 if($a==='reject_applicant'){ require_role('operator'); [$ok,$msg]=reject_applicant($u,(int)($_POST['uid']??0)); flash_set($msg); redirect('?p=operator&tab=moderation'); }
+if($a==='add_unavailable'){ require_role('speaker'); [$ok,$msg]=add_unavailable_period($u,$_POST['date_from']??'',$_POST['date_to']??'',$_POST['reason']??''); flash_set($msg); redirect('?p=speaker'); }
+if($a==='remove_unavailable'){ require_role('speaker'); [$ok,$msg]=remove_unavailable_period($u,(int)($_POST['uid']??0)); flash_set($msg); redirect('?p=speaker'); }
 $rid=(int)($_POST['id']??0); $r=$rid?get_request($rid):null;
 if($r){
 $msg=null; $sid=(int)($_POST['sid']??0);

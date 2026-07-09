@@ -52,6 +52,9 @@ id $pk, title VARCHAR(255) NOT NULL, description TEXT, type VARCHAR(50),
 file_path VARCHAR(500) NOT NULL, file_name VARCHAR(255), file_size INTEGER,
 uploaded_by INTEGER, created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )$tail");
+db()->exec("CREATE TABLE IF NOT EXISTS speaker_unavailable (
+id $pk, speaker_user_id INTEGER, date_from VARCHAR(20), date_to VARCHAR(20), reason VARCHAR(120), created_at VARCHAR(40)
+)$tail");
 foreach([
 "ALTER TABLE users ADD COLUMN fund_user_id INTEGER",
 "ALTER TABLE users ADD COLUMN email VARCHAR(190)",
@@ -234,6 +237,29 @@ return [true,"Пользователь {$u['login']} удалён."];
 }
 // ---------- спикеры ----------
 function user_name($id){ if(!$id) return null; $st=db()->prepare('SELECT display_name FROM users WHERE id=?'); $st->execute([$id]); $r=$st->fetch(); return $r?$r['display_name']:null; }
+// ---- календарь недоступности спикера ----
+function list_unavailable($sid){ $st=db()->prepare("SELECT * FROM speaker_unavailable WHERE speaker_user_id=? ORDER BY date_from DESC"); $st->execute([$sid]); return $st->fetchAll(); }
+function add_unavailable_period($speaker,$from,$to,$reason){
+$from=substr((string)$from,0,10); $to=substr((string)$to,0,10);
+if(!DateTime::createFromFormat('Y-m-d',$from) || !DateTime::createFromFormat('Y-m-d',$to)) return [false,'Укажите корректные даты.'];
+if($to<$from) return [false,'Дата окончания раньше даты начала.'];
+$reason=trim((string)$reason); if($reason==='') return [false,'Укажите причину.'];
+db()->prepare("INSERT INTO speaker_unavailable(speaker_user_id,date_from,date_to,reason,created_at) VALUES(?,?,?,?,?)")->execute([$speaker['id'],$from,$to,$reason,now()]);
+log_action($speaker['id'],'speaker','add_unavailable','users',$speaker['id'],"Добавлен период недоступности: $from — $to ($reason)");
+return [true,'Период добавлен.'];
+}
+function remove_unavailable_period($speaker,$id){
+$st=db()->prepare("SELECT * FROM speaker_unavailable WHERE id=? AND speaker_user_id=?"); $st->execute([$id,$speaker['id']]); $row=$st->fetch();
+if(!$row) return [false,'Период не найден.'];
+db()->prepare("DELETE FROM speaker_unavailable WHERE id=?")->execute([$id]);
+log_action($speaker['id'],'speaker','remove_unavailable','users',$speaker['id'],"Удалён период недоступности: {$row['date_from']} — {$row['date_to']}");
+return [true,'Период удалён.'];
+}
+function speaker_is_unavailable($sid,$date){
+$date=substr((string)$date,0,10); if($date==='') return false;
+$st=db()->prepare("SELECT COUNT(*) c FROM speaker_unavailable WHERE speaker_user_id=? AND date_from<=? AND date_to>=?");
+$st->execute([$sid,$date,$date]); return (int)$st->fetch()['c']>0;
+}
 function pending_speakers($fund=null){ if($fund){ $st=db()->prepare("SELECT * FROM users WHERE role='speaker' AND active=0 AND fund_user_id=? ORDER BY id DESC"); $st->execute([$fund['id']]); return $st->fetchAll(); } return db()->query("SELECT * FROM users WHERE role='speaker' AND active=0 ORDER BY id DESC")->fetchAll(); }
 // ---- районы и фонды ----
 function districts_list(){ return db()->query("SELECT * FROM districts ORDER BY name")->fetchAll(); }
@@ -389,6 +415,7 @@ if(is_candidate($r['id'],$s['id'])) continue;
 $g=array_filter(explode(',',$s['age_groups']));
 if($r['age_group'] && $g && !in_array($r['age_group'],$g)) continue;
 if($allowed && !in_array(trim((string)$s['district']),$allowed)) continue;
+if(speaker_is_unavailable($s['id'],$r['udate'])) continue;
 if(speaker_conflicts($s['id'],$r)) continue;
 [$ok,$err]=check_speaker_load($s['id'],$r['udate'],$lps); if(!$ok) continue;
 $res[]=$s;
@@ -698,12 +725,12 @@ $st->execute($params); return $st->fetchAll();
 function export_requests_csv($rows){
 $fp=fopen('php://temp','w+');
 fprintf($fp, chr(0xEF).chr(0xBB).chr(0xBF));
-fputcsv($fp,['Код','Организация','Оператор','Дата','Время','Аудитория','Спикеров нужно','Уроков на спикера','Статус','Контакт','Телефон'], ';');
+fputcsv($fp,['Код','Организация','Оператор','Дата','Время','Аудитория','Спикеров нужно','Уроков на спикера','Статус','Контакт','Телефон'], ';', '"', '\\');
 foreach($rows as $r){
 fputcsv($fp,[
 $r['code'],$r['org'],$r['operator'],$r['udate'],$r['utime'].($r['utime_end']?'-'.$r['utime_end']:''),
 ages()[$r['age_group']]??'',$r['speakers_needed'],$r['lessons_per_speaker']??1,st_meta($r['status'])['label'],$r['contact_name'],$r['phone']
-], ';');
+], ';', '"', '\\');
 }
 rewind($fp); $csv=stream_get_contents($fp); fclose($fp); return $csv;
 }
@@ -711,12 +738,12 @@ function export_speakers_csv(){
 $rows=active_speakers();
 $fp=fopen('php://temp','w+');
 fprintf($fp, chr(0xEF).chr(0xBB).chr(0xBF));
-fputcsv($fp,['ФИО','Логин','Email','Возрастные группы','Рейтинг','Кол-во оценок','Уроков проведено'], ';');
+fputcsv($fp,['ФИО','Логин','Email','Возрастные группы','Рейтинг','Кол-во оценок','Уроков проведено'], ';', '"', '\\');
 foreach($rows as $s){
 [$rt,$c]=speaker_rating($s['id']);
 $lessons=count(array_filter(speaker_lessons($s['id']),fn($x)=>in_array($x['status'],['done','closed'])));
 $groups=implode(', ',array_map(fn($k)=>ages()[$k]??$k,array_filter(explode(',',$s['age_groups']))));
-fputcsv($fp,[$s['display_name'],$s['login'],$s['email']??'',$groups,$rt??'—',$c,$lessons], ';');
+fputcsv($fp,[$s['display_name'],$s['login'],$s['email']??'',$groups,$rt??'—',$c,$lessons], ';', '"', '\\');
 }
 rewind($fp); $csv=stream_get_contents($fp); fclose($fp); return $csv;
 }
@@ -728,8 +755,9 @@ if(!empty($filters['to_date'])) { $where.=' AND r.udate<=?'; $params[]=$filters[
 if(!empty($filters['op_group'])) { $where.=' AND r.op_group=?'; $params[]=$filters['op_group']; }
 if(!empty($filters['status'])) { $where.=' AND r.status=?'; $params[]=$filters['status']; }
 else { $where.=" AND r.status IN ('done','closed')"; }
+$gc=(cfg()['driver']==='sqlite')?"GROUP_CONCAT(u.display_name, '; ')":"GROUP_CONCAT(u.display_name SEPARATOR '; ')";
 $sql="SELECT r.*,
-(SELECT GROUP_CONCAT(u.display_name SEPARATOR '; ') FROM request_speakers rs JOIN users u ON u.id=rs.speaker_user_id WHERE rs.request_id=r.id AND rs.confirmed=1) AS speakers_names,
+(SELECT $gc FROM request_speakers rs JOIN users u ON u.id=rs.speaker_user_id WHERE rs.request_id=r.id AND rs.confirmed=1) AS speakers_names,
 (SELECT COUNT(*) FROM request_speakers rs WHERE rs.request_id=r.id AND rs.confirmed=1) AS speakers_count
 FROM requests r WHERE $where ORDER BY r.udate, r.utime";
 $st=db()->prepare($sql); $st->execute($params); $rows=$st->fetchAll();
@@ -748,18 +776,18 @@ $avgApp=$ratingsApp?round(array_sum($ratingsApp)/count($ratingsApp),1):null;
 $avgVet=$ratingsVet?round(array_sum($ratingsVet)/count($ratingsVet),1):null;
 $fp=fopen('php://temp','w+');
 fprintf($fp, chr(0xEF).chr(0xBB).chr(0xBF));
-fputcsv($fp,['ОТЧЁТ О ПРОВЕДЕНИИ УРОКОВ МУЖЕСТВА'], ';');
-fputcsv($fp,['Период',(!empty($filters['from_date'])?$filters['from_date']:'начало').' — '.(!empty($filters['to_date'])?$filters['to_date']:'по настоящее время')], ';');
-fputcsv($fp,['Всего проведённых уроков',count($rows)], ';');
-fputcsv($fp,['Суммарный охват (уроков × спикеров)',$totalLessons], ';');
-fputcsv($fp,['Суммарное число участников',$totalParticipants], ';');
-fputcsv($fp,['Уникальных организаций',count($schoolsSet)], ';');
-fputcsv($fp,['Уникальных спикеров',count($speakersSet)], ';');
-fputcsv($fp,['Средняя оценка заявителей',$avgApp===null?'—':$avgApp.' / 5'], ';');
-fputcsv($fp,['Средняя оценка спикеров',$avgVet===null?'—':$avgVet.' / 5'], ';');
-fputcsv($fp,[], ';');
-fputcsv($fp,['ДЕТАЛИЗАЦИЯ'], ';');
-fputcsv($fp,['Код','Организация','Район','Дата','Время','Аудитория','Участников','Спикеров нужно','Уроков на спикера','Спикеры','Тема','Оценка заявителя','Комментарий заявителя','Оценка спикеров (средняя)'], ';');
+fputcsv($fp,['ОТЧЁТ О ПРОВЕДЕНИИ УРОКОВ МУЖЕСТВА'], ';', '"', '\\');
+fputcsv($fp,['Период',(!empty($filters['from_date'])?$filters['from_date']:'начало').' — '.(!empty($filters['to_date'])?$filters['to_date']:'по настоящее время')], ';', '"', '\\');
+fputcsv($fp,['Всего проведённых уроков',count($rows)], ';', '"', '\\');
+fputcsv($fp,['Суммарный охват (уроков × спикеров)',$totalLessons], ';', '"', '\\');
+fputcsv($fp,['Суммарное число участников',$totalParticipants], ';', '"', '\\');
+fputcsv($fp,['Уникальных организаций',count($schoolsSet)], ';', '"', '\\');
+fputcsv($fp,['Уникальных спикеров',count($speakersSet)], ';', '"', '\\');
+fputcsv($fp,['Средняя оценка заявителей',$avgApp===null?'—':$avgApp.' / 5'], ';', '"', '\\');
+fputcsv($fp,['Средняя оценка спикеров',$avgVet===null?'—':$avgVet.' / 5'], ';', '"', '\\');
+fputcsv($fp,[], ';', '"', '\\');
+fputcsv($fp,['ДЕТАЛИЗАЦИЯ'], ';', '"', '\\');
+fputcsv($fp,['Код','Организация','Район','Дата','Время','Аудитория','Участников','Спикеров нужно','Уроков на спикера','Спикеры','Тема','Оценка заявителя','Комментарий заявителя','Оценка спикеров (средняя)'], ';', '"', '\\');
 foreach($rows as $r){
 $vetR=db()->prepare("SELECT AVG(vet_rating) a FROM request_speakers WHERE request_id=? AND vet_rating IS NOT NULL");
 $vetR->execute([$r['id']]); $vetAvg=$vetR->fetch()['a']??null;
@@ -775,7 +803,7 @@ $r['topic']??'',
 $r['fb_app_rating']??'',
 $r['fb_app_comment']??'',
 $vetAvg?round($vetAvg,1):''
-], ';');
+], ';', '"', '\\');
 }
 rewind($fp); $csv=stream_get_contents($fp); fclose($fp); return $csv;
 }
