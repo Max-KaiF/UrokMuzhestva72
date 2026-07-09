@@ -331,19 +331,23 @@ $st->execute([$id]); $x=$st->fetch(); return ($x&&$x['c']>0)?[round($x['a'],1),(
 }
 function speaker_lessons($id){ $st=db()->prepare("SELECT r.*, rs.confirmed cfd, rs.vet_rating vr, rs.vet_comment vc FROM requests r JOIN request_speakers rs ON rs.request_id=r.id WHERE rs.speaker_user_id=? ORDER BY r.id DESC"); $st->execute([$id]); return $st->fetchAll(); }
 // ========== ОГРАНИЧЕНИЯ НАГРУЗКИ СПИКЕРА ==========
-function speaker_daily_count($sid,$date){
-$st=db()->prepare("SELECT COALESCE(SUM(COALESCE(r.lessons_per_speaker,1)),0) c FROM request_speakers rs JOIN requests r ON r.id=rs.request_id WHERE rs.speaker_user_id=? AND rs.confirmed=1 AND r.udate=? AND r.status NOT IN ('closed','cancelled')");
-$st->execute([$sid,$date]); return (int)$st->fetch()['c'];
+function speaker_daily_count($sid,$date,$excludeRid=null){
+$sql="SELECT COALESCE(SUM(COALESCE(r.lessons_per_speaker,1)),0) c FROM request_speakers rs JOIN requests r ON r.id=rs.request_id WHERE rs.speaker_user_id=? AND rs.confirmed=1 AND r.udate=? AND r.status NOT IN ('closed','cancelled')";
+$params=[$sid,$date];
+if($excludeRid){ $sql.=' AND r.id<>?'; $params[]=$excludeRid; }
+$st=db()->prepare($sql); $st->execute($params); return (int)$st->fetch()['c'];
 }
-function speaker_weekly_count($sid,$date){
+function speaker_weekly_count($sid,$date,$excludeRid=null){
 $week_start=date('Y-m-d',strtotime('monday this week',strtotime($date)));
 $week_end=date('Y-m-d',strtotime('sunday this week',strtotime($date)));
-$st=db()->prepare("SELECT COALESCE(SUM(COALESCE(r.lessons_per_speaker,1)),0) c FROM request_speakers rs JOIN requests r ON r.id=rs.request_id WHERE rs.speaker_user_id=? AND rs.confirmed=1 AND r.udate BETWEEN ? AND ? AND r.status NOT IN ('closed','cancelled')");
-$st->execute([$sid,$week_start,$week_end]); return (int)$st->fetch()['c'];
+$sql="SELECT COALESCE(SUM(COALESCE(r.lessons_per_speaker,1)),0) c FROM request_speakers rs JOIN requests r ON r.id=rs.request_id WHERE rs.speaker_user_id=? AND rs.confirmed=1 AND r.udate BETWEEN ? AND ? AND r.status NOT IN ('closed','cancelled')";
+$params=[$sid,$week_start,$week_end];
+if($excludeRid){ $sql.=' AND r.id<>?'; $params[]=$excludeRid; }
+$st=db()->prepare($sql); $st->execute($params); return (int)$st->fetch()['c'];
 }
-function check_speaker_load($sid,$date,$additionalLessons=1){
-$daily=speaker_daily_count($sid,$date);
-$weekly=speaker_weekly_count($sid,$date);
+function check_speaker_load($sid,$date,$additionalLessons=1,$excludeRid=null){
+$daily=speaker_daily_count($sid,$date,$excludeRid);
+$weekly=speaker_weekly_count($sid,$date,$excludeRid);
 if($daily+$additionalLessons>2) return [false,"Спикер не может провести ещё $additionalLessons урок(а) — превышен дневной лимит (2 урока в день). Сейчас занято: $daily."];
 if($weekly+$additionalLessons>7) return [false,"Спикер не может провести ещё $additionalLessons урок(а) — превышен недельный лимит (7 уроков). Сейчас занято: $weekly."];
 return [true,''];
@@ -361,6 +365,25 @@ $rid=db()->lastInsertId();
 log_action($schoolUser['id'],'school','request_create','requests',$rid,"Создана заявка {$f['udate']}");
 return $rid;
 }
+// ========== ПЕРЕНОС ДАТЫ/ВРЕМЕНИ УРОКА ==========
+function reschedulable_status($r){ return in_array($r['status'],['chosen','confirmed']); }
+function reschedule_fields($r,$udate,$utime,$utimeEnd){
+$udate=substr((string)$udate,0,10);
+if(!DateTime::createFromFormat('Y-m-d',$udate)) return [false,'Укажите корректную дату урока.'];
+if($udate<date('Y-m-d')) return [false,'Дата урока не может быть в прошлом.'];
+if(!valid_slot($utime)||!valid_slot($utimeEnd)) return [false,'Время урока — с 8:00 до 18:00, минуты кратны 10.'];
+if(tmin($utimeEnd)<=tmin($utime)) return [false,'Время окончания должно быть позже времени начала.'];
+$lps=max(1,(int)($r['lessons_per_speaker']??1));
+$probe=['id'=>$r['id'],'udate'=>$udate,'utime'=>$utime,'utime_end'=>$utimeEnd,'org'=>$r['org']];
+foreach(req_confirmed_rows($r['id']) as $row){
+$sid=$row['speaker_user_id'];
+if(speaker_conflicts($sid,$probe)) return [false,'Спикер '.$row['display_name'].' занят в другом учреждении в это время.'];
+[$ok,$err]=check_speaker_load($sid,$udate,$lps,$r['id']); if(!$ok) return [false,'Спикер '.$row['display_name'].': '.$err];
+}
+$fields=['udate'=>$udate,'utime'=>$utime,'utime_end'=>$utimeEnd];
+if(!empty($r['briefing_done']) && !empty($r['briefing_date']) && $udate<substr((string)$r['briefing_date'],0,10)){ $fields['briefing_done']=0; $fields['briefing_date']=null; }
+return [true,$fields];
+}
 function update_request($r,$f,$actor){
 if($actor['role']!=='school'||(int)$r['school_user_id']!==(int)$actor['id']) return [false,'Нет доступа.'];
 if(in_array($r['status'],['done','closed','cancelled'])) return [false,'Заявка уже завершена, редактирование недоступно.'];
@@ -377,9 +400,38 @@ $topicRaw=$f['topic']??'';
 $allowed['topic']=($topicRaw==='__other__')?trim($f['topic_other']??''):trim($topicRaw);
 if(!$allowed['contact_name']||!$allowed['phone']) return [false,'Заполните контактное лицо и телефон.'];
 if(!in_array($allowed['age_group'],array_keys(ages()),true)) return [false,'Некорректная возрастная группа.'];
+$rescheduled=false;
+if(reschedulable_status($r) && isset($f['udate'])){
+[$ok,$res]=reschedule_fields($r,$f['udate'],$f['utime']??'',$f['utime_end']??'');
+if(!$ok) return [false,$res];
+$allowed=array_merge($allowed,$res); $rescheduled=true;
+}
 upd($r['id'],$allowed);
-log_action($actor['id'],'school','request_update','requests',$r['id'],'Заявка отредактирована');
-return [true,'Заявка обновлена. Дата и время проведения не изменяются.'];
+log_action($actor['id'],'school','request_update','requests',$r['id'],'Заявка отредактирована'.($rescheduled?' (в т.ч. дата/время урока)':''));
+return [true,'Заявка обновлена.'.($rescheduled?'':' Дата и время проведения не изменяются.')];
+}
+function fund_edit_request($actor,$r,$f){
+if($actor['role']!=='fund') return [false,'Нет доступа.'];
+if(!reschedulable_status($r)) return [false,'Редактирование доступно на этапах «Спикеры выбраны» и «Состав подтверждён Фондом».'];
+$allowed=[
+'contact_name'=>trim($f['contact_name']??''),
+'phone'=>trim($f['phone']??''),
+'participants'=>trim($f['participants']??''),
+'age_group'=>$f['age_group']??$r['age_group'],
+'notes'=>trim($f['notes']??''),
+];
+$topicRaw=$f['topic']??'';
+$allowed['topic']=($topicRaw==='__other__')?trim($f['topic_other']??''):trim($topicRaw);
+if(!$allowed['contact_name']||!$allowed['phone']) return [false,'Заполните контактное лицо и телефон.'];
+$rescheduled=false;
+if(isset($f['udate'])){
+[$ok,$res]=reschedule_fields($r,$f['udate'],$f['utime']??'',$f['utime_end']??'');
+if(!$ok) return [false,$res];
+$allowed=array_merge($allowed,$res); $rescheduled=true;
+}
+upd($r['id'],$allowed);
+log_action($actor['id'],'fund','fund_edit_request','requests',$r['id'],'Фонд отредактировал заявку'.($rescheduled?' (в т.ч. дата/время урока)':''));
+return [true,'Заявка отредактирована Фондом.'];
 }
 function upd($id,$fields){ $set=implode(',',array_map(fn($k)=>"$k=?",array_keys($fields))); $st=db()->prepare("UPDATE requests SET $set WHERE id=?"); $st->execute([...array_values($fields),$id]); }
 function prep_complete($r){ return $r['prep_venue'] && $r['prep_escort']; }
