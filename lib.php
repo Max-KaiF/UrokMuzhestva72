@@ -656,7 +656,7 @@ return [true,'Состав закрыт ('.$c.' из '.$r['speakers_needed'].').
 function set_vet_feedback($rid,$sid,$comment){ db()->prepare("UPDATE request_speakers SET vet_comment=?, vet_at=? WHERE request_id=? AND speaker_user_id=?")->execute([$comment,now(),$rid,$sid]); log_action(current_user()['id']??null,'speaker','vet_feedback','requests',$rid,"Отзыв спикера #$sid сохранён"); }
 // ========== МАТЕРИАЛЫ ==========
 const MATERIAL_MAX_BYTES = 104857600; // 100 МБ
-function material_topics(){ return db()->query("SELECT DISTINCT topic FROM materials WHERE topic IS NOT NULL AND topic<>'' ORDER BY topic")->fetchAll(PDO::FETCH_COLUMN); }
+function material_topics(){ return db()->query("SELECT DISTINCT topic FROM materials WHERE type='tech_map' AND topic IS NOT NULL AND topic<>'' ORDER BY topic")->fetchAll(PDO::FETCH_COLUMN); }
 function add_material($title,$desc,$type,$topic,$link,$filePath,$fileName,$fileSize,$uploadedBy){
 db()->prepare("INSERT INTO materials(title,description,type,topic,link,file_path,file_name,file_size,uploaded_by,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)")
 ->execute([$title,$desc,$type,$topic,$link,$filePath,$fileName,$fileSize,$uploadedBy,now()]);
