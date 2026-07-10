@@ -319,10 +319,6 @@ db()->prepare("DELETE FROM users WHERE id=? AND active=0")->execute([$uid]);
 log_action($operator['id'],'operator','reject_applicant','users',$uid,"Заявитель отклонён: ".$a['org_name']);
 return [true,'Заявитель отклонён.'];
 }
-function speaker_rating($id){
-$st=db()->prepare("SELECT AVG(r.fb_app_rating) a, COUNT(r.fb_app_rating) c FROM requests r JOIN request_speakers rs ON rs.request_id=r.id WHERE rs.speaker_user_id=? AND rs.confirmed=1 AND r.fb_app_rating IS NOT NULL");
-$st->execute([$id]); $x=$st->fetch(); return ($x&&$x['c']>0)?[round($x['a'],1),(int)$x['c']]:[null,0];
-}
 function speaker_lessons($id){ $st=db()->prepare("SELECT r.*, rs.confirmed cfd, rs.vet_rating vr, rs.vet_comment vc FROM requests r JOIN request_speakers rs ON rs.request_id=r.id WHERE rs.speaker_user_id=? ORDER BY r.id DESC"); $st->execute([$id]); return $st->fetchAll(); }
 // ========== ОГРАНИЧЕНИЯ НАГРУЗКИ СПИКЕРА ==========
 function speaker_daily_count($sid,$date,$excludeRid=null){
@@ -492,7 +488,6 @@ if($maxCount===null) $maxCount=max(0,$need-$currentCount);
 if($maxCount<=0) return [false,'Состав уже укомплектован или превышает потребность.'];
 $free=free_speakers_for_request($r);
 if(!$free) return [false,'Нет свободных подходящих спикеров на эту дату.'];
-usort($free,function($x,$y){ [$rx]=speaker_rating($x['id']); [$ry]=speaker_rating($y['id']); return ($ry??-1)<=>($rx??-1); });
 $added=0; $names=[];
 foreach($free as $s){
 if($added>=$maxCount) break;
@@ -584,7 +579,7 @@ if(prep_complete($nr)){ upd($r['id'],['prep_confirmed_at'=>now()]); if(in_array(
 upd($r['id'],['prep_confirmed_at'=>null]); return [true,'Сохранено. Отметьте все пункты, чтобы подтвердить готовность.'];
 }
 function mark_done($r){ if($r['status']!=='prep') return [false,'Урок можно отметить проведённым после подтверждения готовности.']; upd($r['id'],['status'=>'done']); log_action(current_user()['id']??null,'operator','mark_done','requests',$r['id'],"Отмечен как проведённый"); return [true,'Отмечено как «Проведён».']; }
-function close_request($r){ if($r['status']!=='done') return [false,'Закрыть можно только проведённый урок.']; if(!$r['fb_app_rating']) return [false,'Заявка закрывается после отзыва заявителя.']; upd($r['id'],['status'=>'closed','closed_at'=>now()]); log_action(current_user()['id']??null,'operator','close','requests',$r['id'],"Заявка закрыта"); return [true,'Заявка закрыта.']; }
+function close_request($r){ if($r['status']!=='done') return [false,'Закрыть можно только проведённый урок.']; if(trim((string)($r['fb_app_comment']??''))===''){ return [false,'Заявка закрывается после отзыва заявителя.']; } upd($r['id'],['status'=>'closed','closed_at'=>now()]); log_action(current_user()['id']??null,'operator','close','requests',$r['id'],"Заявка закрыта"); return [true,'Заявка закрыта.']; }
 function mark_not_held($r,$reason,$comment=''){
 if($r['status']!=='prep') return [false,'Отметить «не состоялся» можно на этапе «Готовность подтверждена».'];
 if(!in_array($reason,cancel_reasons())) return [false,'Укажите причину.'];
@@ -658,7 +653,7 @@ log_action($fund['id'],'fund','fund_finalize','requests',$r['id'],"Состав 
 notify_event('confirmed',$r);
 return [true,'Состав закрыт ('.$c.' из '.$r['speakers_needed'].'). Заявка передана дальше.'];
 }
-function set_vet_feedback($rid,$sid,$rating,$comment){ db()->prepare("UPDATE request_speakers SET vet_rating=?, vet_comment=?, vet_at=? WHERE request_id=? AND speaker_user_id=?")->execute([$rating,$comment,now(),$rid,$sid]); log_action(current_user()['id']??null,'speaker','vet_feedback','requests',$rid,"Отзыв спикера #$sid: $rating"); }
+function set_vet_feedback($rid,$sid,$comment){ db()->prepare("UPDATE request_speakers SET vet_comment=?, vet_at=? WHERE request_id=? AND speaker_user_id=?")->execute([$comment,now(),$rid,$sid]); log_action(current_user()['id']??null,'speaker','vet_feedback','requests',$rid,"Отзыв спикера #$sid сохранён"); }
 // ========== МАТЕРИАЛЫ ==========
 const MATERIAL_MAX_BYTES = 104857600; // 100 МБ
 function material_topics(){ return db()->query("SELECT DISTINCT topic FROM materials WHERE topic IS NOT NULL AND topic<>'' ORDER BY topic")->fetchAll(PDO::FETCH_COLUMN); }
@@ -834,7 +829,7 @@ fputcsv($fp,['Уникальных организаций',count($schoolsSet)], 
 fputcsv($fp,['Уникальных спикеров',count($speakersSet)], ';', '"', '\\');
 fputcsv($fp,[], ';', '"', '\\');
 fputcsv($fp,['ДЕТАЛИЗАЦИЯ'], ';', '"', '\\');
-fputcsv($fp,['Код','Организация','Район','Дата','Время','Аудитория','Участников','Спикеров нужно','Уроков на спикера','Спикеры','Тема','Оценка заявителя','Комментарий заявителя'], ';', '"', '\\');
+fputcsv($fp,['Код','Организация','Район','Дата','Время','Аудитория','Участников','Спикеров нужно','Уроков на спикера','Спикеры','Тема','Комментарий заявителя'], ';', '"', '\\');
 foreach($rows as $r){
 fputcsv($fp,[
 $r['code'],$r['org'],$r['district']??'',
@@ -845,7 +840,6 @@ $r['speakers_needed'],
 $r['lessons_per_speaker']??1,
 $r['speakers_names']??'',
 $r['topic']??'',
-$r['fb_app_rating']??'',
 $r['fb_app_comment']??''
 ], ';', '"', '\\');
 }
@@ -866,13 +860,13 @@ return $rows;
 }
 // ---------- показатели ----------
 function list_app_reviews($opGroup=null){
-$sql="SELECT * FROM requests WHERE (archived=0 OR archived IS NULL) AND (fb_app_rating IS NOT NULL OR (fb_app_comment IS NOT NULL AND fb_app_comment<>''))"; $p=[];
+$sql="SELECT * FROM requests WHERE (archived=0 OR archived IS NULL) AND fb_app_comment IS NOT NULL AND fb_app_comment<>''"; $p=[];
 if($opGroup){ $sql.=' AND op_group=?'; $p[]=$opGroup; }
 $sql.=' ORDER BY fb_app_at DESC';
 $st=db()->prepare($sql); $st->execute($p); return $st->fetchAll();
 }
 function list_speaker_reviews($opGroup=null){
-$sql="SELECT rs.*, r.code, r.org, r.topic, r.op_group, r.archived, u.display_name speaker_name FROM request_speakers rs JOIN requests r ON r.id=rs.request_id JOIN users u ON u.id=rs.speaker_user_id WHERE (r.archived=0 OR r.archived IS NULL) AND (rs.vet_rating IS NOT NULL OR (rs.vet_comment IS NOT NULL AND rs.vet_comment<>''))"; $p=[];
+$sql="SELECT rs.*, r.code, r.org, r.topic, r.op_group, r.archived, u.display_name speaker_name FROM request_speakers rs JOIN requests r ON r.id=rs.request_id JOIN users u ON u.id=rs.speaker_user_id WHERE (r.archived=0 OR r.archived IS NULL) AND rs.vet_comment IS NOT NULL AND rs.vet_comment<>''"; $p=[];
 if($opGroup){ $sql.=' AND r.op_group=?'; $p[]=$opGroup; }
 $sql.=' ORDER BY rs.vet_at DESC';
 $st=db()->prepare($sql); $st->execute($p); return $st->fetchAll();
@@ -908,14 +902,14 @@ if($s==='new') return ['Заявитель','Выбрать спикеров (м
 if($s==='chosen') return ['Фонд','Сформировать и подтвердить состав'];
 if($s==='confirmed') return ['Заявитель','Подтвердить готовность площадки'];
 if($s==='prep'){ $over=!empty($r['udate']) && strtotime(substr($r['udate'],0,10))<strtotime(date('Y-m-d')); return ['Заявитель',$over?'Урок должен был состояться — отметьте «Проведён» или «Не состоялся»':'После урока отметить «Проведён» или «Не состоялся»']; }
-if($s==='done') return empty($r['fb_app_rating']) ? ['Заявитель','Оставить отзыв об уроке'] : ['Оператор','Закрыть заявку'];
+if($s==='done') return trim((string)($r['fb_app_comment']??''))==='' ? ['Заявитель','Оставить отзыв об уроке'] : ['Оператор','Закрыть заявку'];
 if($s==='closed') return ['—','Заявка закрыта'];
 if($s==='cancelled') return ['—','Урок не состоялся'];
 return ['—',''];
 }
 function auto_close_done($days=7){
 $cut=date('Y-m-d H:i:s',strtotime("-$days days"));
-$st=db()->prepare("SELECT * FROM requests WHERE status='done' AND fb_app_rating IS NOT NULL AND fb_app_rating>0 AND COALESCE(fb_app_at, created_at) < ?");
+$st=db()->prepare("SELECT * FROM requests WHERE status='done' AND fb_app_comment IS NOT NULL AND fb_app_comment<>'' AND COALESCE(fb_app_at, created_at) < ?");
 $st->execute([$cut]); $n=0;
 foreach($st->fetchAll() as $r){ upd($r['id'],['status'=>'closed','closed_at'=>now()]); log_action(null,'system','auto_close','requests',$r['id'],'Автозакрытие через '.$days.' дн. после отзыва'); $n++; }
 return $n;
@@ -924,7 +918,7 @@ function get_action_required_requests($user) {
 $role = $user['role'];
 $uid = $user['id'];
 if ($role === 'school') {
-$st = db()->prepare("SELECT * FROM requests WHERE school_user_id = ? AND (archived=0 OR archived IS NULL) AND (status='new' OR (status IN ('confirmed','brief') AND (prep_confirmed_at IS NULL OR prep_confirmed_at='')) OR status='prep' OR (status='done' AND (fb_app_rating IS NULL OR fb_app_rating=0))) ORDER BY udate ASC");
+$st = db()->prepare("SELECT * FROM requests WHERE school_user_id = ? AND (archived=0 OR archived IS NULL) AND (status='new' OR (status IN ('confirmed','brief') AND (prep_confirmed_at IS NULL OR prep_confirmed_at='')) OR status='prep' OR (status='done' AND (fb_app_comment IS NULL OR fb_app_comment=''))) ORDER BY udate ASC");
 $st->execute([$uid]); return $st->fetchAll();
 }
 if ($role === 'fund') {
@@ -932,7 +926,7 @@ return fund_actionable($user);
 }
 if ($role === 'operator') {
 $scope = (($user['op_group']??'')==='school') ? " AND op_group='school'" : "";
-$st = db()->query("SELECT * FROM requests WHERE (archived=0 OR archived IS NULL) AND status='done' AND fb_app_rating IS NOT NULL AND fb_app_rating>0$scope ORDER BY udate ASC");
+$st = db()->query("SELECT * FROM requests WHERE (archived=0 OR archived IS NULL) AND status='done' AND fb_app_comment IS NOT NULL AND fb_app_comment<>''$scope ORDER BY udate ASC");
 return $st->fetchAll();
 }
 return [];

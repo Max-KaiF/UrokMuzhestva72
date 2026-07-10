@@ -194,11 +194,11 @@ elseif($a==='step_back'){ require_role('operator'); step_back($r); $msg='Воз�
 elseif($a==='fund_replace'){ require_role('fund'); $reasonRaw=$_POST['reason']??''; $reasonOther=trim($_POST['reason_other']??''); $reason=($reasonRaw==='__other__')?$reasonOther:$reasonRaw; [$ok,$msg]=fund_replace_speaker($u,$r,(int)($_POST['old_sid']??0),(int)($_POST['new_sid']??0),$reason); }
 elseif($a==='speaker_decline'){ require_role('speaker'); [$ok,$msg]=speaker_decline($r,$u['id']); }
 elseif($a==='feedback'){
-$rating=(int)($_POST['rating']??0); $comment=trim($_POST['comment']??'');
-if($rating<1||$rating>5) $msg='Поставьте оценку 1–5.';
+$comment=trim($_POST['comment']??'');
+if($comment==='') $msg='Напишите отзыв.';
 elseif(st_index($r['status'])<st_index('done')) $msg='Отзыв можно оставить после проведения.';
-elseif($u['role']==='school' && $r['school_user_id']==$u['id']){ upd($rid,['fb_app_rating'=>$rating,'fb_app_comment'=>$comment,'fb_app_at'=>now()]); $msg='Спасибо! Отзыв сохранён.'; }
-elseif($u['role']==='speaker'){ $row=get_rs_row($rid,$u['id']); if($row&&$row['confirmed']){ set_vet_feedback($rid,$u['id'],$rating,$comment); $msg='Спасибо! Отзыв сохранён.'; } else $msg='Нет доступа.'; }
+elseif($u['role']==='school' && $r['school_user_id']==$u['id']){ upd($rid,['fb_app_comment'=>$comment,'fb_app_at'=>now()]); $msg='Спасибо! Отзыв сохранён.'; }
+elseif($u['role']==='speaker'){ $row=get_rs_row($rid,$u['id']); if($row&&$row['confirmed']){ set_vet_feedback($rid,$u['id'],$comment); $msg='Спасибо! Отзыв сохранён.'; } else $msg='Нет доступа.'; }
 else $msg='Нет доступа.';
 }
 if($msg!==null) flash_set($msg);
@@ -327,7 +327,7 @@ function stepper($cur){ if($cur==='cancelled'){ return '<div class="stepper"><di
 $idx=st_index($cur); $h='<div class="stepper">';
 foreach(statuses() as $i=>$s){ if($i<=$idx){ $cls='done'; $mk='✓'; } elseif($i===$idx+1){ $cls='cur'; $mk=$i+1; } else { $cls=''; $mk=$i+1; } $h.='<div class="st '.$cls.'"><span class="mk">'.$mk.'</span>'.esc($s['label']).'</div>'; }
 return $h.'</div>'; }
-function fbline($role,$rating,$comment){ if(!$rating) return '<div class="fbsum"><b>'.esc($role).'</b> <span class="muted">— отзыв не оставлен</span></div>'; return '<div class="fbsum"><b>'.esc($role).'</b> <span class="stars">'.str_repeat('★',$rating).str_repeat('☆',5-$rating).'</span>'.($comment?'<div class="cmt">«'.esc($comment).'»</div>':'').'</div>'; }
+function fbline($role,$comment){ $comment=trim((string)$comment); if($comment==='') return '<div class="fbsum"><b>'.esc($role).'</b> <span class="muted">— отзыв не оставлен</span></div>'; return '<div class="fbsum"><b>'.esc($role).'</b><div class="cmt">«'.esc($comment).'»</div></div>'; }
 function dt($r){ $t=$r['utime']?(' '.esc($r['utime']).(!empty($r['utime_end'])?('–'.esc($r['utime_end'])):'')):''; return esc($r['udate']).$t; }
 function render_reason_select($name,$reasons,$withOther=true){
 $o='<option value="">— выберите причину —</option>';
@@ -664,8 +664,7 @@ $rows=list_app_reviews($scopeOg);
 $body.='<table class="card-view"><thead><tr><th>Заявитель</th><th>Спикеры</th><th>Тема урока</th><th>Дата отзыва</th><th>Отзыв</th></tr></thead><tbody>';
 foreach($rows as $r){
 $speakers=implode(', ',array_map(fn($x)=>$x['display_name'],req_confirmed_rows($r['id'])));
-$review=$r['fb_app_rating']?str_repeat('★',(int)$r['fb_app_rating']).str_repeat('☆',5-(int)$r['fb_app_rating']):'';
-if(!empty($r['fb_app_comment'])) $review.=($review?'<br>':'').esc($r['fb_app_comment']);
+$review=esc($r['fb_app_comment']??'');
 $body.='<tr onclick="location=\'?p=request&id='.$r['id'].'\'"><td class="id" data-label="Заявитель">'.esc($r['org']).'</td><td data-label="Спикеры" class="muted">'.esc($speakers?:'—').'</td><td data-label="Тема" class="muted">'.esc($r['topic']?:'—').'</td><td data-label="Дата" class="muted">'.esc($r['fb_app_at']?:'—').'</td><td data-label="Отзыв">'.$review.'</td></tr>';
 }
 if(!$rows) $body.='<tr><td colspan="5" class="muted">Отзывов заявителей пока нет.</td></tr>';
@@ -674,8 +673,7 @@ $body.='</tbody></table>';
 $rows=list_speaker_reviews($scopeOg);
 $body.='<table class="card-view"><thead><tr><th>Заявитель</th><th>Спикер</th><th>Тема урока</th><th>Дата отзыва</th><th>Отзыв</th></tr></thead><tbody>';
 foreach($rows as $row){
-$review=$row['vet_rating']?str_repeat('★',(int)$row['vet_rating']).str_repeat('☆',5-(int)$row['vet_rating']):'';
-if(!empty($row['vet_comment'])) $review.=($review?'<br>':'').esc($row['vet_comment']);
+$review=esc($row['vet_comment']??'');
 $body.='<tr onclick="location=\'?p=request&id='.$row['request_id'].'\'"><td class="id" data-label="Заявитель">'.esc($row['org']).'</td><td data-label="Спикер" class="muted">'.esc($row['speaker_name']).'</td><td data-label="Тема" class="muted">'.esc($row['topic']?:'—').'</td><td data-label="Дата" class="muted">'.esc($row['vet_at']?:'—').'</td><td data-label="Отзыв">'.$review.'</td></tr>';
 }
 if(!$rows) $body.='<tr><td colspan="5" class="muted">Отзывов спикеров пока нет.</td></tr>';
@@ -966,7 +964,7 @@ $turnMine=($u['role']==='school'&&$turnWho==='Заявитель')||($u['role']=
 $turnHtml=($turnAct && !in_array($r['status'],['closed','cancelled'])) ? '<div class="turn-banner '.($turnMine?'turn-you':'turn-other').'"><b>Сейчас ход за: '.esc($turnWho).'.</b> '.esc($turnAct).'</div>' : '';
 $body='<div class="head"><h2>Заявка '.esc($r['code']).' '.pill($r['status']).'</h2><div><a class="btn ghost" href="?p=audit&target_type=requests&target_id='.$r['id'].'">📋 История</a> <a class="btn ghost" href="?p='.$u['role'].'">← Назад</a></div></div><div class="card pad">'.$turnHtml.$info.($r['status']==='cancelled' ? '<div class="block"><div style="background:#fdecea;color:#b23b2c;border:1px solid #f5c6c0;border-radius:8px;padding:12px"><b>Урок не состоялся.</b> Причина: '.esc($r['cancel_reason']?:'не указана').($r['cancelled_at']?' · '.esc($r['cancelled_at']):'').'</div></div>' : '<div class="block"><h4>Этапы</h4>'.stepper($r['status']).'</div>');
 $listHtml='';
-foreach($rows as $row){ $badge=$row['confirmed']?'<span class="pill green">в составе</span>':'<span class="pill gray">кандидат</span>'; $org=speaker_org_name($row['speaker_user_id']); $listHtml.='<div class="fbsum"><b>'.esc($row['display_name']).'</b>'.($org!==''?' <span class="muted">· '.esc($org).'</span>':'').' '.$badge; if($row['vet_rating']) $listHtml.='<div class="cmt">отзыв спикера: '.str_repeat('★',$row['vet_rating']).' '.esc($row['vet_comment']).'</div>'; $listHtml.='</div>'; }
+foreach($rows as $row){ $badge=$row['confirmed']?'<span class="pill green">в составе</span>':'<span class="pill gray">кандидат</span>'; $org=speaker_org_name($row['speaker_user_id']); $listHtml.='<div class="fbsum"><b>'.esc($row['display_name']).'</b>'.($org!==''?' <span class="muted">· '.esc($org).'</span>':'').' '.$badge; if(trim((string)$row['vet_comment'])!=='') $listHtml.='<div class="cmt">отзыв спикера: '.esc($row['vet_comment']).'</div>'; $listHtml.='</div>'; }
 if($u['role']==='school'){
 $body.='<div class="block" style="display:flex;gap:8px;flex-wrap:wrap"><a class="btn ghost sm" href="?p=school&tab=new&copy='.$r['id'].'">📋 Повторить заявку</a>';
 if(in_array($r['status'],['new','chosen','confirmed'])) $body.='<a class="btn ghost sm" href="?p=request_edit&id='.$r['id'].'">✏️ Редактировать</a>';
@@ -985,7 +983,7 @@ $body.= $free ? '<form method="post" style="margin-top:8px">'.csrf_field().'<inp
 : '<p class="muted">Больше свободных спикеров на это время нет.</p>';
 $body.='</div>';
 } else {
-$cl=''; foreach(req_confirmed_rows($r['id']) as $row){ $cl.='<div class="fbsum"><b>'.esc($row['display_name']).'</b> <span class="pill green">в составе</span>'.($row['vet_rating']?'<div class="cmt">отзыв спикера: '.str_repeat('★',$row['vet_rating']).' '.esc($row['vet_comment']).'</div>':'').'</div>'; }
+$cl=''; foreach(req_confirmed_rows($r['id']) as $row){ $cl.='<div class="fbsum"><b>'.esc($row['display_name']).'</b> <span class="pill green">в составе</span>'.(trim((string)$row['vet_comment'])!==''?'<div class="cmt">отзыв спикера: '.esc($row['vet_comment']).'</div>':'').'</div>'; }
 $body.='<div class="block"><h4>Состав ('.$confN.' из '.$need.')</h4>'.($cl?:'<p class="muted">—</p>').'</div>';
 }
 if(in_array($r['status'],['confirmed','brief','prep'])){
@@ -998,8 +996,7 @@ $body.='<div class="block"><h4>После урока</h4><p class="muted">Отм
 .'<form method="post" style="margin-top:12px;border-top:1px solid #eee;padding-top:12px">'.csrf_field().'<input type="hidden" name="action" value="not_held"><input type="hidden" name="id" value="'.$r['id'].'"><label class="lbl">Урок не состоялся — причина</label>'.render_reason_select('reason',cancel_reasons()).'<label class="lbl" style="margin-top:8px">Комментарий (необязательно)</label><input name="reason_comment"><br><button class="btn ghost sm" style="margin-top:10px;color:#b23b2c;border-color:#f5c6c0">Урок не состоялся</button></form></div>';
 }
 if(st_index($r['status'])>=st_index('done')){
-$opts=''; for($i=5;$i>=1;$i--) $opts.='<option value="'.$i.'" '.($r['fb_app_rating']==$i?'selected':'').'>'.$i.' / 5</option>';
-$body.='<div class="block"><h4>Ваш отзыв</h4><form method="post">'.csrf_field().'<input type="hidden" name="action" value="feedback"><input type="hidden" name="id" value="'.$r['id'].'"><label class="lbl">Оценка</label><select name="rating"><option value="">—</option>'.$opts.'</select><label class="lbl">Комментарий</label><textarea name="comment">'.esc($r['fb_app_comment']).'</textarea><button class="btn primary sm" style="margin-top:10px">'.($r['fb_app_rating']?'Обновить отзыв':'Отправить отзыв').'</button></form></div>';
+$body.='<div class="block"><h4>Ваш отзыв</h4><form method="post">'.csrf_field().'<input type="hidden" name="action" value="feedback"><input type="hidden" name="id" value="'.$r['id'].'"><label class="lbl">Комментарий</label><textarea name="comment" required>'.esc($r['fb_app_comment']).'</textarea><button class="btn primary sm" style="margin-top:10px">'.(trim((string)$r['fb_app_comment'])!==''?'Обновить отзыв':'Отправить отзыв').'</button></form></div>';
 }
 }
 elseif($u['role']==='fund'){
@@ -1053,7 +1050,7 @@ elseif($u['role']==='operator'){
 $yn=fn($v)=>$v?'✓ да':'— нет';
 $body.='<div class="block"><h4>Состав ('.$confN.' из '.$need.')</h4>'.($listHtml?:'<p class="muted">спикеры не выбраны</p>').'<p class="muted">Подтверждение Фондом: <b>'.esc($r['fund_confirmed_at']?:'ожидается').'</b> · Инструктаж: <b>'.($r['briefing_done']?esc($r['briefing_date']?:'проведён'):'нет').'</b></p></div>';
 $body.='<div class="block"><h4>Готовность (подтверждает заявитель)</h4><p class="muted">'.'Площадка: <b>'.$yn($r['prep_venue']).'</b> · Сопровождение: <b>'.$yn($r['prep_escort']).'</b><br>'.($r['prep_confirmed_at']?'Подтверждено: <b>'.esc($r['prep_confirmed_at']).'</b>':'ещё не подтверждено').'</p></div>';
-$body.='<div class="block"><h4>Обратная связь</h4>'.fbline('Заявитель',$r['fb_app_rating'],$r['fb_app_comment']); foreach(req_confirmed_rows($r['id']) as $row) $body.=fbline('Спикер: '.$row['display_name'],$row['vet_rating'],$row['vet_comment']); $body.='</div>';
+$body.='<div class="block"><h4>Обратная связь</h4>'.fbline('Заявитель',$r['fb_app_comment']); foreach(req_confirmed_rows($r['id']) as $row) $body.=fbline('Спикер: '.$row['display_name'],$row['vet_comment']); $body.='</div>';
 $body.='<div class="block">';
 if($r['status']==='prep') $body.='<p class="muted">Ожидается отметка заявителя о проведении урока.</p>';
 if($r['status']==='done') $body.='<form method="post" class="inline">'.csrf_field().'<input type="hidden" name="action" value="close"><input type="hidden" name="id" value="'.$r['id'].'"><button class="btn primary sm">Закрыть заявку</button></form>';
@@ -1072,8 +1069,7 @@ $body.=$r['needs_replacement']
 :'<div class="block"><h4>Не сможете провести?</h4><p class="muted">Если вы не можете провести этот урок, сообщите — Фонд назначит другого спикера.</p><form method="post"><input type="hidden" name="action" value="speaker_decline">'.csrf_field().'<input type="hidden" name="id" value="'.$r['id'].'"><button class="btn ghost sm" style="color:#b23b2c;border-color:#f5c6c0">Не смогу провести</button></form></div>';
 }
 if($row['confirmed'] && st_index($r['status'])>=st_index('done')){
-$opts=''; for($i=5;$i>=1;$i--) $opts.='<option value="'.$i.'" '.($row['vet_rating']==$i?'selected':'').'>'.$i.' / 5</option>';
-$body.='<div class="block"><h4>Ваш отзыв</h4><form method="post">'.csrf_field().'<input type="hidden" name="action" value="feedback"><input type="hidden" name="id" value="'.$r['id'].'"><label class="lbl">Оценка</label><select name="rating"><option value="">—</option>'.$opts.'</select><label class="lbl">Комментарий</label><textarea name="comment">'.esc($row['vet_comment']).'</textarea><button class="btn primary sm" style="margin-top:10px">'.($row['vet_rating']?'Обновить отзыв':'Отправить отзыв').'</button></form></div>';
+$body.='<div class="block"><h4>Ваш отзыв</h4><form method="post">'.csrf_field().'<input type="hidden" name="action" value="feedback"><input type="hidden" name="id" value="'.$r['id'].'"><label class="lbl">Комментарий</label><textarea name="comment" required>'.esc($row['vet_comment']).'</textarea><button class="btn primary sm" style="margin-top:10px">'.(trim((string)$row['vet_comment'])!==''?'Обновить отзыв':'Отправить отзыв').'</button></form></div>';
 } elseif($row['confirmed']) { $body.='<div class="block muted">Отзыв можно оставить после проведения урока.</div>'; }
 }
 $body.='</div>'; layout('Заявка '.$r['code'],$body); exit;
