@@ -16,7 +16,12 @@ if(empty($_POST['consent'])){ flash_set('Необходимо согласие �
 $dsel=$_POST['district']??''; $district=($dsel==='__other__')?ensure_district(trim($_POST['district_other']??'')):ensure_district($dsel);
 if($district===''){ flash_set('Укажите район Тюменской области.'); redirect('?p=register'); }
 $c_name=trim($_POST['contact_name']??''); $c_pos=trim($_POST['position']??''); $c_phone=trim($_POST['contact_phone']??'');
-if($role==='school'){ if(empty($_POST['org_name'])||empty($_POST['level'])){ flash_set('Заполните наименование организации и уровень.'); redirect('?p=register'); } [$ok,$res]=create_user('school',$login,$pass,['org_name'=>trim($_POST['org_name']),'level'=>$_POST['level'],'display_name'=>trim($_POST['org_name']),'email'=>$email,'district'=>$district,'contact_name'=>$c_name,'position'=>$c_pos,'phone'=>$c_phone]); }
+if($role==='school'){
+$c_addr=trim($_POST['address']??''); $c_build=trim($_POST['building']??'');
+if(empty($_POST['org_name'])||empty($_POST['level'])){ flash_set('Заполните наименование организации и уровень.'); redirect('?p=register'); }
+if($c_addr===''||$c_build===''){ flash_set('Укажите адрес местонахождения и номер корпуса.'); redirect('?p=register'); }
+[$ok,$res]=create_user('school',$login,$pass,['org_name'=>trim($_POST['org_name']),'level'=>$_POST['level'],'display_name'=>trim($_POST['org_name']),'email'=>$email,'district'=>$district,'contact_name'=>$c_name,'position'=>$c_pos,'phone'=>$c_phone,'address'=>$c_addr,'building'=>$c_build]);
+}
 elseif($role==='speaker'){ if(empty($_POST['display_name'])){ flash_set('Укажите ФИО.'); redirect('?p=register'); } $phone=trim($_POST['phone']??''); if($phone===''){ flash_set('Укажите телефон для связи.'); redirect('?p=register'); } $fid=(int)($_POST['fund_user_id']??0); if(!$fid || !find_user_by_id($fid) || find_user_by_id($fid)['role']!=='fund'){ flash_set('Выберите фонд.'); redirect('?p=register'); } [$ok,$res]=create_user('speaker',$login,$pass,['display_name'=>trim($_POST['display_name']),'groups'=>implode(',',array_keys($_POST['groups']??[])),'email'=>$email,'district'=>$district,'phone'=>$phone,'fund_user_id'=>$fid]); }
 elseif($role==='fund'){ $ftype=$_POST['fund_type']??'head'; if($ftype==='sub'){ $pfid=(int)($_POST['parent_fund_id']??0); $pf=$pfid?find_user_by_id($pfid):null; if(!$pf || $pf['role']!=='fund'){ flash_set('Подразделение должно указать головной фонд.'); redirect('?p=register'); } [$ok,$res]=create_user('fund',$login,$pass,['display_name'=>trim($_POST['fund_display_name']??'Подразделение'),'email'=>$email,'district'=>$district,'parent_fund_id'=>$pfid,'active'=>0,'contact_name'=>$c_name,'position'=>$c_pos,'phone'=>$c_phone]); } else { if(($_POST['fund_code']??'')!==cfg()['fund_signup_code']){ flash_set('Неверный код регистрации Фонда.'); redirect('?p=register'); } [$ok,$res]=create_user('fund',$login,$pass,['display_name'=>trim($_POST['fund_display_name']??'Фонд'),'email'=>$email,'district'=>$district,'contact_name'=>$c_name,'position'=>$c_pos,'phone'=>$c_phone]); } }
 elseif($role==='operator'){ if(($_POST['op_code']??'')!==cfg()['operator_signup_code']){ flash_set('Неверный код регистрации оператора.'); redirect('?p=register'); } $og=$_POST['op_group']??''; if(!in_array($og,['school','region'])){ flash_set('Выберите департамент.'); redirect('?p=register'); } [$ok,$res]=create_user('operator',$login,$pass,['display_name'=>trim($_POST['op_display_name']??'Оператор'),'email'=>$email,'op_group'=>$og,'district'=>$district,'contact_name'=>$c_name,'position'=>$c_pos,'phone'=>$c_phone]); }
@@ -36,7 +41,12 @@ if($dist!==''){ $set[]='district=?'; $par[]=$dist; }
 if($u['role']==='speaker' && isset($_POST['phone'])){ $set[]='phone=?'; $par[]=trim($_POST['phone']); }
 if($u['role']==='speaker' && isset($_POST['fund_user_id'])){ $fid=(int)$_POST['fund_user_id']; if($fid>0){ $f=find_user_by_id($fid); if(!$f || $f['role']!=='fund'){ flash_set('Фонд не найден.'); redirect('?p=profile'); } $set[]='fund_user_id=?'; $par[]=$fid; } }
 if(in_array($u['role'],['school','fund','operator'],true)){ $set[]='contact_name=?'; $par[]=trim($_POST['contact_name']??''); $set[]='position=?'; $par[]=trim($_POST['position']??''); $set[]='phone=?'; $par[]=trim($_POST['phone']??''); }
-if($u['role']==='school'){ $set[]='org_name=?'; $par[]=$dn; }
+if($u['role']==='school'){
+$set[]='org_name=?'; $par[]=$dn;
+$addr=trim($_POST['address']??''); $build=trim($_POST['building']??'');
+if($addr===''||$build===''){ flash_set('Укажите адрес местонахождения и номер корпуса.'); redirect('?p=profile'); }
+$set[]='address=?'; $par[]=$addr; $set[]='building=?'; $par[]=$build;
+}
 if(strlen($np)>=5){ $set[]='pass_hash=?'; $par[]=password_hash($np,PASSWORD_DEFAULT); }
 elseif($np!==''){ flash_set('Пароль от 5 символов.'); redirect('?p=profile'); }
 $par[]=$u['id'];
@@ -116,6 +126,54 @@ if($a==='approve_applicant'){ require_role('operator'); [$ok,$msg]=approve_appli
 if($a==='reject_applicant'){ require_role('operator'); [$ok,$msg]=reject_applicant($u,(int)($_POST['uid']??0)); flash_set($msg); redirect('?p=operator&tab=moderation'); }
 if($a==='add_unavailable'){ require_role('speaker'); [$ok,$msg]=add_unavailable_period($u,$_POST['date_from']??'',$_POST['date_to']??'',$_POST['reason']??''); flash_set($msg); redirect('?p=speaker'); }
 if($a==='remove_unavailable'){ require_role('speaker'); [$ok,$msg]=remove_unavailable_period($u,(int)($_POST['uid']??0)); flash_set($msg); redirect('?p=speaker'); }
+if($a==='add_material'){
+require_role('operator');
+$title=trim($_POST['title']??''); $desc=trim($_POST['description']??''); $type=$_POST['type']??''; $topic=trim($_POST['topic']??''); $link=trim($_POST['link']??'');
+if($title===''){ flash_set('Укажите название материала.'); redirect('?p=materials'); }
+if(!array_key_exists($type,material_types())){ flash_set('Выберите вид материала.'); redirect('?p=materials'); }
+if($topic===''){ flash_set('Укажите тему материала.'); redirect('?p=materials'); }
+$filePath=null; $fileName=null; $fileSize=null;
+if(!empty($_FILES['file']['name'])){
+if($_FILES['file']['error']!==UPLOAD_ERR_OK){ flash_set('Ошибка загрузки файла (возможно, превышен допустимый размер).'); redirect('?p=materials'); }
+if($_FILES['file']['size']>MATERIAL_MAX_BYTES){ flash_set('Файл слишком большой (максимум 100 МБ). Оставьте ссылку на файл вместо загрузки.'); redirect('?p=materials'); }
+$ext=strtolower(pathinfo($_FILES['file']['name'],PATHINFO_EXTENSION));
+$stored=bin2hex(random_bytes(16)).($ext?".$ext":'');
+$dir=__DIR__.'/uploads/materials'; if(!is_dir($dir)) mkdir($dir,0755,true);
+if(!move_uploaded_file($_FILES['file']['tmp_name'],$dir.'/'.$stored)){ flash_set('Не удалось сохранить файл.'); redirect('?p=materials'); }
+$filePath=$stored; $fileName=$_FILES['file']['name']; $fileSize=$_FILES['file']['size'];
+}
+if(!$filePath && $link===''){ flash_set('Прикрепите файл или укажите ссылку на материал.'); redirect('?p=materials'); }
+add_material($title,$desc,$type,$topic,$link,$filePath,$fileName,$fileSize,$u['id']);
+flash_set('Материал добавлен.'); redirect('?p=materials');
+}
+if($a==='update_material'){
+require_role('operator');
+$mid=(int)($_POST['id']??0); $m=$mid?get_material($mid):null;
+if(!$m){ flash_set('Материал не найден.'); redirect('?p=materials'); }
+$title=trim($_POST['title']??''); $desc=trim($_POST['description']??''); $type=$_POST['type']??''; $topic=trim($_POST['topic']??''); $link=trim($_POST['link']??'');
+if($title===''){ flash_set('Укажите название материала.'); redirect('?p=material_edit&id='.$mid); }
+if(!array_key_exists($type,material_types())){ flash_set('Выберите вид материала.'); redirect('?p=material_edit&id='.$mid); }
+if($topic===''){ flash_set('Укажите тему материала.'); redirect('?p=material_edit&id='.$mid); }
+$filePath=null; $fileName=null; $fileSize=null;
+if(!empty($_FILES['file']['name'])){
+if($_FILES['file']['error']!==UPLOAD_ERR_OK){ flash_set('Ошибка загрузки файла.'); redirect('?p=material_edit&id='.$mid); }
+if($_FILES['file']['size']>MATERIAL_MAX_BYTES){ flash_set('Файл слишком большой (максимум 100 МБ). Оставьте ссылку на файл вместо загрузки.'); redirect('?p=material_edit&id='.$mid); }
+$ext=strtolower(pathinfo($_FILES['file']['name'],PATHINFO_EXTENSION));
+$stored=bin2hex(random_bytes(16)).($ext?".$ext":'');
+$dir=__DIR__.'/uploads/materials'; if(!is_dir($dir)) mkdir($dir,0755,true);
+if(!move_uploaded_file($_FILES['file']['tmp_name'],$dir.'/'.$stored)){ flash_set('Не удалось сохранить файл.'); redirect('?p=material_edit&id='.$mid); }
+if(!empty($m['file_path'])){ $old=__DIR__.'/uploads/materials/'.$m['file_path']; if(is_file($old)) @unlink($old); }
+$filePath=$stored; $fileName=$_FILES['file']['name']; $fileSize=$_FILES['file']['size'];
+}
+if(!$filePath && empty($m['file_path']) && $link===''){ flash_set('Прикрепите файл или укажите ссылку на материал.'); redirect('?p=material_edit&id='.$mid); }
+update_material($mid,$title,$desc,$type,$topic,$link,$filePath,$fileName,$fileSize);
+flash_set('Материал обновлён.'); redirect('?p=materials');
+}
+if($a==='delete_material'){
+require_role('operator');
+[$ok,$msg]=delete_material((int)($_POST['id']??0));
+flash_set($msg); redirect('?p=materials');
+}
 $rid=(int)($_POST['id']??0); $r=$rid?get_request($rid):null;
 if($r){
 $msg=null; $sid=(int)($_POST['sid']??0);
@@ -197,7 +255,7 @@ $u=current_user(); $c=cfg(); $sess='';
 if($u){ $nm=($u['role']==='school')?($u['org_name']?:$u['display_name']):$u['display_name']; $roleWord=['operator'=>'Департамент','school'=>'Заявитель','speaker'=>'Спикер','fund'=>'Фонд'][$u['role']]??''; $label=$roleWord.(trim((string)$nm)!==''?': '.$nm:'');
 $sess='<span class="rolebadge">'.esc($label).'</span> <a class="rolebadge" href="?p=profile" style="text-decoration:none">Профиль</a> <form method="post" style="display:inline"><input type="hidden" name="action" value="logout">'.csrf_field().'<button class="logout">Выйти</button></form>'; }
 $f=flash_get();
-echo '<!DOCTYPE html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'.esc($title).'</title><link rel="stylesheet" href="style.css">';
+echo '<!DOCTYPE html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'.esc($title).'</title><link rel="icon" href="favicon.ico"><link rel="stylesheet" href="style.css">';
 echo '<style>
 :root{--rf-blue:#0039A6;--rf-red:#D52B1E;}
 html,body,h1,h2,h3,h4,h5,p,a,span,div,button,input,select,textarea,label,table,th,td,li{font-family:"Segoe UI",Roboto,"PT Sans","Helvetica Neue",Arial,sans-serif !important;}
@@ -240,7 +298,7 @@ table.card-view td:before{content:attr(data-label);display:block;font-size:11px;
 .wrap{padding:16px 12px 40px}
 }
 </style></head><body>';
-echo '<header class="top"><div class="topbar"><div class="mark">★</div><div class="brand"><h1>Урок Мужества</h1></div><div class="session">'.$sess.'</div></div></header>';
+echo '<header class="top"><div class="topbar"><div class="mark"><img src="favicon.ico" alt="" style="width:100%;height:100%;object-fit:contain"></div><div class="brand"><h1>Урок Мужества</h1></div><div class="session">'.$sess.'</div></div></header>';
 echo '<main class="wrap">'; if($f) echo '<div class="flash">'.esc($f).'</div>'; echo $body.'</main>';
 echo '<footer style="text-align:center;padding:20px;color:var(--muted);font-size:12px"><a href="?p=privacy">Политика обработки персональных данных (152-ФЗ)</a></footer>';
 if(empty($_COOKIE['um72_cookie_consent'])){
@@ -269,7 +327,6 @@ function stepper($cur){ if($cur==='cancelled'){ return '<div class="stepper"><di
 $idx=st_index($cur); $h='<div class="stepper">';
 foreach(statuses() as $i=>$s){ if($i<=$idx){ $cls='done'; $mk='✓'; } elseif($i===$idx+1){ $cls='cur'; $mk=$i+1; } else { $cls=''; $mk=$i+1; } $h.='<div class="st '.$cls.'"><span class="mk">'.$mk.'</span>'.esc($s['label']).'</div>'; }
 return $h.'</div>'; }
-function rate_badge($id){ [$r,$c]=speaker_rating($id); return $r===null?'<span class="muted">без оценок</span>':'<span class="stars">★ '.$r.'</span> <span class="muted">('.$c.')</span>'; }
 function fbline($role,$rating,$comment){ if(!$rating) return '<div class="fbsum"><b>'.esc($role).'</b> <span class="muted">— отзыв не оставлен</span></div>'; return '<div class="fbsum"><b>'.esc($role).'</b> <span class="stars">'.str_repeat('★',$rating).str_repeat('☆',5-$rating).'</span>'.($comment?'<div class="cmt">«'.esc($comment).'»</div>':'').'</div>'; }
 function dt($r){ $t=$r['utime']?(' '.esc($r['utime']).(!empty($r['utime_end'])?('–'.esc($r['utime_end'])):'')):''; return esc($r['udate']).$t; }
 function render_reason_select($name,$reasons,$withOther=true){
@@ -387,6 +444,11 @@ if($u['role']==='speaker'){ $body.='<label class="lbl">Телефон для с�
 $fo='<option value="">— выберите организацию (фонд) —</option>'; foreach(all_funds() as $ff){ $fo.='<option value="'.$ff['id'].'"'.((int)($u['fund_user_id']??0)===(int)$ff['id']?' selected':'').'>'.esc(fund_label($ff)).'</option>'; }
 $body.='<label class="lbl">Организация (фонд)</label><select name="fund_user_id">'.$fo.'</select><p class="muted" style="margin:4px 0 0">Организация, которая направляет вас как спикера.</p>';
 }
+if($u['role']==='school'){
+$body.='<label class="lbl">Адрес местонахождения</label><input name="address" value="'.esc($u['address']??'').'" placeholder="г. Тюмень, ул. ..., д. ...">';
+$body.='<label class="lbl">№ корпуса</label><input name="building" value="'.esc($u['building']??'').'" placeholder="напр. 1">';
+$body.='<p class="muted" style="margin:2px 0 8px">Если у организации нет отдельных корпусов, укажите «1».</p>';
+}
 if(in_array($u['role'],['school','fund','operator'],true)){
 $body.='<label class="lbl">ФИО контактного лица</label><input name="contact_name" value="'.esc($u['contact_name']??'').'">';
 $body.='<label class="lbl">Должность</label><input name="position" value="'.esc($u['position']??'').'">';
@@ -410,7 +472,7 @@ $body='<div class="auth"><h2>Регистрация</h2><form method="post" clas
 <label class="lbl">Email (для уведомлений) <span style="color:#d11">*</span></label><input type="email" name="email" required>
 <label class="lbl">Район Тюменской области <span style="color:#d11">*</span></label><select name="district" id="district_sel" onchange="dsw()"><option value="">— выберите район —</option>'.$distOpt.'<option value="__other__">Другой (вписать вручную)</option></select>
 <div id="district_other_wrap" style="display:none"><label class="lbl">Впишите район</label><input name="district_other" placeholder="название района"></div>
-<div class="rf school"><label class="lbl">Наименование организации</label><input name="org_name"><label class="lbl">Уровень</label><select name="level"><option value="school">Школа</option><option value="spo">Профессиональная образовательная организация</option><option value="vuz">Высшее учебное заведение</option></select><label class="lbl">ФИО контактного лица</label><input name="contact_name"><label class="lbl">Должность</label><input name="position"><label class="lbl">Телефон</label><input name="contact_phone"></div>
+<div class="rf school"><label class="lbl">Наименование организации</label><input name="org_name"><label class="lbl">Уровень</label><select name="level"><option value="school">Школа</option><option value="spo">Профессиональная образовательная организация</option><option value="vuz">Высшее учебное заведение</option></select><label class="lbl">Адрес местонахождения</label><input name="address" placeholder="г. Тюмень, ул. ..., д. ..."><label class="lbl">№ корпуса</label><input name="building" placeholder="напр. 1"><p class="muted" style="margin:2px 0 8px">Если у организации нет отдельных корпусов, укажите «1».</p><label class="lbl">ФИО контактного лица</label><input name="contact_name"><label class="lbl">Должность</label><input name="position"><label class="lbl">Телефон</label><input name="contact_phone"></div>
 <div class="rf speaker" style="display:none"><label class="lbl">ФИО</label><input name="display_name"><label class="lbl">Телефон для связи <span style="color:#d11">*</span></label><input name="phone"><label class="lbl">Фонд <span style="color:#d11">*</span></label><select name="fund_user_id">'.$fundOpt.'</select><label class="lbl">Возрастные группы</label><div class="chks">'.$ag.'</div></div>
 <div class="rf fund" style="display:none"><label class="lbl">Наименование Фонда</label><input name="fund_display_name"><label class="lbl">Тип</label><select name="fund_type" id="fund_type" onchange="ftsw()"><option value="head">Головной фонд</option><option value="sub">Структурное подразделение</option></select><div id="parentfund" style="display:none"><label class="lbl">Головной фонд <span style="color:#d11">*</span></label><select name="parent_fund_id">'.$headFundOpt.'</select></div><div id="fundcode"><label class="lbl">Код регистрации Фонда</label><input name="fund_code"></div><label class="lbl">ФИО контактного лица</label><input name="contact_name"><label class="lbl">Должность</label><input name="position"><label class="lbl">Телефон</label><input name="contact_phone"></div>
 <div class="rf operator" style="display:none"><label class="lbl">Наименование</label><input name="op_display_name"><label class="lbl">Департамент</label><select name="op_group"><option value="school">ДОА г. Тюмени (школы)</option><option value="region">ДОиН ТО (СПО и вузы)</option></select><label class="lbl">Код регистрации оператора</label><input name="op_code"><label class="lbl">ФИО контактного лица</label><input name="contact_name"><label class="lbl">Должность</label><input name="position"><label class="lbl">Телефон</label><input name="contact_phone"></div>
@@ -507,8 +569,8 @@ require_role('operator'); $tab=$_GET['tab']??'list';
 if($tab==='speakers'){
 $body='<div class="head"><h2>Реестр спикеров</h2><a class="btn ghost" href="?p=operator">← к заявкам</a></div>';
 $allsp=db()->query("SELECT * FROM users WHERE role='speaker' ORDER BY display_name")->fetchAll();
-$body.='<table class="card-view"><thead><tr><th>Спикер</th><th>Организация</th><th>Район</th><th>Возрастные группы</th><th>Рейтинг</th><th>Статус</th></tr></thead><tbody>';
-foreach($allsp as $s){ $g=array_map(fn($k)=>ages()[$k]??$k,array_filter(explode(',',$s['age_groups']))); $f=$s['fund_user_id']?find_user_by_id((int)$s['fund_user_id']):null; $fname=($f && $f['display_name']!=='')?esc($f['display_name']):'<span class="muted">не указана</span>'; $stp=$s['active']?'<span class="pill green">активен</span>':'<span class="pill gray">на подтверждении</span>'; $body.='<tr><td class="id" data-label="Спикер">'.esc($s['display_name']).'</td><td data-label="Организация">'.$fname.'</td><td data-label="Район" class="muted">'.esc($s['district']?:'—').'</td><td data-label="Группы" class="muted">'.esc(implode(', ',$g)).'</td><td data-label="Рейтинг">'.rate_badge($s['id']).'</td><td data-label="Статус">'.$stp.'</td></tr>'; }
+$body.='<table class="card-view"><thead><tr><th>Спикер</th><th>Организация</th><th>Район</th><th>Возрастные группы</th><th>Телефон</th><th>Статус</th></tr></thead><tbody>';
+foreach($allsp as $s){ $g=array_map(fn($k)=>ages()[$k]??$k,array_filter(explode(',',$s['age_groups']))); $f=$s['fund_user_id']?find_user_by_id((int)$s['fund_user_id']):null; $fname=($f && $f['display_name']!=='')?esc($f['display_name']):'<span class="muted">не указана</span>'; $stp=$s['active']?'<span class="pill green">активен</span>':'<span class="pill gray">на подтверждении</span>'; $body.='<tr><td class="id" data-label="Спикер">'.esc($s['display_name']).'</td><td data-label="Организация">'.$fname.'</td><td data-label="Район" class="muted">'.esc($s['district']?:'—').'</td><td data-label="Группы" class="muted">'.esc(implode(', ',$g)).'</td><td data-label="Телефон" class="muted">'.esc($s['phone']?:'—').'</td><td data-label="Статус">'.$stp.'</td></tr>'; }
 if(!$allsp) $body.='<tr><td colspan="6" class="muted">Спикеров пока нет.</td></tr>'; $body.='</tbody></table>';
 $pend=pending_speakers(); if($pend) $body.='<p class="muted" style="margin-top:12px">Ожидают подтверждения Фондом: '.count($pend).'.</p>';
 layout('Реестр спикеров',$body); exit;
@@ -529,7 +591,17 @@ $body='<div class="head"><h2>Модерация заявителей ('.count($p
 $body.='<p class="muted">Подтвердите организации, которым открыть доступ к подаче заявок. '.$dept.'</p>';
 if(!$pend) $body.='<div class="card pad muted">Новых заявок на регистрацию заявителей нет.</div>';
 foreach($pend as $ap){
-$body.='<div class="card pad" style="margin-bottom:10px"><b>'.esc($ap['org_name']).'</b> <span class="muted">('.esc(level_label($ap['level'])).', логин: '.esc($ap['login']).', email: '.esc($ap['email']).')</span><div style="margin-top:8px;display:flex;gap:8px">'
+$body.='<div class="card pad" style="margin-bottom:10px"><b>'.esc($ap['org_name']).'</b> <span class="pill blue">'.esc(level_label($ap['level'])).'</span>'
+.'<dl class="kv" style="margin-top:8px"><dt>Район</dt><dd>'.esc($ap['district']?:'—').'</dd>'
+.'<dt>Адрес</dt><dd>'.esc($ap['address']?:'—').'</dd>'
+.'<dt>№ корпуса</dt><dd>'.esc($ap['building']?:'—').'</dd>'
+.'<dt>Контактное лицо</dt><dd>'.esc($ap['contact_name']?:'—').'</dd>'
+.'<dt>Должность</dt><dd>'.esc($ap['position']?:'—').'</dd>'
+.'<dt>Телефон</dt><dd>'.esc($ap['phone']?:'—').'</dd>'
+.'<dt>Email</dt><dd>'.esc($ap['email']?:'—').'</dd>'
+.'<dt>Логин</dt><dd>'.esc($ap['login']).'</dd>'
+.'<dt>Подана</dt><dd>'.esc($ap['created_at']?:'—').'</dd></dl>'
+.'<div style="margin-top:8px;display:flex;gap:8px">'
 .'<form method="post" style="display:inline">'.csrf_field().'<input type="hidden" name="action" value="approve_applicant"><input type="hidden" name="uid" value="'.$ap['id'].'"><button class="btn primary sm">Подтвердить</button></form>'
 .'<form method="post" style="display:inline" onsubmit="return confirm(\'Отклонить?\')">'.csrf_field().'<input type="hidden" name="action" value="reject_applicant"><input type="hidden" name="uid" value="'.$ap['id'].'"><button class="btn ghost sm" style="color:#b23b2c;border-color:#f5c6c0">Отклонить</button></form>'
 .'</div></div>';
@@ -557,7 +629,11 @@ $body .= '<li><span>'.esc($ar['code']).' — '.esc($ar['org']).' <span class="mu
 }
 $body .= '</ul></div>';
 }
-$k=kpis($locked?'school':($deptFilter?:null)); $kp=''; foreach($k as $c) $kp.='<div class="kpi"><div class="n">'.esc($c[1]).'</div><div class="l">'.esc($c[0]).'</div></div>';
+$k=kpis($locked?'school':($deptFilter?:null)); $kp='';
+foreach($k as $c){
+if(!empty($c[2])){ $kp.='<a class="kpi" href="'.esc($c[2]).'" style="text-decoration:none;color:inherit"><div class="n">'.esc($c[1]).'</div><div class="l">'.esc($c[0]).'</div></a>'; }
+else { $kp.='<div class="kpi"><div class="n">'.esc($c[1]).'</div><div class="l">'.esc($c[0]).'</div></div>'; }
+}
 $deptSel='';
 if(!$locked){ $deptSel='<label class="lbl" style="margin:0">Департамент</label><select name="dept"><option value="">Общие результаты</option><option value="school" '.($deptFilter==='school'?'selected':'').'>ДО г. Тюмени (школы)</option><option value="region" '.($deptFilter==='region'?'selected':'').'>ДОиН ТО (СПО и вузы)</option></select>'; }
 $body.='<details class="card pad" style="margin-bottom:14px"><summary style="cursor:pointer;font-weight:600;color:var(--rf-blue)">🔍 Фильтры и поиск</summary><div style="margin-top:12px">'.($locked?'<p class="muted" style="margin:0 0 8px">Вы видите заявки школ.</p>':'').'<form method="get" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end"><input type="hidden" name="p" value="operator"><input type="hidden" name="tab" value="list">
@@ -567,10 +643,56 @@ $body.='</select><label class="lbl" style="margin:0">Организация</lab
 <label class="lbl" style="margin:0">С</label><input type="date" name="from_date" value="'.esc($_GET['from_date']??'').'">
 <label class="lbl" style="margin:0">По</label><input type="date" name="to_date" value="'.esc($_GET['to_date']??'').'">
 <button class="btn primary sm">Фильтр</button> <a class="btn ghost sm" href="?p=operator">Сбросить</a></form></div></details>';
-$body.='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
-<a class="btn ghost" href="?p=export&type=requests&dept='.esc($deptFilter).'&status='.esc($_GET['status']??'').'&org='.urlencode($_GET['org']??'').'&from_date='.esc($_GET['from_date']??'').'&to_date='.esc($_GET['to_date']??'').'"> Экспорт заявок (CSV)</a>
+$body.='<div style="margin-bottom:14px"><a class="btn ghost" href="?p=operator_tools">🛠️ Инструменты'.($pendN?' <span class="pill" style="background:#fdecea;color:#b23b2c">'.$pendN.'</span>':'').'</a></div>';
+$tr=''; foreach($rows as $r){
+$urgent_tr = is_request_urgent($r) ? 'urgent' : '';
+$tr.='<tr class="'.$urgent_tr.'" onclick="location=\'?p=request&id='.$r['id'].'\'"><td class="id">'.esc($r['code']).'</td><td>'.esc($r['org']).'</td><td>'.dt($r).'</td><td>'.esc(req_label($r['id'])).'</td><td>'.pill($r['status']).'</td></tr>';
+}
+$body.='<div class="head"><h2>Реестр заявок ('.count($rows).')</h2></div><div class="kpis">'.$kp.'</div>';
+$body.= $rows ? '<table class="card-view"><thead><tr><th>Код</th><th>Организация</th><th>Дата и время</th><th>Спикеры</th><th>Статус</th></tr></thead><tbody>'.$tr.'</tbody></table>' : '<div class="card pad muted">Заявок не найдено.</div>';
+layout('Кабинет оператора',$body); exit;
+}
+// ========== ОТЗЫВЫ ==========
+if($p==='reviews'){
+require_role('operator');
+$type=($_GET['type']??'')==='speaker'?'speaker':'app';
+$opg=$u['op_group']??''; $dept=$opg==='school'?'school':(in_array($_GET['dept']??'',['school','region'])?$_GET['dept']:'');
+$scopeOg=$opg==='school'?'school':($dept?:null);
+$body='<div class="head"><h2>'.($type==='app'?'Отзывы заявителей':'Отзывы спикеров').'</h2><a class="btn ghost" href="?p=operator">← к заявкам</a></div>';
+if($type==='app'){
+$rows=list_app_reviews($scopeOg);
+$body.='<table class="card-view"><thead><tr><th>Заявитель</th><th>Спикеры</th><th>Тема урока</th><th>Дата отзыва</th><th>Отзыв</th></tr></thead><tbody>';
+foreach($rows as $r){
+$speakers=implode(', ',array_map(fn($x)=>$x['display_name'],req_confirmed_rows($r['id'])));
+$review=$r['fb_app_rating']?str_repeat('★',(int)$r['fb_app_rating']).str_repeat('☆',5-(int)$r['fb_app_rating']):'';
+if(!empty($r['fb_app_comment'])) $review.=($review?'<br>':'').esc($r['fb_app_comment']);
+$body.='<tr onclick="location=\'?p=request&id='.$r['id'].'\'"><td class="id" data-label="Заявитель">'.esc($r['org']).'</td><td data-label="Спикеры" class="muted">'.esc($speakers?:'—').'</td><td data-label="Тема" class="muted">'.esc($r['topic']?:'—').'</td><td data-label="Дата" class="muted">'.esc($r['fb_app_at']?:'—').'</td><td data-label="Отзыв">'.$review.'</td></tr>';
+}
+if(!$rows) $body.='<tr><td colspan="5" class="muted">Отзывов заявителей пока нет.</td></tr>';
+$body.='</tbody></table>';
+} else {
+$rows=list_speaker_reviews($scopeOg);
+$body.='<table class="card-view"><thead><tr><th>Заявитель</th><th>Спикер</th><th>Тема урока</th><th>Дата отзыва</th><th>Отзыв</th></tr></thead><tbody>';
+foreach($rows as $row){
+$review=$row['vet_rating']?str_repeat('★',(int)$row['vet_rating']).str_repeat('☆',5-(int)$row['vet_rating']):'';
+if(!empty($row['vet_comment'])) $review.=($review?'<br>':'').esc($row['vet_comment']);
+$body.='<tr onclick="location=\'?p=request&id='.$row['request_id'].'\'"><td class="id" data-label="Заявитель">'.esc($row['org']).'</td><td data-label="Спикер" class="muted">'.esc($row['speaker_name']).'</td><td data-label="Тема" class="muted">'.esc($row['topic']?:'—').'</td><td data-label="Дата" class="muted">'.esc($row['vet_at']?:'—').'</td><td data-label="Отзыв">'.$review.'</td></tr>';
+}
+if(!$rows) $body.='<tr><td colspan="5" class="muted">Отзывов спикеров пока нет.</td></tr>';
+$body.='</tbody></table>';
+}
+layout($type==='app'?'Отзывы заявителей':'Отзывы спикеров',$body); exit;
+}
+// ========== ИНСТРУМЕНТЫ ОПЕРАТОРА ==========
+if($p==='operator_tools'){
+require_role('operator');
+$pendN=count(pending_applicants($u));
+$deptFilter=(($u['op_group']??'')==='school')?'school':'';
+$body='<div class="head"><h2>Инструменты</h2><a class="btn ghost" href="?p=operator">← к заявкам</a></div>';
+$body.='<div style="display:flex;gap:8px;flex-wrap:wrap">
+<a class="btn ghost" href="?p=export&type=requests&dept='.esc($deptFilter).'"> Экспорт заявок (CSV)</a>
 <a class="btn ghost" href="?p=export&type=speakers">📥 Экспорт спикеров (CSV)</a>
-<a class="btn ghost" href="?p=export&type=report&dept='.esc($deptFilter).'&from_date='.esc($_GET['from_date']??'').'&to_date='.esc($_GET['to_date']??'').'">📊 Отчёт для департамента (CSV)</a>
+<a class="btn ghost" href="?p=export&type=report&dept='.esc($deptFilter).'">📊 Отчёт для департамента (CSV)</a>
 <a class="btn ghost" href="?p=operator&tab=moderation">👤 Модерация заявителей'.($pendN?' ('.$pendN.')':'').'</a>
 <a class="btn ghost" href="?p=users">👥 Пользователи</a>
 <a class="btn ghost" href="?p=districts">🗺️ Районы</a>
@@ -578,14 +700,58 @@ $body.='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
 <a class="btn ghost" href="?p=calendar"> Календарь</a>
 <a class="btn ghost" href="?p=operator&tab=archive">🗄️ Архив</a>
 <form method="get" style="display:inline"><input type="hidden" name="p" value="archive_run"><button class="btn ghost" onclick="return confirm(\'Архивировать?\')">️ Запустить архивацию</button></form>
+<a class="btn ghost" href="?p=operator&tab=speakers">Реестр спикеров</a>
+<a class="btn ghost" href="?p=materials">🗂️ Материалы</a>
 </div>';
-$tr=''; foreach($rows as $r){
-$urgent_tr = is_request_urgent($r) ? 'urgent' : '';
-$tr.='<tr class="'.$urgent_tr.'" onclick="location=\'?p=request&id='.$r['id'].'\'"><td class="id">'.esc($r['code']).'</td><td>'.esc($r['org']).'</td><td>'.dt($r).'</td><td>'.esc(req_label($r['id'])).'</td><td>'.pill($r['status']).'</td></tr>';
+layout('Инструменты',$body); exit;
 }
-$body.='<div class="head"><h2>Реестр заявок ('.count($rows).')</h2><a class="btn ghost" href="?p=operator&tab=speakers">Реестр спикеров</a></div><div class="kpis">'.$kp.'</div>';
-$body.= $rows ? '<table class="card-view"><thead><tr><th>Код</th><th>Организация</th><th>Дата и время</th><th>Спикеры</th><th>Статус</th></tr></thead><tbody>'.$tr.'</tbody></table>' : '<div class="card pad muted">Заявок не найдено.</div>';
-layout('Кабинет оператора',$body); exit;
+// ========== МАТЕРИАЛЫ ==========
+function material_size_label($bytes){ if(!$bytes) return ''; $mb=$bytes/1048576; return $mb>=1?round($mb,1).' МБ':round($bytes/1024,1).' КБ'; }
+if($p==='material_download'){
+$m=get_material((int)($_GET['id']??0));
+if(!$m || empty($m['file_path'])){ http_response_code(404); exit('Файл не найден.'); }
+$path=__DIR__.'/uploads/materials/'.$m['file_path'];
+if(!is_file($path)){ http_response_code(404); exit('Файл не найден.'); }
+header('Content-Type: application/octet-stream');
+header('Content-Disposition: attachment; filename="'.rawurlencode($m['file_name']?:$m['file_path']).'"');
+header('Content-Length: '.filesize($path));
+readfile($path); exit;
+}
+if($p==='materials'){
+$typeFilter=$_GET['type']??'';
+$rows=list_materials($typeFilter?:null);
+$body='<div class="head"><h2>Материалы</h2>'.($u['role']==='operator'?'<a class="btn primary" href="?p=material_edit">+ Добавить материал</a>':'').'</div>';
+$body.='<form method="get" style="margin-bottom:14px"><input type="hidden" name="p" value="materials"><label class="lbl" style="margin:0">Вид материала</label><select name="type" onchange="this.form.submit()"><option value="">Все</option>';
+foreach(material_types() as $k=>$v) $body.='<option value="'.esc($k).'" '.($typeFilter===$k?'selected':'').'>'.esc($v).'</option>';
+$body.='</select></form>';
+if(!$rows) $body.='<div class="card pad muted">Материалов пока нет.</div>';
+foreach($rows as $m){
+$link=!empty($m['file_path'])?'<a class="btn ghost sm" href="?p=material_download&id='.$m['id'].'">⬇ Скачать'.($m['file_size']?' ('.material_size_label($m['file_size']).')':'').'</a>':'';
+if(!empty($m['link'])) $link.=' <a class="btn ghost sm" href="'.esc($m['link']).'" target="_blank" rel="noopener">🔗 Ссылка на материал</a>';
+$body.='<div class="card pad" style="margin-bottom:10px"><b>'.esc($m['title']).'</b> <span class="pill blue">'.esc(material_types()[$m['type']]??$m['type']).'</span> <span class="muted">· тема: '.esc($m['topic']?:'—').'</span>';
+if(!empty($m['description'])) $body.='<p class="muted" style="margin:6px 0">'.nl2br(esc($m['description'])).'</p>';
+$body.='<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">'.$link;
+if($u['role']==='operator') $body.='<a class="btn ghost sm" href="?p=material_edit&id='.$m['id'].'">✏️ Редактировать</a><form method="post" style="display:inline" onsubmit="return confirm(\'Удалить материал?\')">'.csrf_field().'<input type="hidden" name="action" value="delete_material"><input type="hidden" name="id" value="'.$m['id'].'"><button class="btn ghost sm" style="color:#b23b2c;border-color:#f5c6c0">Удалить</button></form>';
+$body.='<span class="muted" style="font-size:12px">загрузил: '.esc($m['uploader']?:'—').' · '.esc(substr((string)$m['created_at'],0,10)).'</span></div></div>';
+}
+layout('Материалы',$body); exit;
+}
+if($p==='material_edit'){
+require_role('operator');
+$id=(int)($_GET['id']??0); $m=$id?get_material($id):null;
+if($id && !$m){ layout('Материал','<div class="card pad">Материал не найден. <a href="?p=materials">Назад</a></div>'); exit; }
+$tOpt=''; foreach(material_types() as $k=>$v) $tOpt.='<option value="'.esc($k).'" '.(($m['type']??'')===$k?'selected':'').'>'.esc($v).'</option>';
+$body='<div class="head"><h2>'.($m?'Редактирование материала':'Добавить материал').'</h2><a class="btn ghost" href="?p=materials">← к материалам</a></div>';
+$body.='<form method="post" class="card pad" style="max-width:640px" enctype="multipart/form-data">'.csrf_field().'<input type="hidden" name="action" value="'.($m?'update_material':'add_material').'">'.($m?'<input type="hidden" name="id" value="'.$m['id'].'">':'');
+$body.='<label class="lbl">Название <span style="color:#d11">*</span></label><input name="title" required value="'.esc($m['title']??'').'">';
+$body.='<label class="lbl">Тема <span style="color:#d11">*</span></label><input name="topic" required list="topics_dl" value="'.esc($m['topic']??'').'"><datalist id="topics_dl">'; foreach(material_topics() as $t) $body.='<option value="'.esc($t).'">'; $body.='</datalist>';
+$body.='<label class="lbl">Вид материала <span style="color:#d11">*</span></label><select name="type" required><option value="">— выберите —</option>'.$tOpt.'</select>';
+$body.='<label class="lbl">Описание</label><textarea name="description">'.esc($m['description']??'').'</textarea>';
+$body.='<label class="lbl">Файл (до 100 МБ)'.(!empty($m['file_path'])?' — сейчас: '.esc($m['file_name']):'').'</label><input type="file" name="file">';
+$body.='<label class="lbl">Или ссылка на файл</label><input name="link" value="'.esc($m['link']??'').'" placeholder="https://...">';
+$body.='<p class="muted" style="margin:6px 0 0">Нужно указать файл или ссылку (можно оба).</p>';
+$body.='<button class="btn primary" style="margin-top:12px">Сохранить</button></form>';
+layout('Материал',$body); exit;
 }
 // ========== КАБИНЕТ ФОНДА ==========
 if($p==='fund'){
@@ -596,9 +762,9 @@ $body='<div class="head"><h2>Спикеры Фонда</h2><a class="btn ghost" 
 $pend=pending_speakers($u); if(!$pend) $body.='<div class="card pad muted" style="margin-bottom:14px">Новых заявок на регистрацию спикеров нет.</div>';
 foreach($pend as $s){ $ag=''; foreach(ages() as $k=>$v) $ag.='<label class="chk"><input type="checkbox" name="groups['.esc($k).']" '.(in_array($k,explode(',',$s['age_groups']))?'checked':'').'> '.esc($v).'</label>';
 $body.='<form method="post" class="card pad" style="margin-bottom:10px">'.csrf_field().'<input type="hidden" name="action" value="approve_speaker"><input type="hidden" name="uid" value="'.$s['id'].'"><b>'.esc($s['display_name']).'</b> <span class="muted">(логин: '.esc($s['login']).' · район: '.esc($s['district']?:'—').' · тел.: '.esc($s['phone']?:'—').')</span><div class="chks" style="margin:8px 0">'.$ag.'</div><button class="btn primary">Подтвердить и дать доступ</button></form>'; }
-$act=active_speakers($u); $body.='<h4>Подтверждённые спикеры</h4><table class="card-view"><thead><tr><th>Спикер</th><th>Район</th><th>Телефон</th><th>Возрастные группы</th><th>Рейтинг</th></tr></thead><tbody>';
-foreach($act as $s){ $g=array_map(fn($k)=>ages()[$k]??$k,array_filter(explode(',',$s['age_groups']))); $body.='<tr><td class="id">'.esc($s['display_name']).'</td><td class="muted">'.esc($s['district']?:'—').'</td><td class="muted">'.esc($s['phone']?:'—').'</td><td class="muted">'.esc(implode(', ',$g)).'</td><td>'.rate_badge($s['id']).'</td></tr>'; }
-if(!$act) $body.='<tr><td colspan="5" class="muted">Пока нет.</td></tr>'; $body.='</tbody></table>';
+$act=active_speakers($u); $body.='<h4>Подтверждённые спикеры</h4><table class="card-view"><thead><tr><th>Спикер</th><th>Район</th><th>Телефон</th><th>Возрастные группы</th></tr></thead><tbody>';
+foreach($act as $s){ $g=array_map(fn($k)=>ages()[$k]??$k,array_filter(explode(',',$s['age_groups']))); $body.='<tr><td class="id">'.esc($s['display_name']).'</td><td class="muted">'.esc($s['district']?:'—').'</td><td class="muted">'.esc($s['phone']?:'—').'</td><td class="muted">'.esc(implode(', ',$g)).'</td></tr>'; }
+if(!$act) $body.='<tr><td colspan="4" class="muted">Пока нет.</td></tr>'; $body.='</tbody></table>';
 $body.='<div style="margin-top:14px;display:flex;gap:8px"><a class="btn ghost" href="?p=users&role=speaker"> Управление спикерами</a><a class="btn ghost" href="?p=audit&user_role=speaker">📋 Журнал</a><a class="btn ghost" href="?p=calendar"> Календарь</a></div>';
 layout('Спикеры Фонда',$body); exit;
 }
@@ -647,7 +813,7 @@ $body='<div class="head"><h2>Подать заявку</h2><a class="btn ghost" 
 <label class="lbl">Время окончания <span style="color:#d11">*</span></label><select name="utime_end" required><option value="">—</option>'.time_options($src['utime_end']??'').'</select>
 <label class="lbl">Число участников</label><input name="participants" value="'.esc($src['participants']??'').'">
 <label class="lbl">Тема занятия</label>'.(function() use($src){
-$cur=$src['topic']??''; $topics=lesson_topics(); $known=in_array($cur,$topics,true);
+$cur=$src['topic']??''; $topics=material_topics(); $known=in_array($cur,$topics,true);
 $o='<option value="">— выберите тему —</option>';
 foreach($topics as $t){ $o.='<option value="'.esc($t).'"'.($cur===$t?' selected':'').'>'.esc($t).'</option>'; }
 $o.='<option value="__other__"'.(($cur!==''&&!$known)?' selected':'').'>Другая тема (указать свою)</option>';
@@ -684,11 +850,11 @@ layout('Кабинет заявителя',$body); exit;
 if($p==='speaker'){
 require_role('speaker');
 if(!$u['active']){ layout('Кабинет спикера','<div class="card pad"><h2>Ожидает подтверждения</h2><p class="muted">Ваша учётная запись ожидает подтверждения Фондом.</p></div>'); exit; }
-$rows=speaker_lessons($u['id']); [$rt,$rc]=speaker_rating($u['id']);
+$rows=speaker_lessons($u['id']);
 $daily=speaker_daily_count($u['id'],date('Y-m-d'));
 $weekly=speaker_weekly_count($u['id'],date('Y-m-d'));
 $tr=''; foreach($rows as $r){ $mark=$r['cfd']?'<span class="pill green">в составе</span>':(st_index($r['status'])>=st_index('confirmed')?'<span class="pill gray">не выбран</span>':'<span class="pill gray">кандидат</span>'); $tr.='<tr onclick="location=\'?p=request&id='.$r['id'].'\'"><td class="id">'.esc($r['code']).'</td><td>'.esc($r['org']).'</td><td>'.dt($r).'</td><td>'.$mark.'</td><td>'.pill($r['status']).'</td></tr>'; }
-$body='<div class="head"><h2>Мои уроки</h2><div><span class="rolebadge" style="background:#eef2f8;color:#16305B;border:1px solid #cdd5df">Рейтинг: '.($rt===null?'без оценок':'★ '.$rt.' ('.$rc.')').'</span> <a class="btn ghost" href="?p=calendar"> Календарь</a></div></div>';
+$body='<div class="head"><h2>Мои уроки</h2><div><a class="btn ghost" href="?p=calendar"> Календарь</a></div></div>';
 $body.='<div class="kpis"><div class="kpi"><div class="n">'.$daily.' / 2</div><div class="l">Уроков сегодня</div></div><div class="kpi"><div class="n">'.$weekly.' / 7</div><div class="l">Уроков на неделе</div></div><div class="kpi"><div class="n">'.count($rows).'</div><div class="l">Всего назначено</div></div></div>';
 $body.= $rows ? '<table class="card-view"><thead><tr><th>Код</th><th>Организация</th><th>Дата и время</th><th>Вы</th><th>Статус</th></tr></thead><tbody>'.$tr.'</tbody></table>' : '<div class="card pad muted">Назначенных уроков пока нет.</div>';
 // ========== КАЛЕНДАРЬ НЕДОСТУПНОСТИ ==========
@@ -725,7 +891,7 @@ $r=get_request((int)($_GET['id']??0));
 if(!$r){ layout('Заявка','<div class="card pad">Заявка не найдена. <a href="?p=school">Назад</a></div>'); exit; }
 if($r['school_user_id']!=$u['id']){ layout('Заявка','<div class="card pad">Нет доступа. <a href="?p=school">Назад</a></div>'); exit; }
 if(!in_array($r['status'],['new','chosen','confirmed'])){ layout('Редактирование заявки','<div class="card pad"><h2>Редактирование недоступно</h2><p class="muted">Редактирование доступно только на этапах «Новая», «Спикеры выбраны» и «Состав подтверждён Фондом».</p><p><a href="?p=request&id='.$r['id'].'">← К заявке</a></p></div>'); exit; }
-$curTopic=$r['topic']??''; $topics=lesson_topics(); $known=in_array($curTopic,$topics,true);
+$curTopic=$r['topic']??''; $topics=material_topics(); $known=in_array($curTopic,$topics,true);
 $tOpt='<option value="">— выберите тему —</option>';
 foreach($topics as $t) $tOpt.='<option value="'.esc($t).'"'.($curTopic===$t?' selected':'').'>'.esc($t).'</option>';
 $tOpt.='<option value="__other__"'.(($curTopic!==''&&!$known)?' selected':'').'>Другая тема (указать свою)</option>';
@@ -759,7 +925,7 @@ require_role('fund');
 $r=get_request((int)($_GET['id']??0));
 if(!$r){ layout('Заявка','<div class="card pad">Заявка не найдена. <a href="?p=fund">Назад</a></div>'); exit; }
 if(!reschedulable_status($r)){ layout('Редактирование заявки','<div class="card pad"><h2>Редактирование недоступно</h2><p class="muted">Редактирование доступно на этапах «Спикеры выбраны» и «Состав подтверждён Фондом».</p><p><a href="?p=request&id='.$r['id'].'">← К заявке</a></p></div>'); exit; }
-$curTopic=$r['topic']??''; $topics=lesson_topics(); $known=in_array($curTopic,$topics,true);
+$curTopic=$r['topic']??''; $topics=material_topics(); $known=in_array($curTopic,$topics,true);
 $tOpt='<option value="">— выберите тему —</option>';
 foreach($topics as $t) $tOpt.='<option value="'.esc($t).'"'.($curTopic===$t?' selected':'').'>'.esc($t).'</option>';
 $tOpt.='<option value="__other__"'.(($curTopic!==''&&!$known)?' selected':'').'>Другая тема (указать свою)</option>';
@@ -800,26 +966,26 @@ $turnMine=($u['role']==='school'&&$turnWho==='Заявитель')||($u['role']=
 $turnHtml=($turnAct && !in_array($r['status'],['closed','cancelled'])) ? '<div class="turn-banner '.($turnMine?'turn-you':'turn-other').'"><b>Сейчас ход за: '.esc($turnWho).'.</b> '.esc($turnAct).'</div>' : '';
 $body='<div class="head"><h2>Заявка '.esc($r['code']).' '.pill($r['status']).'</h2><div><a class="btn ghost" href="?p=audit&target_type=requests&target_id='.$r['id'].'">📋 История</a> <a class="btn ghost" href="?p='.$u['role'].'">← Назад</a></div></div><div class="card pad">'.$turnHtml.$info.($r['status']==='cancelled' ? '<div class="block"><div style="background:#fdecea;color:#b23b2c;border:1px solid #f5c6c0;border-radius:8px;padding:12px"><b>Урок не состоялся.</b> Причина: '.esc($r['cancel_reason']?:'не указана').($r['cancelled_at']?' · '.esc($r['cancelled_at']):'').'</div></div>' : '<div class="block"><h4>Этапы</h4>'.stepper($r['status']).'</div>');
 $listHtml='';
-foreach($rows as $row){ $badge=$row['confirmed']?'<span class="pill green">в составе</span>':'<span class="pill gray">кандидат</span>'; $org=speaker_org_name($row['speaker_user_id']); $listHtml.='<div class="fbsum"><b>'.esc($row['display_name']).'</b>'.($org!==''?' <span class="muted">· '.esc($org).'</span>':'').' '.rate_badge($row['speaker_user_id']).' '.$badge; if($row['vet_rating']) $listHtml.='<div class="cmt">отзыв спикера: '.str_repeat('★',$row['vet_rating']).' '.esc($row['vet_comment']).'</div>'; $listHtml.='</div>'; }
+foreach($rows as $row){ $badge=$row['confirmed']?'<span class="pill green">в составе</span>':'<span class="pill gray">кандидат</span>'; $org=speaker_org_name($row['speaker_user_id']); $listHtml.='<div class="fbsum"><b>'.esc($row['display_name']).'</b>'.($org!==''?' <span class="muted">· '.esc($org).'</span>':'').' '.$badge; if($row['vet_rating']) $listHtml.='<div class="cmt">отзыв спикера: '.str_repeat('★',$row['vet_rating']).' '.esc($row['vet_comment']).'</div>'; $listHtml.='</div>'; }
 if($u['role']==='school'){
 $body.='<div class="block" style="display:flex;gap:8px;flex-wrap:wrap"><a class="btn ghost sm" href="?p=school&tab=new&copy='.$r['id'].'">📋 Повторить заявку</a>';
 if(in_array($r['status'],['new','chosen','confirmed'])) $body.='<a class="btn ghost sm" href="?p=request_edit&id='.$r['id'].'">✏️ Редактировать</a>';
 $body.='</div>';
 if(in_array($r['status'],['new','chosen'])){
 $free=free_speakers_for_request($r); $opt='<option value="">— выбрать свободного спикера —</option>';
-foreach($free as $s){ [$rt,]=speaker_rating($s['id']); $opt.='<option value="'.$s['id'].'">'.esc($s['display_name']).' — '.esc($s['district']?:'район не указан').($rt!==null?' (★ '.$rt.')':'').'</option>'; }
+foreach($free as $s){ $opt.='<option value="'.$s['id'].'">'.esc($s['display_name']).' — '.esc($s['district']?:'район не указан').'</option>'; }
 $body.='<div class="block"><h4>Желаемые спикеры (нужно '.$need.', можно указать с запасом)</h4>';
 if($r['status']==='chosen' && $confN<$need){
 $left=$need-$confN;
 $body.='<div class="hint-warn"><b>⚠ Подсказка:</b> сейчас в составе только '.$confN.' из '.$need.' спикеров. Вы можете добавить ещё '.($left>0?$left:'').', если найдутся свободные, либо Фонд подберёт замену. Если спикеров не хватит — заявка всё равно пойдёт дальше после подтверждения Фонда.</div>';
 }
-if($rows){ foreach($rows as $row){ $body.='<div class="row2" style="margin-bottom:6px"><span>'.esc($row['display_name']).' '.rate_badge($row['speaker_user_id']).'</span><form method="post">'.csrf_field().'<input type="hidden" name="action" value="remove_candidate"><input type="hidden" name="id" value="'.$r['id'].'"><input type="hidden" name="sid" value="'.$row['speaker_user_id'].'"><button class="btn ghost sm">Убрать</button></form></div>'; } }
+if($rows){ foreach($rows as $row){ $body.='<div class="row2" style="margin-bottom:6px"><span>'.esc($row['display_name']).'</span><form method="post">'.csrf_field().'<input type="hidden" name="action" value="remove_candidate"><input type="hidden" name="id" value="'.$r['id'].'"><input type="hidden" name="sid" value="'.$row['speaker_user_id'].'"><button class="btn ghost sm">Убрать</button></form></div>'; } }
 else $body.='<p class="muted">Пока не выбрано ни одного спикера.</p>';
 $body.= $free ? '<form method="post" style="margin-top:8px">'.csrf_field().'<input type="hidden" name="action" value="add_candidate"><input type="hidden" name="id" value="'.$r['id'].'"><select name="speaker_user_id">'.$opt.'</select> <button class="btn primary sm">Добавить спикера</button></form><form method="post" style="margin-top:8px">'.csrf_field().'<input type="hidden" name="action" value="auto_pick"><input type="hidden" name="id" value="'.$r['id'].'"><button class="btn ghost sm">✨ Подобрать спикеров автоматически (до '.$need.')</button></form><p class="muted">Показаны спикеры района <b>'.esc(request_district($r)?:'—').'</b> и соседних, свободные на '.dt($r).' (с учётом лимитов 2/день и 7/неделю, а также закрытых дат спикеров). «Подобрать автоматически» добавит свободных спикеров с лучшим рейтингом до запрошенного числа. Итоговый состав утверждает Фонд.</p>'
 : '<p class="muted">Больше свободных спикеров на это время нет.</p>';
 $body.='</div>';
 } else {
-$cl=''; foreach(req_confirmed_rows($r['id']) as $row){ $cl.='<div class="fbsum"><b>'.esc($row['display_name']).'</b> '.rate_badge($row['speaker_user_id']).' <span class="pill green">в составе</span>'.($row['vet_rating']?'<div class="cmt">отзыв спикера: '.str_repeat('★',$row['vet_rating']).' '.esc($row['vet_comment']).'</div>':'').'</div>'; }
+$cl=''; foreach(req_confirmed_rows($r['id']) as $row){ $cl.='<div class="fbsum"><b>'.esc($row['display_name']).'</b> <span class="pill green">в составе</span>'.($row['vet_rating']?'<div class="cmt">отзыв спикера: '.str_repeat('★',$row['vet_rating']).' '.esc($row['vet_comment']).'</div>':'').'</div>'; }
 $body.='<div class="block"><h4>Состав ('.$confN.' из '.$need.')</h4>'.($cl?:'<p class="muted">—</p>').'</div>';
 }
 if(in_array($r['status'],['confirmed','brief','prep'])){
@@ -843,7 +1009,7 @@ $body.='<div class="block"><h4>Согласование спикеров ('.$con
 if(!$rows) $body.='<p class="muted">Заявитель ещё не выбрал спикеров.</p>';
 elseif(!$mine) $body.='<p class="muted">Среди кандидатов нет ваших спикеров.</p>';
 foreach($mine as $row){ $sp=find_user_by_id($row['speaker_user_id']); $act=candidate_action($u,$row);
-$body.='<div class="row2" style="margin-bottom:6px"><span><b>'.esc($row['display_name']).'</b> '.rate_badge($row['speaker_user_id']).' <span class="muted">('.esc($sp['district']?:'—').', тел.: '.esc($sp['phone']?:'—').')</span> ';
+$body.='<div class="row2" style="margin-bottom:6px"><span><b>'.esc($row['display_name']).'</b> <span class="muted">('.esc($sp['district']?:'—').', тел.: '.esc($sp['phone']?:'—').')</span> ';
 if($row['confirmed']) $body.='<span class="pill green">в составе</span>'; elseif($row['recommended']) $body.='<span class="pill blue">рекомендован</span>';
 $body.='</span>';
 if($r['status']==='chosen'){
