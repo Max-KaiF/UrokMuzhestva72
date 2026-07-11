@@ -1,6 +1,7 @@
 :root{--navy:#16305B;--navy-d:#0F2342;--amber:#C77700;--ink:#222A33;--muted:#6B7682;--line:#E2E7EE;--line2:#CDD5DF;--bg:#F4F6F9;--green:#2E7D52;--blue:#2E5496;--gray:#8A95A1;--tint:#EEF2F8;--sans:"Segoe UI",Roboto,"PT Sans","Helvetica Neue",Arial,sans-serif}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.5}
+button,input,select,textarea{font-family:inherit}
 .wrap{max-width:1000px;margin:0 auto;padding:24px 18px 60px}
 .top{background:var(--navy);color:#fff;border-bottom:3px solid var(--amber)}
 .topbar{display:flex;align-items:center;gap:13px;max-width:1000px;margin:0 auto;padding:13px 18px}
