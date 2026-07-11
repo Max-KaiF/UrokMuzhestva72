@@ -151,6 +151,7 @@ function material_types(){ return [
 'methodology'=>'Методические рекомендации',
 'other'=>'Иное'
 ]; }
+function material_type_icon($type){ return ['tech_map'=>'🗂️','quiz'=>'❓','video'=>'🎬','methodology'=>'📘','other'=>'📎'][$type]??'📄'; }
 // ---------- CSRF ----------
 function csrf_token(){ if(empty($_SESSION['csrf'])) $_SESSION['csrf']=bin2hex(random_bytes(16)); return $_SESSION['csrf']; }
 function csrf_field(){ return '<input type="hidden" name="csrf" value="'.esc(csrf_token()).'">'; }
@@ -230,7 +231,6 @@ log_action($actor['id'],$actor['role'],'delete_user','users',$target_id,"Уда�
 return [true,"Пользователь {$u['login']} удалён."];
 }
 // ---------- спикеры ----------
-function user_name($id){ if(!$id) return null; $st=db()->prepare('SELECT display_name FROM users WHERE id=?'); $st->execute([$id]); $r=$st->fetch(); return $r?$r['display_name']:null; }
 // ---- календарь недоступности спикера ----
 function list_unavailable($sid){ $st=db()->prepare("SELECT * FROM speaker_unavailable WHERE speaker_user_id=? ORDER BY date_from DESC"); $st->execute([$sid]); return $st->fetchAll(); }
 function add_unavailable_period($speaker,$from,$to,$reason){
@@ -497,28 +497,6 @@ if($ok){ $added++; $names[]=$s['display_name']; }
 }
 if($added===0) return [false,'Не удалось добавить ни одного спикера (возможно, все подходящие уже заняты).'];
 return [true,"Автоматически подобрано спикеров: $added из $maxCount. ".implode(', ',$names).'. Итоговый состав утвердит Фонд.'];
-}
-function fund_set_confirm($r,$sid,$on){
-if($r['status']!=='chosen') return [false,'Состав формируется на этапе «Спикеры выбраны».'];
-if(!is_candidate($r['id'],$sid)) return [false,'Этот спикер не в списке желаемых.'];
-if($on){
-if(count_confirmed($r['id'])>=$r['speakers_needed']) return [false,'Уже выбрано нужное число спикеров ('.$r['speakers_needed'].').'];
-if(speaker_conflicts($sid,$r)) return [false,'Спикер занят в другом учреждении в пределах 2 часов от этого урока.'];
-[$ok,$err]=check_speaker_load($sid,$r['udate'],max(1,(int)($r['lessons_per_speaker']??1))); if(!$ok) return $err;
-}
-db()->prepare("UPDATE request_speakers SET confirmed=? WHERE request_id=? AND speaker_user_id=?")->execute([$on?1:0,$r['id'],$sid]);
-log_action(current_user()['id']??null,'fund','fund_toggle','requests',$r['id'],"Спикер #$sid ".($on?'включён':'убран'));
-return [true,$on?'Спикер включён в состав.':'Спикер убран из состава.'];
-}
-function fund_confirm($r){
-if($r['status']!=='chosen') return [false,'Нет состава, ожидающего подтверждения.'];
-$c=count_confirmed($r['id']);
-if($c<1) return [false,'Отметьте хотя бы одного спикера в состав.'];
-upd($r['id'],['status'=>'confirmed','fund_confirmed_at'=>now()]);
-db()->prepare("DELETE FROM request_speakers WHERE request_id=? AND confirmed=0")->execute([$r['id']]);
-log_action(current_user()['id']??null,'fund','fund_confirm','requests',$r['id'],"Состав подтверждён и закрыт: $c из ".$r['speakers_needed']);
-notify_event('confirmed',$r);
-return [true,'Состав подтверждён Фондом ('.$c.' из '.$r['speakers_needed'].'). Неподтверждённые кандидаты отклонены.'];
 }
 function fund_scope_ids($fund){ $ids=[(int)$fund['id']]; if(empty($fund['parent_fund_id'])){ foreach(child_subfunds($fund) as $c) $ids[]=(int)$c['id']; } return array_values(array_unique($ids)); }
 function speaker_fund_of($sid){ $sp=find_user_by_id($sid); if(!$sp) return null; return $sp['fund_user_id']?find_user_by_id($sp['fund_user_id']):null; }
@@ -949,27 +927,6 @@ $result[] = ['user' => $u, 'count' => count($pending), 'urgent' => count(array_f
 }
 }
 return $result;
-}
-function send_notify_email($toEmail, $toName, $count, $urgentCount) {
-$site = cfg()['site_title'];
-$url = 'https://урокмужества72.рф';
-$subject = "[$site] У вас $count заявка(-ок), требующих действия";
-$body = "Здравствуйте!\r\n\r\n";
-$body .= "В системе \"$site\" у вас есть $count заявка(-ок), по которым требуется ваше действие.\r\n";
-if ($urgentCount > 0) {
-$body .= "ВНИМАНИЕ: $urgentCount из них требуют срочного внимания (близится дата проведения).\r\n\r\n";
-} else {
-$body .= "\r\n";
-}
-$body .= "Пожалуйста, войдите в систему для просмотра деталей:\r\n$url\r\n\r\n";
-$body .= "Это автоматическое уведомление. Не отвечайте на это письмо.\r\n";
-$fromEmail = 'task@урокмужества72.рф';
-$headers = "From: $site <$fromEmail>\r\n";
-$headers .= "Reply-To: $fromEmail\r\n";
-$headers .= "X-Mailer: PHP/" . phpversion() . "\r\n";
-$headers .= "Content-Type: text/plain; charset=UTF-8\r\n";
-$headers .= "Content-Transfer-Encoding: 8bit\r\n";
-return @mail($toEmail, $subject, $body, $headers);
 }
 function mail_log($msg){ @file_put_contents(__DIR__.'/mail_error.log', date('Y-m-d H:i:s').' — '.$msg."\n", FILE_APPEND); }
 function send_smtp_email($toEmail, $toName, $subject, $body) {

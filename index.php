@@ -255,49 +255,7 @@ $u=current_user(); $c=cfg(); $sess='';
 if($u){ $nm=($u['role']==='school')?($u['org_name']?:$u['display_name']):$u['display_name']; $roleWord=['operator'=>'Департамент','school'=>'Заявитель','speaker'=>'Спикер','fund'=>'Фонд'][$u['role']]??''; $label=$roleWord.(trim((string)$nm)!==''?': '.$nm:'');
 $sess='<span class="rolebadge">'.esc($label).'</span> <a class="rolebadge" href="?p=profile" style="text-decoration:none">Профиль</a> <form method="post" style="display:inline"><input type="hidden" name="action" value="logout">'.csrf_field().'<button class="logout">Выйти</button></form>'; }
 $f=flash_get();
-echo '<!DOCTYPE html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'.esc($title).'</title><link rel="icon" href="favicon.ico"><link rel="stylesheet" href="style.css">';
-echo '<style>
-:root{--rf-blue:#0039A6;--rf-red:#D52B1E;}
-html,body,h1,h2,h3,h4,h5,p,a,span,div,button,input,select,textarea,label,table,th,td,li{font-family:"Segoe UI",Roboto,"PT Sans","Helvetica Neue",Arial,sans-serif !important;}
-body{background:linear-gradient(rgba(255,255,255,.78),rgba(255,255,255,.78)), url(flag-russia.jpg) center center / cover no-repeat fixed !important;color:#1a1a1a;}
-header.top{background:var(--rf-blue) !important;}
-header.top .brand h1, header.top .brand p, header.top .mark{color:#ffffff !important;}
-header.top .rolebadge{background:rgba(255,255,255,.18) !important;color:#fff !important;}
-h1,h2,h3,h4{color:var(--rf-blue) !important;}
-a{color:var(--rf-blue);}
-.btn.primary{background:var(--rf-blue) !important;border-color:var(--rf-blue) !important;color:#fff !important;}
-.kpi .n{color:var(--rf-blue) !important;}
-.pill.blue{background:#e6eefb !important;color:var(--rf-blue) !important;}
-.action-block{border-left:4px solid var(--rf-red) !important;background:#f6f9ff !important;}
-.action-badge{background:var(--rf-red) !important;color:#fff !important;}
-.stepper{display:flex;flex-wrap:wrap;gap:14px;}
-.stepper .st{display:flex;align-items:center;gap:6px;color:#8a8f98;font-size:14px;}
-.stepper .st .mk{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:#d2d6dc;color:#555;font-size:13px;font-weight:600;}
-.stepper .st.done{color:#1a7f37 !important;}
-.stepper .st.done .mk{background:#1a7f37 !important;color:#fff !important;}
-.stepper .st.cur{color:var(--rf-red) !important;font-weight:600;}
-.stepper .st.cur .mk{background:var(--rf-red) !important;color:#fff !important;}
-.turn-banner{border-radius:10px;padding:12px 14px;margin:0 0 14px;font-size:15px;}
-.turn-you{background:#fdecea;border:1px solid #f5c6c0;color:#b23b2c;}
-.turn-other{background:#eef3fb;border:1px solid #d4e0f3;color:#0039A6;}
-.hint-warn{background:#fff8e1;border:1px solid #ffe082;border-left:4px solid #C77700;border-radius:8px;padding:10px 14px;margin:10px 0;color:#7a5200;font-size:14px}
-.hint-warn b{color:#9a6000}
-.notes-block{background:#fffbea;border:1px solid #ffe082;border-left:4px solid #C77700;border-radius:8px;padding:10px 14px;margin:10px 0;color:#7a5200;font-size:14px}
-.notes-block b{color:#9a6000}
-@media (max-width: 680px){
-table.card-view{display:block;border:none;background:transparent;box-shadow:none}
-table.card-view thead{display:none}
-table.card-view tbody{display:block}
-table.card-view tr{display:block;background:#fff;border:1px solid #E2E7EE;border-radius:12px;margin-bottom:12px;padding:14px;box-shadow:0 1px 3px rgba(16,35,66,.06)}
-table.card-view td{display:block;border:none;padding:5px 0;text-align:left;font-size:14px}
-table.card-view td.id{font-size:15px;color:#16305B;font-weight:600;padding-bottom:8px;margin-bottom:6px;border-bottom:1px solid #E2E7EE}
-table.card-view td:before{content:attr(data-label);display:block;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#6B7682;font-weight:600;margin-bottom:2px}
-.kpis{grid-template-columns:repeat(2,1fr)}
-.head{flex-direction:column;align-items:flex-start}
-.head h2{width:100%}
-.wrap{padding:16px 12px 40px}
-}
-</style></head><body>';
+echo '<!DOCTYPE html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'.esc($title).'</title><link rel="icon" href="favicon.ico"><link rel="stylesheet" href="style.css"></head><body>';
 echo '<header class="top"><div class="topbar"><div class="mark"><img src="favicon.ico" alt="" style="width:100%;height:100%;object-fit:contain"></div><div class="brand"><h1>Урок Мужества</h1></div><div class="session">'.$sess.'</div></div></header>';
 echo '<main class="wrap">'; if($f) echo '<div class="flash">'.esc($f).'</div>'; echo $body.'</main>';
 echo '<footer style="text-align:center;padding:20px;color:var(--muted);font-size:12px"><a href="?p=privacy">Политика обработки персональных данных (152-ФЗ)</a></footer>';
@@ -621,7 +579,7 @@ $pendN=count(pending_applicants($u));
 $action_req = get_action_required_requests($u);
 $body = '';
 if ($action_req) {
-$body .= '<div class="action-block"><h4>️ Требует вашего действия <span class="action-badge">'.count($action_req).'</span></h4><ul class="action-list">';
+$body .= '<div class="action-block"><h4>⚠️ Требует вашего действия <span class="action-badge">'.count($action_req).'</span></h4><ul class="action-list">';
 foreach ($action_req as $ar) {
 $msg = whose_turn($ar)[1];
 $urgent_cls = is_request_urgent($ar) ? ' <span class="muted">(Срок скоро!)</span>' : '';
@@ -688,16 +646,16 @@ $pendN=count(pending_applicants($u));
 $deptFilter=(($u['op_group']??'')==='school')?'school':'';
 $body='<div class="head"><h2>Инструменты</h2><a class="btn ghost" href="?p=operator">← к заявкам</a></div>';
 $body.='<div style="display:flex;gap:8px;flex-wrap:wrap">
-<a class="btn ghost" href="?p=export&type=requests&dept='.esc($deptFilter).'"> Экспорт заявок (CSV)</a>
+<a class="btn ghost" href="?p=export&type=requests&dept='.esc($deptFilter).'">📤 Экспорт заявок (CSV)</a>
 <a class="btn ghost" href="?p=export&type=speakers">📥 Экспорт спикеров (CSV)</a>
 <a class="btn ghost" href="?p=export&type=report&dept='.esc($deptFilter).'">📊 Отчёт для департамента (CSV)</a>
 <a class="btn ghost" href="?p=operator&tab=moderation">👤 Модерация заявителей'.($pendN?' ('.$pendN.')':'').'</a>
 <a class="btn ghost" href="?p=users">👥 Пользователи</a>
 <a class="btn ghost" href="?p=districts">🗺️ Районы</a>
 <a class="btn ghost" href="?p=audit">📋 Журнал действий</a>
-<a class="btn ghost" href="?p=calendar"> Календарь</a>
+<a class="btn ghost" href="?p=calendar">📅 Календарь</a>
 <a class="btn ghost" href="?p=operator&tab=archive">🗄️ Архив</a>
-<form method="get" style="display:inline"><input type="hidden" name="p" value="archive_run"><button class="btn ghost" onclick="return confirm(\'Архивировать?\')">️ Запустить архивацию</button></form>
+<form method="get" style="display:inline"><input type="hidden" name="p" value="archive_run"><button class="btn ghost" onclick="return confirm(\'Архивировать?\')">🗄️ Запустить архивацию</button></form>
 <a class="btn ghost" href="?p=operator&tab=speakers">Реестр спикеров</a>
 <a class="btn ghost" href="?p=materials">🗂️ Материалы</a>
 </div>';
@@ -719,18 +677,25 @@ if($p==='materials'){
 $typeFilter=$_GET['type']??'';
 $rows=list_materials($typeFilter?:null);
 $body='<div class="head"><h2>Материалы</h2>'.($u['role']==='operator'?'<a class="btn primary" href="?p=material_edit">+ Добавить материал</a>':'').'</div>';
-$body.='<form method="get" style="margin-bottom:14px"><input type="hidden" name="p" value="materials"><label class="lbl" style="margin:0">Вид материала</label><select name="type" onchange="this.form.submit()"><option value="">Все</option>';
+$body.='<form method="get" style="margin-bottom:14px"><input type="hidden" name="p" value="materials"><label class="lbl" style="margin:0">Вид материала</label><select name="type" class="form-select" style="max-width:320px;display:inline-block;width:auto" onchange="this.form.submit()"><option value="">Все</option>';
 foreach(material_types() as $k=>$v) $body.='<option value="'.esc($k).'" '.($typeFilter===$k?'selected':'').'>'.esc($v).'</option>';
 $body.='</select></form>';
-if(!$rows) $body.='<div class="card pad muted">Материалов пока нет.</div>';
+if(!$rows){
+$body.='<div class="empty-state"><div class="empty-icon">🗂️</div><h3>Материалов пока нет</h3><p class="muted">'.($u['role']==='operator'?'Загрузите первый материал кнопкой выше.':'Департамент ещё не добавил ни одного материала.').'</p></div>';
+} else {
+$body.='<div class="materials-grid">';
 foreach($rows as $m){
-$link=!empty($m['file_path'])?'<a class="btn ghost sm" href="?p=material_download&id='.$m['id'].'">⬇ Скачать'.($m['file_size']?' ('.material_size_label($m['file_size']).')':'').'</a>':'';
-if(!empty($m['link'])) $link.=' <a class="btn ghost sm" href="'.esc($m['link']).'" target="_blank" rel="noopener">🔗 Ссылка на материал</a>';
-$body.='<div class="card pad" style="margin-bottom:10px"><b>'.esc($m['title']).'</b> <span class="pill blue">'.esc(material_types()[$m['type']]??$m['type']).'</span> <span class="muted">· тема: '.esc($m['topic']?:'—').'</span>';
-if(!empty($m['description'])) $body.='<p class="muted" style="margin:6px 0">'.nl2br(esc($m['description'])).'</p>';
-$body.='<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">'.$link;
-if($u['role']==='operator') $body.='<a class="btn ghost sm" href="?p=material_edit&id='.$m['id'].'">✏️ Редактировать</a><form method="post" style="display:inline" onsubmit="return confirm(\'Удалить материал?\')">'.csrf_field().'<input type="hidden" name="action" value="delete_material"><input type="hidden" name="id" value="'.$m['id'].'"><button class="btn ghost sm" style="color:#b23b2c;border-color:#f5c6c0">Удалить</button></form>';
-$body.='<span class="muted" style="font-size:12px">загрузил: '.esc($m['uploader']?:'—').' · '.esc(substr((string)$m['created_at'],0,10)).'</span></div></div>';
+$body.='<div class="material-card"><div class="material-header"><div class="material-icon">'.material_type_icon($m['type']).'</div><div class="material-info"><div class="material-title">'.esc($m['title']).'</div><div class="material-meta"><span class="material-type">'.esc(material_types()[$m['type']]??$m['type']).'</span><span>тема: '.esc($m['topic']?:'—').'</span></div></div></div>';
+$body.='<div class="material-body">';
+if(!empty($m['description'])) $body.='<div class="material-desc">'.nl2br(esc($m['description'])).'</div>';
+$body.='<div class="material-actions">';
+if(!empty($m['file_path'])) $body.='<a class="btn-download" href="?p=material_download&id='.$m['id'].'">⬇ Скачать'.($m['file_size']?' ('.material_size_label($m['file_size']).')':'').'</a>';
+if(!empty($m['link'])) $body.='<a class="btn ghost sm" href="'.esc($m['link']).'" target="_blank" rel="noopener">🔗 Ссылка</a>';
+if($u['role']==='operator') $body.='<a class="btn ghost sm" href="?p=material_edit&id='.$m['id'].'">✏️</a><form method="post" style="display:inline" onsubmit="return confirm(\'Удалить материал?\')">'.csrf_field().'<input type="hidden" name="action" value="delete_material"><input type="hidden" name="id" value="'.$m['id'].'"><button type="submit" class="btn-delete">Удалить</button></form>';
+$body.='</div><div class="muted" style="font-size:12px;margin-top:10px">загрузил: '.esc($m['uploader']?:'—').' · '.esc(substr((string)$m['created_at'],0,10)).'</div>';
+$body.='</div></div>';
+}
+$body.='</div>';
 }
 layout('Материалы',$body); exit;
 }
@@ -740,15 +705,14 @@ $id=(int)($_GET['id']??0); $m=$id?get_material($id):null;
 if($id && !$m){ layout('Материал','<div class="card pad">Материал не найден. <a href="?p=materials">Назад</a></div>'); exit; }
 $tOpt=''; foreach(material_types() as $k=>$v) $tOpt.='<option value="'.esc($k).'" '.(($m['type']??'')===$k?'selected':'').'>'.esc($v).'</option>';
 $body='<div class="head"><h2>'.($m?'Редактирование материала':'Добавить материал').'</h2><a class="btn ghost" href="?p=materials">← к материалам</a></div>';
-$body.='<form method="post" class="card pad" style="max-width:640px" enctype="multipart/form-data">'.csrf_field().'<input type="hidden" name="action" value="'.($m?'update_material':'add_material').'">'.($m?'<input type="hidden" name="id" value="'.$m['id'].'">':'');
-$body.='<label class="lbl">Название <span style="color:#d11">*</span></label><input name="title" required value="'.esc($m['title']??'').'">';
-$body.='<label class="lbl">Тема <span style="color:#d11">*</span></label><input name="topic" required list="topics_dl" value="'.esc($m['topic']??'').'"><datalist id="topics_dl">'; foreach(material_topics() as $t) $body.='<option value="'.esc($t).'">'; $body.='</datalist>';
-$body.='<label class="lbl">Вид материала <span style="color:#d11">*</span></label><select name="type" required><option value="">— выберите —</option>'.$tOpt.'</select>';
-$body.='<label class="lbl">Описание</label><textarea name="description">'.esc($m['description']??'').'</textarea>';
-$body.='<label class="lbl">Файл (до 100 МБ)'.(!empty($m['file_path'])?' — сейчас: '.esc($m['file_name']):'').'</label><input type="file" name="file">';
-$body.='<label class="lbl">Или ссылка на файл</label><input name="link" value="'.esc($m['link']??'').'" placeholder="https://...">';
-$body.='<p class="muted" style="margin:6px 0 0">Нужно указать файл или ссылку (можно оба).</p>';
-$body.='<button class="btn primary" style="margin-top:12px">Сохранить</button></form>';
+$body.='<form method="post" class="upload-form" enctype="multipart/form-data">'.csrf_field().'<input type="hidden" name="action" value="'.($m?'update_material':'add_material').'">'.($m?'<input type="hidden" name="id" value="'.$m['id'].'">':'');
+$body.='<div class="form-group"><label class="form-label">Название <span style="color:#d11">*</span></label><input class="form-input" name="title" required value="'.esc($m['title']??'').'"></div>';
+$body.='<div class="form-group"><label class="form-label">Тема <span style="color:#d11">*</span></label><input class="form-input" name="topic" required list="topics_dl" value="'.esc($m['topic']??'').'"><datalist id="topics_dl">'; foreach(material_topics() as $t) $body.='<option value="'.esc($t).'">'; $body.='</datalist></div>';
+$body.='<div class="form-group"><label class="form-label">Вид материала <span style="color:#d11">*</span></label><select class="form-select" name="type" required><option value="">— выберите —</option>'.$tOpt.'</select></div>';
+$body.='<div class="form-group"><label class="form-label">Описание</label><textarea class="form-textarea" name="description">'.esc($m['description']??'').'</textarea></div>';
+$body.='<div class="form-group"><label class="form-label">Файл (до 100 МБ)</label><div class="file-upload-wrapper"><input class="file-input" type="file" name="file" id="material_file" onchange="document.getElementById(\'material_file_name\').textContent=this.files.length?this.files[0].name:\'Файл не выбран\';"><label for="material_file" class="file-upload-label"><span>📎</span><span class="file-upload-text">Нажмите, чтобы выбрать файл</span><span class="file-name" id="material_file_name">'.($m&&!empty($m['file_path'])?esc($m['file_name']):'Файл не выбран').'</span></label></div></div>';
+$body.='<div class="form-group"><label class="form-label">Или ссылка на файл</label><input class="form-input" name="link" value="'.esc($m['link']??'').'" placeholder="https://..."><p class="form-hint">Нужно указать файл или ссылку (можно оба).</p></div>';
+$body.='<div class="form-actions"><button class="btn primary btn-lg">Сохранить</button></div></form>';
 layout('Материал',$body); exit;
 }
 // ========== КАБИНЕТ ФОНДА ==========
@@ -763,7 +727,7 @@ $body.='<form method="post" class="card pad" style="margin-bottom:10px">'.csrf_f
 $act=active_speakers($u); $body.='<h4>Подтверждённые спикеры</h4><table class="card-view"><thead><tr><th>Спикер</th><th>Район</th><th>Телефон</th><th>Возрастные группы</th></tr></thead><tbody>';
 foreach($act as $s){ $g=array_map(fn($k)=>ages()[$k]??$k,array_filter(explode(',',$s['age_groups']))); $body.='<tr><td class="id">'.esc($s['display_name']).'</td><td class="muted">'.esc($s['district']?:'—').'</td><td class="muted">'.esc($s['phone']?:'—').'</td><td class="muted">'.esc(implode(', ',$g)).'</td></tr>'; }
 if(!$act) $body.='<tr><td colspan="4" class="muted">Пока нет.</td></tr>'; $body.='</tbody></table>';
-$body.='<div style="margin-top:14px;display:flex;gap:8px"><a class="btn ghost" href="?p=users&role=speaker"> Управление спикерами</a><a class="btn ghost" href="?p=audit&user_role=speaker">📋 Журнал</a><a class="btn ghost" href="?p=calendar"> Календарь</a></div>';
+$body.='<div style="margin-top:14px;display:flex;gap:8px"><a class="btn ghost" href="?p=users&role=speaker">👥 Управление спикерами</a><a class="btn ghost" href="?p=audit&user_role=speaker">📋 Журнал</a><a class="btn ghost" href="?p=calendar">📅 Календарь</a></div>';
 layout('Спикеры Фонда',$body); exit;
 }
 $rows=fund_requests($u);
@@ -828,7 +792,7 @@ $st=db()->prepare('SELECT * FROM requests WHERE school_user_id=? AND (archived=0
 $action_req = get_action_required_requests($u);
 $body = '';
 if ($action_req) {
-$body .= '<div class="action-block"><h4>️ Требует вашего действия <span class="action-badge">'.count($action_req).'</span></h4><ul class="action-list">';
+$body .= '<div class="action-block"><h4>⚠️ Требует вашего действия <span class="action-badge">'.count($action_req).'</span></h4><ul class="action-list">';
 foreach ($action_req as $ar) {
 $msg = whose_turn($ar)[1];
 $urgent_cls = is_request_urgent($ar) ? ' <span class="muted">(Срок скоро!)</span>' : '';
@@ -840,7 +804,7 @@ $tr=''; foreach($rows as $r){
 $urgent_tr = is_request_urgent($r) ? 'urgent' : '';
 $tr.='<tr class="'.$urgent_tr.'" onclick="location=\'?p=request&id='.$r['id'].'\'"><td class="id">'.esc($r['code']).'</td><td>'.dt($r).'</td><td>'.esc(ages()[$r['age_group']]??'').'</td><td>'.esc(req_label($r['id'])).'</td><td>'.pill($r['status']).'</td></tr>';
 }
-$body.='<div class="head"><h2>'.esc($u['org_name']).'</h2><div><a class="btn primary" href="?p=school&tab=new">+ Подать заявку</a> <a class="btn ghost" href="?p=calendar"> Календарь</a></div></div>';
+$body.='<div class="head"><h2>'.esc($u['org_name']).'</h2><div><a class="btn primary" href="?p=school&tab=new">+ Подать заявку</a> <a class="btn ghost" href="?p=calendar">📅 Календарь</a></div></div>';
 $body.= $rows ? '<table class="card-view"><thead><tr><th>Код</th><th>Дата и время</th><th>Аудитория</th><th>Спикеры</th><th>Статус</th></tr></thead><tbody>'.$tr.'</tbody></table>' : '<div class="card pad muted">Заявок пока нет. Нажмите «Подать заявку».</div>';
 layout('Кабинет заявителя',$body); exit;
 }
@@ -852,7 +816,7 @@ $rows=speaker_lessons($u['id']);
 $daily=speaker_daily_count($u['id'],date('Y-m-d'));
 $weekly=speaker_weekly_count($u['id'],date('Y-m-d'));
 $tr=''; foreach($rows as $r){ $mark=$r['cfd']?'<span class="pill green">в составе</span>':(st_index($r['status'])>=st_index('confirmed')?'<span class="pill gray">не выбран</span>':'<span class="pill gray">кандидат</span>'); $tr.='<tr onclick="location=\'?p=request&id='.$r['id'].'\'"><td class="id">'.esc($r['code']).'</td><td>'.esc($r['org']).'</td><td>'.dt($r).'</td><td>'.$mark.'</td><td>'.pill($r['status']).'</td></tr>'; }
-$body='<div class="head"><h2>Мои уроки</h2><div><a class="btn ghost" href="?p=calendar"> Календарь</a></div></div>';
+$body='<div class="head"><h2>Мои уроки</h2><div><a class="btn ghost" href="?p=calendar">📅 Календарь</a></div></div>';
 $body.='<div class="kpis"><div class="kpi"><div class="n">'.$daily.' / 2</div><div class="l">Уроков сегодня</div></div><div class="kpi"><div class="n">'.$weekly.' / 7</div><div class="l">Уроков на неделе</div></div><div class="kpi"><div class="n">'.count($rows).'</div><div class="l">Всего назначено</div></div></div>';
 $body.= $rows ? '<table class="card-view"><thead><tr><th>Код</th><th>Организация</th><th>Дата и время</th><th>Вы</th><th>Статус</th></tr></thead><tbody>'.$tr.'</tbody></table>' : '<div class="card pad muted">Назначенных уроков пока нет.</div>';
 // ========== КАЛЕНДАРЬ НЕДОСТУПНОСТИ ==========
