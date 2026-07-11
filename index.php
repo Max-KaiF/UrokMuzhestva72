@@ -749,7 +749,7 @@ $urgent_tr = is_request_urgent($r) ? 'urgent' : '';
 $need=in_array($r['status'],['chosen','confirmed'])?' <span class="pill amber">нужно действие</span>':'';
 $tr.='<tr class="'.$urgent_tr.'" onclick="location=\'?p=request&id='.$r['id'].'\'"><td class="id">'.esc($r['code']).'</td><td>'.esc($r['org']).'</td><td>'.dt($r).'</td><td>'.esc(req_label($r['id'])).'</td><td>'.pill($r['status']).$need.'</td></tr>';
 }
-$body.='<div class="head"><h2>Заявки со спикерами</h2><div><a class="btn ghost" href="?p=fund&tab=speakers">Спикеры Фонда</a> <a class="btn ghost" href="?p=calendar">📅 Календарь</a></div></div>';
+$body.='<div class="head"><h2>Заявки со спикерами</h2><div><a class="btn ghost" href="?p=fund&tab=speakers">Спикеры Фонда</a> <a class="btn ghost" href="?p=calendar">📅 Календарь</a> <a class="btn ghost" href="?p=materials">🗂️ Материалы</a></div></div>';
 $body.= $rows ? '<table class="card-view"><thead><tr><th>Код</th><th>Организация</th><th>Дата и время</th><th>Спикеры</th><th>Статус</th></tr></thead><tbody>'.$tr.'</tbody></table>' : '<div class="card pad muted">Пока нет заявок с выбранными спикерами.</div>';
 layout('Кабинет Фонда',$body); exit;
 }
@@ -804,7 +804,7 @@ $tr=''; foreach($rows as $r){
 $urgent_tr = is_request_urgent($r) ? 'urgent' : '';
 $tr.='<tr class="'.$urgent_tr.'" onclick="location=\'?p=request&id='.$r['id'].'\'"><td class="id">'.esc($r['code']).'</td><td>'.dt($r).'</td><td>'.esc(ages()[$r['age_group']]??'').'</td><td>'.esc(req_label($r['id'])).'</td><td>'.pill($r['status']).'</td></tr>';
 }
-$body.='<div class="head"><h2>'.esc($u['org_name']).'</h2><div><a class="btn primary" href="?p=school&tab=new">+ Подать заявку</a> <a class="btn ghost" href="?p=calendar">📅 Календарь</a></div></div>';
+$body.='<div class="head"><h2>'.esc($u['org_name']).'</h2><div><a class="btn primary" href="?p=school&tab=new">+ Подать заявку</a> <a class="btn ghost" href="?p=calendar">📅 Календарь</a> <a class="btn ghost" href="?p=materials">🗂️ Материалы</a></div></div>';
 $body.= $rows ? '<table class="card-view"><thead><tr><th>Код</th><th>Дата и время</th><th>Аудитория</th><th>Спикеры</th><th>Статус</th></tr></thead><tbody>'.$tr.'</tbody></table>' : '<div class="card pad muted">Заявок пока нет. Нажмите «Подать заявку».</div>';
 layout('Кабинет заявителя',$body); exit;
 }
@@ -816,7 +816,7 @@ $rows=speaker_lessons($u['id']);
 $daily=speaker_daily_count($u['id'],date('Y-m-d'));
 $weekly=speaker_weekly_count($u['id'],date('Y-m-d'));
 $tr=''; foreach($rows as $r){ $mark=$r['cfd']?'<span class="pill green">в составе</span>':(st_index($r['status'])>=st_index('confirmed')?'<span class="pill gray">не выбран</span>':'<span class="pill gray">кандидат</span>'); $tr.='<tr onclick="location=\'?p=request&id='.$r['id'].'\'"><td class="id">'.esc($r['code']).'</td><td>'.esc($r['org']).'</td><td>'.dt($r).'</td><td>'.$mark.'</td><td>'.pill($r['status']).'</td></tr>'; }
-$body='<div class="head"><h2>Мои уроки</h2><div><a class="btn ghost" href="?p=calendar">📅 Календарь</a></div></div>';
+$body='<div class="head"><h2>Мои уроки</h2><div><a class="btn ghost" href="?p=calendar">📅 Календарь</a> <a class="btn ghost" href="?p=materials">🗂️ Материалы</a></div></div>';
 $body.='<div class="kpis"><div class="kpi"><div class="n">'.$daily.' / 2</div><div class="l">Уроков сегодня</div></div><div class="kpi"><div class="n">'.$weekly.' / 7</div><div class="l">Уроков на неделе</div></div><div class="kpi"><div class="n">'.count($rows).'</div><div class="l">Всего назначено</div></div></div>';
 $body.= $rows ? '<table class="card-view"><thead><tr><th>Код</th><th>Организация</th><th>Дата и время</th><th>Вы</th><th>Статус</th></tr></thead><tbody>'.$tr.'</tbody></table>' : '<div class="card pad muted">Назначенных уроков пока нет.</div>';
 // ========== КАЛЕНДАРЬ НЕДОСТУПНОСТИ ==========
