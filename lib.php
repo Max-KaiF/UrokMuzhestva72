@@ -48,9 +48,12 @@ db()->exec("CREATE TABLE IF NOT EXISTS districts (
 id $pk, name VARCHAR(120) UNIQUE, neighbors TEXT, created_at VARCHAR(40)
 )$tail");
 db()->exec("CREATE TABLE IF NOT EXISTS materials (
-id $pk, title VARCHAR(255) NOT NULL, description TEXT, type VARCHAR(50),
-file_path VARCHAR(500) NOT NULL, file_name VARCHAR(255), file_size INTEGER,
+id $pk, title VARCHAR(255) NOT NULL, description TEXT, type VARCHAR(50), topic VARCHAR(255), link VARCHAR(500),
+file_path VARCHAR(500), file_name VARCHAR(255), file_size INTEGER,
 uploaded_by INTEGER, created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)$tail");
+db()->exec("CREATE TABLE IF NOT EXISTS speaker_unavailable (
+id $pk, speaker_user_id INTEGER, date_from VARCHAR(20), date_to VARCHAR(20), reason VARCHAR(120), created_at VARCHAR(40)
 )$tail");
 foreach([
 "ALTER TABLE users ADD COLUMN fund_user_id INTEGER",
@@ -74,6 +77,11 @@ foreach([
 "ALTER TABLE requests ADD COLUMN district VARCHAR(120)",
 "ALTER TABLE request_speakers ADD COLUMN recommended INTEGER DEFAULT 0",
 "ALTER TABLE requests ADD COLUMN needs_replacement INTEGER DEFAULT 0",
+"ALTER TABLE users ADD COLUMN address VARCHAR(255)",
+"ALTER TABLE users ADD COLUMN building VARCHAR(40)",
+"ALTER TABLE materials ADD COLUMN topic VARCHAR(255)",
+"ALTER TABLE materials ADD COLUMN link VARCHAR(500)",
+"ALTER TABLE materials MODIFY COLUMN file_path VARCHAR(500) NULL",
 "UPDATE requests SET status='confirmed', briefing_done=1 WHERE status='brief'",
 ] as $sql){ try{ db()->exec($sql); }catch(Throwable $e){} }
 try{ db()->exec("UPDATE requests SET speakers_needed=1 WHERE speakers_needed IS NULL"); }catch(Throwable $e){}
@@ -116,16 +124,6 @@ function statuses(){ return [
 ['k'=>'closed','label'=>'Закрыта','color'=>'green'],
 ]; }
 function st_index($k){ if($k==='brief') $k='confirmed'; foreach(statuses() as $i=>$s) if($s['k']===$k) return $i; return 0; }
-function lesson_topics(){ return [
-'Что такое мужество и воинский долг',
-'Герои рядом: истории участников СВО',
-'Почему Россия непобедима',
-'Дружба, взаимовыручка и войсковое товарищество',
-'Любовь к Родине и своей малой родине',
-'Историческая правда и память поколений',
-'Выбор профессии защитника Отечества',
-'Ценность мирной жизни и цена Победы',
-]; }
 function st_meta($k){ if($k==='cancelled') return ['k'=>'cancelled','label'=>'Не состоялся','color'=>'red']; foreach(statuses() as $s) if($s['k']===$k) return $s; return statuses()[0]; }
 // ========== ТИПОВЫЕ ПРИЧИНЫ ==========
 function cancel_reasons(){ return ['Спикер не приехал','Отменила организация-заявитель','Технические причины','Другое']; }
@@ -150,10 +148,10 @@ function material_types(){ return [
 'tech_map'=>'Технологическая карта',
 'quiz'=>'Викторина',
 'video'=>'Видеоролик',
-'presentation'=>'Презентация',
 'methodology'=>'Методические рекомендации',
-'other'=>'Другое'
+'other'=>'Иное'
 ]; }
+function material_type_icon($type){ return ['tech_map'=>'🗂️','quiz'=>'❓','video'=>'🎬','methodology'=>'📘','other'=>'📎'][$type]??'📄'; }
 // ---------- CSRF ----------
 function csrf_token(){ if(empty($_SESSION['csrf'])) $_SESSION['csrf']=bin2hex(random_bytes(16)); return $_SESSION['csrf']; }
 function csrf_field(){ return '<input type="hidden" name="csrf" value="'.esc(csrf_token()).'">'; }
@@ -168,8 +166,8 @@ function find_user_by_id($id){ if(!$id) return null; $st=db()->prepare('SELECT *
 function create_user($role,$login,$pass,$extra=[]){
 if(find_user_by_login($login)) return [false,'Такой логин уже занят.'];
 $active=array_key_exists('active',$extra)?(int)$extra['active']:(($role==='speaker'||$role==='school')?0:1);
-$st=db()->prepare('INSERT INTO users(role,login,pass_hash,display_name,org_name,level,age_groups,active,created_at,email,op_group,district,phone,parent_fund_id,fund_user_id,contact_name,position) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
-$st->execute([$role,$login,password_hash($pass,PASSWORD_DEFAULT),$extra['display_name']??'',$extra['org_name']??'',$extra['level']??'',$extra['groups']??'',$active,now(),$extra['email']??'',$extra['op_group']??'',$extra['district']??'',$extra['phone']??'',($extra['parent_fund_id']??null)?:null,($extra['fund_user_id']??null)?:null,$extra['contact_name']??'',$extra['position']??'']);
+$st=db()->prepare('INSERT INTO users(role,login,pass_hash,display_name,org_name,level,age_groups,active,created_at,email,op_group,district,phone,parent_fund_id,fund_user_id,contact_name,position,address,building) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
+$st->execute([$role,$login,password_hash($pass,PASSWORD_DEFAULT),$extra['display_name']??'',$extra['org_name']??'',$extra['level']??'',$extra['groups']??'',$active,now(),$extra['email']??'',$extra['op_group']??'',$extra['district']??'',$extra['phone']??'',($extra['parent_fund_id']??null)?:null,($extra['fund_user_id']??null)?:null,$extra['contact_name']??'',$extra['position']??'',$extra['address']??'',$extra['building']??'']);
 $newId=db()->lastInsertId();
 log_action(null,$role,'user_create','users',$newId,"Создан пользователь $login");
 return [true,$newId];
@@ -233,7 +231,29 @@ log_action($actor['id'],$actor['role'],'delete_user','users',$target_id,"Уда�
 return [true,"Пользователь {$u['login']} удалён."];
 }
 // ---------- спикеры ----------
-function user_name($id){ if(!$id) return null; $st=db()->prepare('SELECT display_name FROM users WHERE id=?'); $st->execute([$id]); $r=$st->fetch(); return $r?$r['display_name']:null; }
+// ---- календарь недоступности спикера ----
+function list_unavailable($sid){ $st=db()->prepare("SELECT * FROM speaker_unavailable WHERE speaker_user_id=? ORDER BY date_from DESC"); $st->execute([$sid]); return $st->fetchAll(); }
+function add_unavailable_period($speaker,$from,$to,$reason){
+$from=substr((string)$from,0,10); $to=substr((string)$to,0,10);
+if(!DateTime::createFromFormat('Y-m-d',$from) || !DateTime::createFromFormat('Y-m-d',$to)) return [false,'Укажите корректные даты.'];
+if($to<$from) return [false,'Дата окончания раньше даты начала.'];
+$reason=trim((string)$reason); if($reason==='') return [false,'Укажите причину.'];
+db()->prepare("INSERT INTO speaker_unavailable(speaker_user_id,date_from,date_to,reason,created_at) VALUES(?,?,?,?,?)")->execute([$speaker['id'],$from,$to,$reason,now()]);
+log_action($speaker['id'],'speaker','add_unavailable','users',$speaker['id'],"Добавлен период недоступности: $from — $to ($reason)");
+return [true,'Период добавлен.'];
+}
+function remove_unavailable_period($speaker,$id){
+$st=db()->prepare("SELECT * FROM speaker_unavailable WHERE id=? AND speaker_user_id=?"); $st->execute([$id,$speaker['id']]); $row=$st->fetch();
+if(!$row) return [false,'Период не найден.'];
+db()->prepare("DELETE FROM speaker_unavailable WHERE id=?")->execute([$id]);
+log_action($speaker['id'],'speaker','remove_unavailable','users',$speaker['id'],"Удалён период недоступности: {$row['date_from']} — {$row['date_to']}");
+return [true,'Период удалён.'];
+}
+function speaker_is_unavailable($sid,$date){
+$date=substr((string)$date,0,10); if($date==='') return false;
+$st=db()->prepare("SELECT COUNT(*) c FROM speaker_unavailable WHERE speaker_user_id=? AND date_from<=? AND date_to>=?");
+$st->execute([$sid,$date,$date]); return (int)$st->fetch()['c']>0;
+}
 function pending_speakers($fund=null){ if($fund){ $st=db()->prepare("SELECT * FROM users WHERE role='speaker' AND active=0 AND fund_user_id=? ORDER BY id DESC"); $st->execute([$fund['id']]); return $st->fetchAll(); } return db()->query("SELECT * FROM users WHERE role='speaker' AND active=0 ORDER BY id DESC")->fetchAll(); }
 // ---- районы и фонды ----
 function districts_list(){ return db()->query("SELECT * FROM districts ORDER BY name")->fetchAll(); }
@@ -299,25 +319,25 @@ db()->prepare("DELETE FROM users WHERE id=? AND active=0")->execute([$uid]);
 log_action($operator['id'],'operator','reject_applicant','users',$uid,"Заявитель отклонён: ".$a['org_name']);
 return [true,'Заявитель отклонён.'];
 }
-function speaker_rating($id){
-$st=db()->prepare("SELECT AVG(r.fb_app_rating) a, COUNT(r.fb_app_rating) c FROM requests r JOIN request_speakers rs ON rs.request_id=r.id WHERE rs.speaker_user_id=? AND rs.confirmed=1 AND r.fb_app_rating IS NOT NULL");
-$st->execute([$id]); $x=$st->fetch(); return ($x&&$x['c']>0)?[round($x['a'],1),(int)$x['c']]:[null,0];
-}
 function speaker_lessons($id){ $st=db()->prepare("SELECT r.*, rs.confirmed cfd, rs.vet_rating vr, rs.vet_comment vc FROM requests r JOIN request_speakers rs ON rs.request_id=r.id WHERE rs.speaker_user_id=? ORDER BY r.id DESC"); $st->execute([$id]); return $st->fetchAll(); }
 // ========== ОГРАНИЧЕНИЯ НАГРУЗКИ СПИКЕРА ==========
-function speaker_daily_count($sid,$date){
-$st=db()->prepare("SELECT COALESCE(SUM(COALESCE(r.lessons_per_speaker,1)),0) c FROM request_speakers rs JOIN requests r ON r.id=rs.request_id WHERE rs.speaker_user_id=? AND rs.confirmed=1 AND r.udate=? AND r.status NOT IN ('closed','cancelled')");
-$st->execute([$sid,$date]); return (int)$st->fetch()['c'];
+function speaker_daily_count($sid,$date,$excludeRid=null){
+$sql="SELECT COALESCE(SUM(COALESCE(r.lessons_per_speaker,1)),0) c FROM request_speakers rs JOIN requests r ON r.id=rs.request_id WHERE rs.speaker_user_id=? AND rs.confirmed=1 AND r.udate=? AND r.status NOT IN ('closed','cancelled')";
+$params=[$sid,$date];
+if($excludeRid){ $sql.=' AND r.id<>?'; $params[]=$excludeRid; }
+$st=db()->prepare($sql); $st->execute($params); return (int)$st->fetch()['c'];
 }
-function speaker_weekly_count($sid,$date){
+function speaker_weekly_count($sid,$date,$excludeRid=null){
 $week_start=date('Y-m-d',strtotime('monday this week',strtotime($date)));
 $week_end=date('Y-m-d',strtotime('sunday this week',strtotime($date)));
-$st=db()->prepare("SELECT COALESCE(SUM(COALESCE(r.lessons_per_speaker,1)),0) c FROM request_speakers rs JOIN requests r ON r.id=rs.request_id WHERE rs.speaker_user_id=? AND rs.confirmed=1 AND r.udate BETWEEN ? AND ? AND r.status NOT IN ('closed','cancelled')");
-$st->execute([$sid,$week_start,$week_end]); return (int)$st->fetch()['c'];
+$sql="SELECT COALESCE(SUM(COALESCE(r.lessons_per_speaker,1)),0) c FROM request_speakers rs JOIN requests r ON r.id=rs.request_id WHERE rs.speaker_user_id=? AND rs.confirmed=1 AND r.udate BETWEEN ? AND ? AND r.status NOT IN ('closed','cancelled')";
+$params=[$sid,$week_start,$week_end];
+if($excludeRid){ $sql.=' AND r.id<>?'; $params[]=$excludeRid; }
+$st=db()->prepare($sql); $st->execute($params); return (int)$st->fetch()['c'];
 }
-function check_speaker_load($sid,$date,$additionalLessons=1){
-$daily=speaker_daily_count($sid,$date);
-$weekly=speaker_weekly_count($sid,$date);
+function check_speaker_load($sid,$date,$additionalLessons=1,$excludeRid=null){
+$daily=speaker_daily_count($sid,$date,$excludeRid);
+$weekly=speaker_weekly_count($sid,$date,$excludeRid);
 if($daily+$additionalLessons>2) return [false,"Спикер не может провести ещё $additionalLessons урок(а) — превышен дневной лимит (2 урока в день). Сейчас занято: $daily."];
 if($weekly+$additionalLessons>7) return [false,"Спикер не может провести ещё $additionalLessons урок(а) — превышен недельный лимит (7 уроков). Сейчас занято: $weekly."];
 return [true,''];
@@ -335,6 +355,25 @@ $rid=db()->lastInsertId();
 log_action($schoolUser['id'],'school','request_create','requests',$rid,"Создана заявка {$f['udate']}");
 return $rid;
 }
+// ========== ПЕРЕНОС ДАТЫ/ВРЕМЕНИ УРОКА ==========
+function reschedulable_status($r){ return in_array($r['status'],['chosen','confirmed']); }
+function reschedule_fields($r,$udate,$utime,$utimeEnd){
+$udate=substr((string)$udate,0,10);
+if(!DateTime::createFromFormat('Y-m-d',$udate)) return [false,'Укажите корректную дату урока.'];
+if($udate<date('Y-m-d')) return [false,'Дата урока не может быть в прошлом.'];
+if(!valid_slot($utime)||!valid_slot($utimeEnd)) return [false,'Время урока — с 8:00 до 18:00, минуты кратны 10.'];
+if(tmin($utimeEnd)<=tmin($utime)) return [false,'Время окончания должно быть позже времени начала.'];
+$lps=max(1,(int)($r['lessons_per_speaker']??1));
+$probe=['id'=>$r['id'],'udate'=>$udate,'utime'=>$utime,'utime_end'=>$utimeEnd,'org'=>$r['org']];
+foreach(req_confirmed_rows($r['id']) as $row){
+$sid=$row['speaker_user_id'];
+if(speaker_conflicts($sid,$probe)) return [false,'Спикер '.$row['display_name'].' занят в другом учреждении в это время.'];
+[$ok,$err]=check_speaker_load($sid,$udate,$lps,$r['id']); if(!$ok) return [false,'Спикер '.$row['display_name'].': '.$err];
+}
+$fields=['udate'=>$udate,'utime'=>$utime,'utime_end'=>$utimeEnd];
+if(!empty($r['briefing_done']) && !empty($r['briefing_date']) && $udate<substr((string)$r['briefing_date'],0,10)){ $fields['briefing_done']=0; $fields['briefing_date']=null; }
+return [true,$fields];
+}
 function update_request($r,$f,$actor){
 if($actor['role']!=='school'||(int)$r['school_user_id']!==(int)$actor['id']) return [false,'Нет доступа.'];
 if(in_array($r['status'],['done','closed','cancelled'])) return [false,'Заявка уже завершена, редактирование недоступно.'];
@@ -351,9 +390,38 @@ $topicRaw=$f['topic']??'';
 $allowed['topic']=($topicRaw==='__other__')?trim($f['topic_other']??''):trim($topicRaw);
 if(!$allowed['contact_name']||!$allowed['phone']) return [false,'Заполните контактное лицо и телефон.'];
 if(!in_array($allowed['age_group'],array_keys(ages()),true)) return [false,'Некорректная возрастная группа.'];
+$rescheduled=false;
+if(reschedulable_status($r) && isset($f['udate'])){
+[$ok,$res]=reschedule_fields($r,$f['udate'],$f['utime']??'',$f['utime_end']??'');
+if(!$ok) return [false,$res];
+$allowed=array_merge($allowed,$res); $rescheduled=true;
+}
 upd($r['id'],$allowed);
-log_action($actor['id'],'school','request_update','requests',$r['id'],'Заявка отредактирована');
-return [true,'Заявка обновлена. Дата и время проведения не изменяются.'];
+log_action($actor['id'],'school','request_update','requests',$r['id'],'Заявка отредактирована'.($rescheduled?' (в т.ч. дата/время урока)':''));
+return [true,'Заявка обновлена.'.($rescheduled?'':' Дата и время проведения не изменяются.')];
+}
+function fund_edit_request($actor,$r,$f){
+if($actor['role']!=='fund') return [false,'Нет доступа.'];
+if(!reschedulable_status($r)) return [false,'Редактирование доступно на этапах «Спикеры выбраны» и «Состав подтверждён Фондом».'];
+$allowed=[
+'contact_name'=>trim($f['contact_name']??''),
+'phone'=>trim($f['phone']??''),
+'participants'=>trim($f['participants']??''),
+'age_group'=>$f['age_group']??$r['age_group'],
+'notes'=>trim($f['notes']??''),
+];
+$topicRaw=$f['topic']??'';
+$allowed['topic']=($topicRaw==='__other__')?trim($f['topic_other']??''):trim($topicRaw);
+if(!$allowed['contact_name']||!$allowed['phone']) return [false,'Заполните контактное лицо и телефон.'];
+$rescheduled=false;
+if(isset($f['udate'])){
+[$ok,$res]=reschedule_fields($r,$f['udate'],$f['utime']??'',$f['utime_end']??'');
+if(!$ok) return [false,$res];
+$allowed=array_merge($allowed,$res); $rescheduled=true;
+}
+upd($r['id'],$allowed);
+log_action($actor['id'],'fund','fund_edit_request','requests',$r['id'],'Фонд отредактировал заявку'.($rescheduled?' (в т.ч. дата/время урока)':''));
+return [true,'Заявка отредактирована Фондом.'];
 }
 function upd($id,$fields){ $set=implode(',',array_map(fn($k)=>"$k=?",array_keys($fields))); $st=db()->prepare("UPDATE requests SET $set WHERE id=?"); $st->execute([...array_values($fields),$id]); }
 function prep_complete($r){ return $r['prep_venue'] && $r['prep_escort']; }
@@ -389,6 +457,7 @@ if(is_candidate($r['id'],$s['id'])) continue;
 $g=array_filter(explode(',',$s['age_groups']));
 if($r['age_group'] && $g && !in_array($r['age_group'],$g)) continue;
 if($allowed && !in_array(trim((string)$s['district']),$allowed)) continue;
+if(speaker_is_unavailable($s['id'],$r['udate'])) continue;
 if(speaker_conflicts($s['id'],$r)) continue;
 [$ok,$err]=check_speaker_load($s['id'],$r['udate'],$lps); if(!$ok) continue;
 $res[]=$s;
@@ -419,7 +488,6 @@ if($maxCount===null) $maxCount=max(0,$need-$currentCount);
 if($maxCount<=0) return [false,'Состав уже укомплектован или превышает потребность.'];
 $free=free_speakers_for_request($r);
 if(!$free) return [false,'Нет свободных подходящих спикеров на эту дату.'];
-usort($free,function($x,$y){ [$rx]=speaker_rating($x['id']); [$ry]=speaker_rating($y['id']); return ($ry??-1)<=>($rx??-1); });
 $added=0; $names=[];
 foreach($free as $s){
 if($added>=$maxCount) break;
@@ -429,28 +497,6 @@ if($ok){ $added++; $names[]=$s['display_name']; }
 }
 if($added===0) return [false,'Не удалось добавить ни одного спикера (возможно, все подходящие уже заняты).'];
 return [true,"Автоматически подобрано спикеров: $added из $maxCount. ".implode(', ',$names).'. Итоговый состав утвердит Фонд.'];
-}
-function fund_set_confirm($r,$sid,$on){
-if($r['status']!=='chosen') return [false,'Состав формируется на этапе «Спикеры выбраны».'];
-if(!is_candidate($r['id'],$sid)) return [false,'Этот спикер не в списке желаемых.'];
-if($on){
-if(count_confirmed($r['id'])>=$r['speakers_needed']) return [false,'Уже выбрано нужное число спикеров ('.$r['speakers_needed'].').'];
-if(speaker_conflicts($sid,$r)) return [false,'Спикер занят в другом учреждении в пределах 2 часов от этого урока.'];
-[$ok,$err]=check_speaker_load($sid,$r['udate'],max(1,(int)($r['lessons_per_speaker']??1))); if(!$ok) return $err;
-}
-db()->prepare("UPDATE request_speakers SET confirmed=? WHERE request_id=? AND speaker_user_id=?")->execute([$on?1:0,$r['id'],$sid]);
-log_action(current_user()['id']??null,'fund','fund_toggle','requests',$r['id'],"Спикер #$sid ".($on?'включён':'убран'));
-return [true,$on?'Спикер включён в состав.':'Спикер убран из состава.'];
-}
-function fund_confirm($r){
-if($r['status']!=='chosen') return [false,'Нет состава, ожидающего подтверждения.'];
-$c=count_confirmed($r['id']);
-if($c<1) return [false,'Отметьте хотя бы одного спикера в состав.'];
-upd($r['id'],['status'=>'confirmed','fund_confirmed_at'=>now()]);
-db()->prepare("DELETE FROM request_speakers WHERE request_id=? AND confirmed=0")->execute([$r['id']]);
-log_action(current_user()['id']??null,'fund','fund_confirm','requests',$r['id'],"Состав подтверждён и закрыт: $c из ".$r['speakers_needed']);
-notify_event('confirmed',$r);
-return [true,'Состав подтверждён Фондом ('.$c.' из '.$r['speakers_needed'].'). Неподтверждённые кандидаты отклонены.'];
 }
 function fund_scope_ids($fund){ $ids=[(int)$fund['id']]; if(empty($fund['parent_fund_id'])){ foreach(child_subfunds($fund) as $c) $ids[]=(int)$c['id']; } return array_values(array_unique($ids)); }
 function speaker_fund_of($sid){ $sp=find_user_by_id($sid); if(!$sp) return null; return $sp['fund_user_id']?find_user_by_id($sp['fund_user_id']):null; }
@@ -511,7 +557,7 @@ if(prep_complete($nr)){ upd($r['id'],['prep_confirmed_at'=>now()]); if(in_array(
 upd($r['id'],['prep_confirmed_at'=>null]); return [true,'Сохранено. Отметьте все пункты, чтобы подтвердить готовность.'];
 }
 function mark_done($r){ if($r['status']!=='prep') return [false,'Урок можно отметить проведённым после подтверждения готовности.']; upd($r['id'],['status'=>'done']); log_action(current_user()['id']??null,'operator','mark_done','requests',$r['id'],"Отмечен как проведённый"); return [true,'Отмечено как «Проведён».']; }
-function close_request($r){ if($r['status']!=='done') return [false,'Закрыть можно только проведённый урок.']; if(!$r['fb_app_rating']) return [false,'Заявка закрывается после отзыва заявителя.']; upd($r['id'],['status'=>'closed','closed_at'=>now()]); log_action(current_user()['id']??null,'operator','close','requests',$r['id'],"Заявка закрыта"); return [true,'Заявка закрыта.']; }
+function close_request($r){ if($r['status']!=='done') return [false,'Закрыть можно только проведённый урок.']; if(trim((string)($r['fb_app_comment']??''))===''){ return [false,'Заявка закрывается после отзыва заявителя.']; } upd($r['id'],['status'=>'closed','closed_at'=>now()]); log_action(current_user()['id']??null,'operator','close','requests',$r['id'],"Заявка закрыта"); return [true,'Заявка закрыта.']; }
 function mark_not_held($r,$reason,$comment=''){
 if($r['status']!=='prep') return [false,'Отметить «не состоялся» можно на этапе «Готовность подтверждена».'];
 if(!in_array($reason,cancel_reasons())) return [false,'Укажите причину.'];
@@ -585,14 +631,24 @@ log_action($fund['id'],'fund','fund_finalize','requests',$r['id'],"Состав 
 notify_event('confirmed',$r);
 return [true,'Состав закрыт ('.$c.' из '.$r['speakers_needed'].'). Заявка передана дальше.'];
 }
-function set_vet_feedback($rid,$sid,$rating,$comment){ db()->prepare("UPDATE request_speakers SET vet_rating=?, vet_comment=?, vet_at=? WHERE request_id=? AND speaker_user_id=?")->execute([$rating,$comment,now(),$rid,$sid]); log_action(current_user()['id']??null,'speaker','vet_feedback','requests',$rid,"Отзыв спикера #$sid: $rating"); }
+function set_vet_feedback($rid,$sid,$comment){ db()->prepare("UPDATE request_speakers SET vet_comment=?, vet_at=? WHERE request_id=? AND speaker_user_id=?")->execute([$comment,now(),$rid,$sid]); log_action(current_user()['id']??null,'speaker','vet_feedback','requests',$rid,"Отзыв спикера #$sid сохранён"); }
 // ========== МАТЕРИАЛЫ ==========
-function add_material($title,$desc,$type,$filePath,$fileName,$fileSize,$uploadedBy){
-db()->prepare("INSERT INTO materials(title,description,type,file_path,file_name,file_size,uploaded_by,created_at) VALUES(?,?,?,?,?,?,?,?)")
-->execute([$title,$desc,$type,$filePath,$fileName,$fileSize,$uploadedBy,now()]);
+const MATERIAL_MAX_BYTES = 104857600; // 100 МБ
+function material_topics(){ return db()->query("SELECT DISTINCT topic FROM materials WHERE type='tech_map' AND topic IS NOT NULL AND topic<>'' ORDER BY topic")->fetchAll(PDO::FETCH_COLUMN); }
+function add_material($title,$desc,$type,$topic,$link,$filePath,$fileName,$fileSize,$uploadedBy){
+db()->prepare("INSERT INTO materials(title,description,type,topic,link,file_path,file_name,file_size,uploaded_by,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)")
+->execute([$title,$desc,$type,$topic,$link,$filePath,$fileName,$fileSize,$uploadedBy,now()]);
 $id=db()->lastInsertId();
-log_action($uploadedBy,'operator','material_upload','materials',$id,"Загружен материал: $title ($fileName)");
+log_action($uploadedBy,'operator','material_upload','materials',$id,"Загружен материал: $title");
 return [true,$id];
+}
+function update_material($id,$title,$desc,$type,$topic,$link,$filePath,$fileName,$fileSize){
+$fields=['title'=>$title,'description'=>$desc,'type'=>$type,'topic'=>$topic,'link'=>$link];
+if($filePath!==null){ $fields['file_path']=$filePath; $fields['file_name']=$fileName; $fields['file_size']=$fileSize; }
+$set=implode(',',array_map(fn($k)=>"$k=?",array_keys($fields)));
+db()->prepare("UPDATE materials SET $set WHERE id=?")->execute([...array_values($fields),$id]);
+log_action(current_user()['id']??null,'operator','material_update','materials',$id,"Изменён материал: $title");
+return [true,'Материал обновлён.'];
 }
 function list_materials($type=null){
 if($type){
@@ -607,8 +663,7 @@ $st=db()->prepare("SELECT * FROM materials WHERE id=?"); $st->execute([$id]); re
 }
 function delete_material($id){
 $m=get_material($id); if(!$m) return [false,'Материал не найден.'];
-$path=__DIR__.'/uploads/'.$m['file_path'];
-if(is_file($path)) @unlink($path);
+if(!empty($m['file_path'])){ $path=__DIR__.'/uploads/materials/'.$m['file_path']; if(is_file($path)) @unlink($path); }
 db()->prepare("DELETE FROM materials WHERE id=?")->execute([$id]);
 log_action(current_user()['id']??null,'operator','material_delete','materials',$id,"Удалён материал: ".$m['title']);
 return [true,'Материал удалён.'];
@@ -698,12 +753,12 @@ $st->execute($params); return $st->fetchAll();
 function export_requests_csv($rows){
 $fp=fopen('php://temp','w+');
 fprintf($fp, chr(0xEF).chr(0xBB).chr(0xBF));
-fputcsv($fp,['Код','Организация','Оператор','Дата','Время','Аудитория','Спикеров нужно','Уроков на спикера','Статус','Контакт','Телефон'], ';');
+fputcsv($fp,['Код','Организация','Оператор','Дата','Время','Аудитория','Спикеров нужно','Уроков на спикера','Статус','Контакт','Телефон'], ';', '"', '\\');
 foreach($rows as $r){
 fputcsv($fp,[
 $r['code'],$r['org'],$r['operator'],$r['udate'],$r['utime'].($r['utime_end']?'-'.$r['utime_end']:''),
 ages()[$r['age_group']]??'',$r['speakers_needed'],$r['lessons_per_speaker']??1,st_meta($r['status'])['label'],$r['contact_name'],$r['phone']
-], ';');
+], ';', '"', '\\');
 }
 rewind($fp); $csv=stream_get_contents($fp); fclose($fp); return $csv;
 }
@@ -711,12 +766,11 @@ function export_speakers_csv(){
 $rows=active_speakers();
 $fp=fopen('php://temp','w+');
 fprintf($fp, chr(0xEF).chr(0xBB).chr(0xBF));
-fputcsv($fp,['ФИО','Логин','Email','Возрастные группы','Рейтинг','Кол-во оценок','Уроков проведено'], ';');
+fputcsv($fp,['ФИО','Логин','Email','Телефон','Возрастные группы','Уроков проведено'], ';', '"', '\\');
 foreach($rows as $s){
-[$rt,$c]=speaker_rating($s['id']);
 $lessons=count(array_filter(speaker_lessons($s['id']),fn($x)=>in_array($x['status'],['done','closed'])));
 $groups=implode(', ',array_map(fn($k)=>ages()[$k]??$k,array_filter(explode(',',$s['age_groups']))));
-fputcsv($fp,[$s['display_name'],$s['login'],$s['email']??'',$groups,$rt??'—',$c,$lessons], ';');
+fputcsv($fp,[$s['display_name'],$s['login'],$s['email']??'',$s['phone']??'',$groups,$lessons], ';', '"', '\\');
 }
 rewind($fp); $csv=stream_get_contents($fp); fclose($fp); return $csv;
 }
@@ -728,41 +782,33 @@ if(!empty($filters['to_date'])) { $where.=' AND r.udate<=?'; $params[]=$filters[
 if(!empty($filters['op_group'])) { $where.=' AND r.op_group=?'; $params[]=$filters['op_group']; }
 if(!empty($filters['status'])) { $where.=' AND r.status=?'; $params[]=$filters['status']; }
 else { $where.=" AND r.status IN ('done','closed')"; }
+$gc=(cfg()['driver']==='sqlite')?"GROUP_CONCAT(u.display_name, '; ')":"GROUP_CONCAT(u.display_name SEPARATOR '; ')";
 $sql="SELECT r.*,
-(SELECT GROUP_CONCAT(u.display_name SEPARATOR '; ') FROM request_speakers rs JOIN users u ON u.id=rs.speaker_user_id WHERE rs.request_id=r.id AND rs.confirmed=1) AS speakers_names,
+(SELECT $gc FROM request_speakers rs JOIN users u ON u.id=rs.speaker_user_id WHERE rs.request_id=r.id AND rs.confirmed=1) AS speakers_names,
 (SELECT COUNT(*) FROM request_speakers rs WHERE rs.request_id=r.id AND rs.confirmed=1) AS speakers_count
 FROM requests r WHERE $where ORDER BY r.udate, r.utime";
 $st=db()->prepare($sql); $st->execute($params); $rows=$st->fetchAll();
-$totalLessons=0; $totalParticipants=0; $schoolsSet=[]; $speakersSet=[]; $ratingsApp=[]; $ratingsVet=[];
+$totalLessons=0; $totalParticipants=0; $schoolsSet=[]; $speakersSet=[];
 foreach($rows as $r){
 $lps=max(1,(int)($r['lessons_per_speaker']??1));
 $totalLessons+=$lps*(int)$r['speakers_count'];
 $totalParticipants+=(int)($r['participants']??0);
 $schoolsSet[$r['org']]=1;
 if(!empty($r['speakers_names'])) foreach(explode('; ',$r['speakers_names']) as $nm) if($nm!=='') $speakersSet[$nm]=1;
-if(!empty($r['fb_app_rating'])) $ratingsApp[]=(int)$r['fb_app_rating'];
-$vr=db()->prepare("SELECT vet_rating FROM request_speakers WHERE request_id=? AND vet_rating IS NOT NULL"); $vr->execute([$r['id']]);
-foreach($vr->fetchAll() as $v) $ratingsVet[]=(int)$v['vet_rating'];
 }
-$avgApp=$ratingsApp?round(array_sum($ratingsApp)/count($ratingsApp),1):null;
-$avgVet=$ratingsVet?round(array_sum($ratingsVet)/count($ratingsVet),1):null;
 $fp=fopen('php://temp','w+');
 fprintf($fp, chr(0xEF).chr(0xBB).chr(0xBF));
-fputcsv($fp,['ОТЧЁТ О ПРОВЕДЕНИИ УРОКОВ МУЖЕСТВА'], ';');
-fputcsv($fp,['Период',(!empty($filters['from_date'])?$filters['from_date']:'начало').' — '.(!empty($filters['to_date'])?$filters['to_date']:'по настоящее время')], ';');
-fputcsv($fp,['Всего проведённых уроков',count($rows)], ';');
-fputcsv($fp,['Суммарный охват (уроков × спикеров)',$totalLessons], ';');
-fputcsv($fp,['Суммарное число участников',$totalParticipants], ';');
-fputcsv($fp,['Уникальных организаций',count($schoolsSet)], ';');
-fputcsv($fp,['Уникальных спикеров',count($speakersSet)], ';');
-fputcsv($fp,['Средняя оценка заявителей',$avgApp===null?'—':$avgApp.' / 5'], ';');
-fputcsv($fp,['Средняя оценка спикеров',$avgVet===null?'—':$avgVet.' / 5'], ';');
-fputcsv($fp,[], ';');
-fputcsv($fp,['ДЕТАЛИЗАЦИЯ'], ';');
-fputcsv($fp,['Код','Организация','Район','Дата','Время','Аудитория','Участников','Спикеров нужно','Уроков на спикера','Спикеры','Тема','Оценка заявителя','Комментарий заявителя','Оценка спикеров (средняя)'], ';');
+fputcsv($fp,['ОТЧЁТ О ПРОВЕДЕНИИ УРОКОВ МУЖЕСТВА'], ';', '"', '\\');
+fputcsv($fp,['Период',(!empty($filters['from_date'])?$filters['from_date']:'начало').' — '.(!empty($filters['to_date'])?$filters['to_date']:'по настоящее время')], ';', '"', '\\');
+fputcsv($fp,['Всего проведённых уроков',count($rows)], ';', '"', '\\');
+fputcsv($fp,['Суммарный охват (уроков × спикеров)',$totalLessons], ';', '"', '\\');
+fputcsv($fp,['Охвачено детей',$totalParticipants], ';', '"', '\\');
+fputcsv($fp,['Уникальных организаций',count($schoolsSet)], ';', '"', '\\');
+fputcsv($fp,['Уникальных спикеров',count($speakersSet)], ';', '"', '\\');
+fputcsv($fp,[], ';', '"', '\\');
+fputcsv($fp,['ДЕТАЛИЗАЦИЯ'], ';', '"', '\\');
+fputcsv($fp,['Код','Организация','Район','Дата','Время','Аудитория','Участников','Спикеров нужно','Уроков на спикера','Спикеры','Тема','Комментарий заявителя'], ';', '"', '\\');
 foreach($rows as $r){
-$vetR=db()->prepare("SELECT AVG(vet_rating) a FROM request_speakers WHERE request_id=? AND vet_rating IS NOT NULL");
-$vetR->execute([$r['id']]); $vetAvg=$vetR->fetch()['a']??null;
 fputcsv($fp,[
 $r['code'],$r['org'],$r['district']??'',
 $r['udate'],$r['utime'].(!empty($r['utime_end'])?'-'.$r['utime_end']:''),
@@ -772,10 +818,8 @@ $r['speakers_needed'],
 $r['lessons_per_speaker']??1,
 $r['speakers_names']??'',
 $r['topic']??'',
-$r['fb_app_rating']??'',
-$r['fb_app_comment']??'',
-$vetAvg?round($vetAvg,1):''
-], ';');
+$r['fb_app_comment']??''
+], ';', '"', '\\');
 }
 rewind($fp); $csv=stream_get_contents($fp); fclose($fp); return $csv;
 }
@@ -793,24 +837,41 @@ foreach($rows as &$r){ $r['speakers']=implode(', ', array_map(fn($x)=>$x['displa
 return $rows;
 }
 // ---------- показатели ----------
+function list_app_reviews($opGroup=null){
+$sql="SELECT * FROM requests WHERE (archived=0 OR archived IS NULL) AND fb_app_comment IS NOT NULL AND fb_app_comment<>''"; $p=[];
+if($opGroup){ $sql.=' AND op_group=?'; $p[]=$opGroup; }
+$sql.=' ORDER BY fb_app_at DESC';
+$st=db()->prepare($sql); $st->execute($p); return $st->fetchAll();
+}
+function list_speaker_reviews($opGroup=null){
+$sql="SELECT rs.*, r.code, r.org, r.topic, r.op_group, r.archived, u.display_name speaker_name FROM request_speakers rs JOIN requests r ON r.id=rs.request_id JOIN users u ON u.id=rs.speaker_user_id WHERE (r.archived=0 OR r.archived IS NULL) AND rs.vet_comment IS NOT NULL AND rs.vet_comment<>''"; $p=[];
+if($opGroup){ $sql.=' AND r.op_group=?'; $p[]=$opGroup; }
+$sql.=' ORDER BY rs.vet_at DESC';
+$st=db()->prepare($sql); $st->execute($p); return $st->fetchAll();
+}
 function kpis($opGroup=null){
 $sql='SELECT * FROM requests WHERE (archived=0 OR archived IS NULL)'; $p=[];
 if($opGroup){ $sql.=' AND op_group=?'; $p[]=$opGroup; }
 $st=db()->prepare($sql); $st->execute($p); $all=$st->fetchAll(); $total=count($all);
 $inwork=count(array_filter($all,fn($r)=>in_array($r['status'],['chosen','confirmed','brief','prep'])));
-$done=count(array_filter($all,fn($r)=>in_array($r['status'],['done','closed'])));
 $reached=array_filter($all,fn($r)=>in_array($r['status'],['done','closed']));
-$both=0; $ratings=[];
-foreach($all as $r){ if($r['fb_app_rating'])$ratings[]=$r['fb_app_rating'];
-$vr=db()->prepare("SELECT vet_rating FROM request_speakers WHERE request_id=? AND vet_rating IS NOT NULL"); $vr->execute([$r['id']]); $vs=$vr->fetchAll();
-foreach($vs as $v) $ratings[]=$v['vet_rating'];
-if(in_array($r['status'],['done','closed']) && $r['fb_app_rating'] && count($vs)>0) $both++;
-}
-$shareBoth=count($reached)?round($both/count($reached)*100):null;
-$avg=$ratings?round(array_sum($ratings)/count($ratings),1):null;
+$done=count($reached);
+$participants=array_sum(array_map(fn($r)=>(int)($r['participants']??0),$reached));
 $spk=db()->query("SELECT COUNT(*) c FROM users WHERE role='speaker' AND active=1")->fetch()['c'];
 $cancelled=count(array_filter($all,fn($r)=>$r['status']==='cancelled'));
-return [['Всего заявок',$total],['В работе',$inwork],['Проведено и закрыто',$done],['Не состоялось',$cancelled],['Спикеров в реестре',$spk],['Отзывы обеих сторон',$shareBoth===null?'—':$shareBoth.'%'],['Средняя оценка',$avg===null?'—':$avg.' / 5']];
+$appReviews=count(list_app_reviews($opGroup));
+$spkReviews=count(list_speaker_reviews($opGroup));
+$rq='&dept='.urlencode((string)$opGroup);
+return [
+['Всего заявок',$total],
+['В работе',$inwork],
+['Проведено и закрыто',$done],
+['Не состоялось',$cancelled],
+['Спикеров в реестре',$spk],
+['Охвачено детей',$participants],
+['Отзывы заявителей',$appReviews,'?p=reviews&type=app'.$rq],
+['Отзывы спикеров',$spkReviews,'?p=reviews&type=speaker'.$rq],
+];
 }
 // ========== СЛОЙ 1: БЛОК "ТРЕБУЕТ ДЕЙСТВИЯ" ==========
 function whose_turn($r){
@@ -819,14 +880,14 @@ if($s==='new') return ['Заявитель','Выбрать спикеров (м
 if($s==='chosen') return ['Фонд','Сформировать и подтвердить состав'];
 if($s==='confirmed') return ['Заявитель','Подтвердить готовность площадки'];
 if($s==='prep'){ $over=!empty($r['udate']) && strtotime(substr($r['udate'],0,10))<strtotime(date('Y-m-d')); return ['Заявитель',$over?'Урок должен был состояться — отметьте «Проведён» или «Не состоялся»':'После урока отметить «Проведён» или «Не состоялся»']; }
-if($s==='done') return empty($r['fb_app_rating']) ? ['Заявитель','Оставить отзыв об уроке'] : ['Оператор','Закрыть заявку'];
+if($s==='done') return trim((string)($r['fb_app_comment']??''))==='' ? ['Заявитель','Оставить отзыв об уроке'] : ['Оператор','Закрыть заявку'];
 if($s==='closed') return ['—','Заявка закрыта'];
 if($s==='cancelled') return ['—','Урок не состоялся'];
 return ['—',''];
 }
 function auto_close_done($days=7){
 $cut=date('Y-m-d H:i:s',strtotime("-$days days"));
-$st=db()->prepare("SELECT * FROM requests WHERE status='done' AND fb_app_rating IS NOT NULL AND fb_app_rating>0 AND COALESCE(fb_app_at, created_at) < ?");
+$st=db()->prepare("SELECT * FROM requests WHERE status='done' AND fb_app_comment IS NOT NULL AND fb_app_comment<>'' AND COALESCE(fb_app_at, created_at) < ?");
 $st->execute([$cut]); $n=0;
 foreach($st->fetchAll() as $r){ upd($r['id'],['status'=>'closed','closed_at'=>now()]); log_action(null,'system','auto_close','requests',$r['id'],'Автозакрытие через '.$days.' дн. после отзыва'); $n++; }
 return $n;
@@ -835,7 +896,7 @@ function get_action_required_requests($user) {
 $role = $user['role'];
 $uid = $user['id'];
 if ($role === 'school') {
-$st = db()->prepare("SELECT * FROM requests WHERE school_user_id = ? AND (archived=0 OR archived IS NULL) AND (status='new' OR (status IN ('confirmed','brief') AND (prep_confirmed_at IS NULL OR prep_confirmed_at='')) OR status='prep' OR (status='done' AND (fb_app_rating IS NULL OR fb_app_rating=0))) ORDER BY udate ASC");
+$st = db()->prepare("SELECT * FROM requests WHERE school_user_id = ? AND (archived=0 OR archived IS NULL) AND (status='new' OR (status IN ('confirmed','brief') AND (prep_confirmed_at IS NULL OR prep_confirmed_at='')) OR status='prep' OR (status='done' AND (fb_app_comment IS NULL OR fb_app_comment=''))) ORDER BY udate ASC");
 $st->execute([$uid]); return $st->fetchAll();
 }
 if ($role === 'fund') {
@@ -843,7 +904,7 @@ return fund_actionable($user);
 }
 if ($role === 'operator') {
 $scope = (($user['op_group']??'')==='school') ? " AND op_group='school'" : "";
-$st = db()->query("SELECT * FROM requests WHERE (archived=0 OR archived IS NULL) AND status='done' AND fb_app_rating IS NOT NULL AND fb_app_rating>0$scope ORDER BY udate ASC");
+$st = db()->query("SELECT * FROM requests WHERE (archived=0 OR archived IS NULL) AND status='done' AND fb_app_comment IS NOT NULL AND fb_app_comment<>''$scope ORDER BY udate ASC");
 return $st->fetchAll();
 }
 return [];
@@ -866,27 +927,6 @@ $result[] = ['user' => $u, 'count' => count($pending), 'urgent' => count(array_f
 }
 }
 return $result;
-}
-function send_notify_email($toEmail, $toName, $count, $urgentCount) {
-$site = cfg()['site_title'];
-$url = 'https://урокмужества72.рф';
-$subject = "[$site] У вас $count заявка(-ок), требующих действия";
-$body = "Здравствуйте!\r\n\r\n";
-$body .= "В системе \"$site\" у вас есть $count заявка(-ок), по которым требуется ваше действие.\r\n";
-if ($urgentCount > 0) {
-$body .= "ВНИМАНИЕ: $urgentCount из них требуют срочного внимания (близится дата проведения).\r\n\r\n";
-} else {
-$body .= "\r\n";
-}
-$body .= "Пожалуйста, войдите в систему для просмотра деталей:\r\n$url\r\n\r\n";
-$body .= "Это автоматическое уведомление. Не отвечайте на это письмо.\r\n";
-$fromEmail = 'task@урокмужества72.рф';
-$headers = "From: $site <$fromEmail>\r\n";
-$headers .= "Reply-To: $fromEmail\r\n";
-$headers .= "X-Mailer: PHP/" . phpversion() . "\r\n";
-$headers .= "Content-Type: text/plain; charset=UTF-8\r\n";
-$headers .= "Content-Transfer-Encoding: 8bit\r\n";
-return @mail($toEmail, $subject, $body, $headers);
 }
 function mail_log($msg){ @file_put_contents(__DIR__.'/mail_error.log', date('Y-m-d H:i:s').' — '.$msg."\n", FILE_APPEND); }
 function send_smtp_email($toEmail, $toName, $subject, $body) {
