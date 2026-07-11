@@ -255,8 +255,8 @@ $u=current_user(); $c=cfg(); $sess='';
 if($u){ $nm=($u['role']==='school')?($u['org_name']?:$u['display_name']):$u['display_name']; $roleWord=['operator'=>'Департамент','school'=>'Заявитель','speaker'=>'Спикер','fund'=>'Фонд'][$u['role']]??''; $label=$roleWord.(trim((string)$nm)!==''?': '.$nm:'');
 $sess='<span class="rolebadge">'.esc($label).'</span> <a class="rolebadge" href="?p=profile" style="text-decoration:none">Профиль</a> <form method="post" style="display:inline"><input type="hidden" name="action" value="logout">'.csrf_field().'<button class="logout">Выйти</button></form>'; }
 $f=flash_get();
-echo '<!DOCTYPE html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'.esc($title).'</title><link rel="icon" href="favicon.ico"><link rel="stylesheet" href="style.css"></head><body>';
-echo '<header class="top"><div class="topbar"><div class="mark"><img src="favicon.ico" alt="" style="width:100%;height:100%;object-fit:contain"></div><div class="brand"><h1>Урок Мужества</h1></div><div class="session">'.$sess.'</div></div></header>';
+echo '<!DOCTYPE html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'.esc($title).'</title><link rel="icon" href="favicon.ico"><link rel="icon" type="image/png" href="favicon.png"><link rel="stylesheet" href="style.css"></head><body>';
+echo '<header class="top"><div class="topbar"><div class="mark"><img src="favicon.png" alt="" style="width:100%;height:100%;object-fit:contain"></div><div class="brand"><h1>Урок Мужества</h1></div><div class="session">'.$sess.'</div></div></header>';
 echo '<main class="wrap">'; if($f) echo '<div class="flash">'.esc($f).'</div>'; echo $body.'</main>';
 echo '<footer style="text-align:center;padding:20px;color:var(--muted);font-size:12px"><a href="?p=privacy">Политика обработки персональных данных (152-ФЗ)</a></footer>';
 if(empty($_COOKIE['um72_cookie_consent'])){
