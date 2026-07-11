@@ -113,6 +113,7 @@ tbody tr.urgent:hover{background:#ffe0b2!important}
 /* ===== фирменная тема (флаг РФ) ===== */
 :root{--rf-blue:#0039A6;--rf-red:#D52B1E;}
 html,body,h1,h2,h3,h4,h5,p,a,span,div,button,input,select,textarea,label,table,th,td,li{font-family:"Segoe UI",Roboto,"PT Sans","Helvetica Neue",Arial,sans-serif !important;}
+body{background:linear-gradient(rgba(255,255,255,.78),rgba(255,255,255,.78)), url(flag-russia.jpg) center center / cover no-repeat fixed !important;color:#1a1a1a;}
 header.top{background:var(--rf-blue) !important;}
 header.top .brand h1, header.top .brand p, header.top .mark{color:#ffffff !important;}
 header.top .rolebadge{background:rgba(255,255,255,.18) !important;color:#fff !important;}
