@@ -110,11 +110,11 @@ function flash_get(){ $m=$_SESSION['flash']??null; unset($_SESSION['flash']); re
 // ---------- предметная область ----------
 const OP_CITY='Департамент образования Администрации города Тюмени';
 const OP_REGION='Департамент образования и науки Тюменской области';
-function operator_of($lvl){ return $lvl==='school'?OP_CITY:OP_REGION; }
-function opgroup_of($lvl){ return $lvl==='school'?'school':'region'; }
+function operator_of($lvl){ return in_array($lvl,['school','other'],true)?OP_CITY:OP_REGION; }
+function opgroup_of($lvl){ return in_array($lvl,['school','other'],true)?'school':'region'; }
 function ages(){ return ['1-4'=>'1–4 классы','5-9'=>'5–9 классы','10-11'=>'10–11 классы','spo'=>'профессиональные образовательные организации','vuz'=>'высшие учебные заведения']; }
-function level_label($l){ return ['school'=>'Школа','spo'=>'Профессиональная образовательная организация','vuz'=>'Высшее учебное заведение'][$l]??$l; }
-function level_ages($lvl){ return ['school'=>['1-4','5-9','10-11'],'spo'=>['spo'],'vuz'=>['vuz']][$lvl]??[]; }
+function level_label($l){ return ['school'=>'Школа','spo'=>'Профессиональная образовательная организация','vuz'=>'Высшее учебное заведение','other'=>'Иное'][$l]??$l; }
+function level_ages($lvl){ return ['school'=>['1-4','5-9','10-11'],'spo'=>['spo'],'vuz'=>['vuz'],'other'=>['1-4','5-9','10-11']][$lvl]??[]; }
 function statuses(){ return [
 ['k'=>'new','label'=>'Новая','color'=>'gray'],
 ['k'=>'chosen','label'=>'Спикеры выбраны','color'=>'blue'],
@@ -297,7 +297,7 @@ function child_subfunds($head){ $st=db()->prepare("SELECT * FROM users WHERE rol
 function fund_label($f){ $n=($f['display_name']!=='')?$f['display_name']:('Организация №'.$f['id']); if(!empty($f['parent_fund_id'])) $n='— '.$n.' (подразделение'.(!empty($f['district'])?', '.$f['district']:'').')'; elseif(!empty($f['district'])) $n.=' ('.$f['district'].')'; return $n; }
 function active_speakers($fund=null){ if($fund){ $st=db()->prepare("SELECT * FROM users WHERE role='speaker' AND active=1 AND fund_user_id=? ORDER BY display_name"); $st->execute([$fund['id']]); return $st->fetchAll(); } return db()->query("SELECT * FROM users WHERE role='speaker' AND active=1 ORDER BY display_name")->fetchAll(); }
 // ---- модерация заявителей ----
-function applicant_group_levels($opGroup){ if($opGroup==='school') return ['school']; if($opGroup==='region') return ['spo','vuz']; return ['school','spo','vuz']; }
+function applicant_group_levels($opGroup){ if($opGroup==='school') return ['school','other']; if($opGroup==='region') return ['spo','vuz']; return ['school','spo','vuz','other']; }
 function pending_applicants($operator){
 $levels=applicant_group_levels($operator['op_group']??'');
 $in=implode(',',array_fill(0,count($levels),'?'));
