@@ -16,15 +16,16 @@ if(empty($_POST['consent'])){ flash_set('Необходимо согласие �
 $dsel=$_POST['district']??''; $district=($dsel==='__other__')?ensure_district(trim($_POST['district_other']??'')):ensure_district($dsel);
 if($district===''){ flash_set('Укажите район Тюменской области.'); redirect('?p=register'); }
 $c_name=trim($_POST['contact_name']??''); $c_pos=trim($_POST['position']??''); $c_phone=trim($_POST['contact_phone']??'');
+if($role!=='speaker' && ($c_name===''||$c_pos===''||$c_phone==='')){ flash_set('Заполните ФИО контактного лица, должность и телефон.'); redirect('?p=register'); }
 if($role==='school'){
 $c_addr=trim($_POST['address']??''); $c_build=trim($_POST['building']??'');
 if(empty($_POST['org_name'])||empty($_POST['level'])){ flash_set('Заполните наименование организации и уровень.'); redirect('?p=register'); }
 if($c_addr===''||$c_build===''){ flash_set('Укажите адрес местонахождения и номер корпуса.'); redirect('?p=register'); }
 [$ok,$res]=create_user('school',$login,$pass,['org_name'=>trim($_POST['org_name']),'level'=>$_POST['level'],'display_name'=>trim($_POST['org_name']),'email'=>$email,'district'=>$district,'contact_name'=>$c_name,'position'=>$c_pos,'phone'=>$c_phone,'address'=>$c_addr,'building'=>$c_build]);
 }
-elseif($role==='speaker'){ if(empty($_POST['display_name'])){ flash_set('Укажите ФИО.'); redirect('?p=register'); } $phone=trim($_POST['phone']??''); if($phone===''){ flash_set('Укажите телефон для связи.'); redirect('?p=register'); } $fid=(int)($_POST['fund_user_id']??0); if(!$fid || !find_user_by_id($fid) || find_user_by_id($fid)['role']!=='fund'){ flash_set('Выберите фонд.'); redirect('?p=register'); } [$ok,$res]=create_user('speaker',$login,$pass,['display_name'=>trim($_POST['display_name']),'groups'=>implode(',',array_keys($_POST['groups']??[])),'email'=>$email,'district'=>$district,'phone'=>$phone,'fund_user_id'=>$fid]); }
-elseif($role==='fund'){ $ftype=$_POST['fund_type']??'head'; if($ftype==='sub'){ $pfid=(int)($_POST['parent_fund_id']??0); $pf=$pfid?find_user_by_id($pfid):null; if(!$pf || $pf['role']!=='fund'){ flash_set('Подразделение должно указать головной фонд.'); redirect('?p=register'); } [$ok,$res]=create_user('fund',$login,$pass,['display_name'=>trim($_POST['fund_display_name']??'Подразделение'),'email'=>$email,'district'=>$district,'parent_fund_id'=>$pfid,'active'=>0,'contact_name'=>$c_name,'position'=>$c_pos,'phone'=>$c_phone]); } else { if(($_POST['fund_code']??'')!==cfg()['fund_signup_code']){ flash_set('Неверный код регистрации Фонда.'); redirect('?p=register'); } [$ok,$res]=create_user('fund',$login,$pass,['display_name'=>trim($_POST['fund_display_name']??'Фонд'),'email'=>$email,'district'=>$district,'contact_name'=>$c_name,'position'=>$c_pos,'phone'=>$c_phone]); } }
-elseif($role==='operator'){ if(($_POST['op_code']??'')!==cfg()['operator_signup_code']){ flash_set('Неверный код регистрации оператора.'); redirect('?p=register'); } $og=$_POST['op_group']??''; if(!in_array($og,['school','region'])){ flash_set('Выберите департамент.'); redirect('?p=register'); } [$ok,$res]=create_user('operator',$login,$pass,['display_name'=>trim($_POST['op_display_name']??'Оператор'),'email'=>$email,'op_group'=>$og,'district'=>$district,'contact_name'=>$c_name,'position'=>$c_pos,'phone'=>$c_phone]); }
+elseif($role==='speaker'){ if(empty($_POST['display_name'])){ flash_set('Укажите ФИО.'); redirect('?p=register'); } $phone=trim($_POST['phone']??''); if($phone===''){ flash_set('Укажите телефон для связи.'); redirect('?p=register'); } $fid=(int)($_POST['fund_user_id']??0); if(!$fid || !find_user_by_id($fid) || find_user_by_id($fid)['role']!=='fund'){ flash_set('Выберите фонд.'); redirect('?p=register'); } $groups=implode(',',array_keys($_POST['groups']??[])); if($groups===''){ flash_set('Выберите хотя бы одну возрастную группу.'); redirect('?p=register'); } [$ok,$res]=create_user('speaker',$login,$pass,['display_name'=>trim($_POST['display_name']),'groups'=>$groups,'email'=>$email,'district'=>$district,'phone'=>$phone,'fund_user_id'=>$fid]); }
+elseif($role==='fund'){ $fdn=trim($_POST['fund_display_name']??''); if($fdn===''){ flash_set('Укажите наименование Фонда.'); redirect('?p=register'); } $ftype=$_POST['fund_type']??'head'; if($ftype==='sub'){ $pfid=(int)($_POST['parent_fund_id']??0); $pf=$pfid?find_user_by_id($pfid):null; if(!$pf || $pf['role']!=='fund'){ flash_set('Подразделение должно указать головной фонд.'); redirect('?p=register'); } [$ok,$res]=create_user('fund',$login,$pass,['display_name'=>$fdn,'email'=>$email,'district'=>$district,'parent_fund_id'=>$pfid,'active'=>0,'contact_name'=>$c_name,'position'=>$c_pos,'phone'=>$c_phone]); } else { if(($_POST['fund_code']??'')!==cfg()['fund_signup_code']){ flash_set('Неверный код регистрации Фонда.'); redirect('?p=register'); } [$ok,$res]=create_user('fund',$login,$pass,['display_name'=>$fdn,'email'=>$email,'district'=>$district,'contact_name'=>$c_name,'position'=>$c_pos,'phone'=>$c_phone]); } }
+elseif($role==='operator'){ $odn=trim($_POST['op_display_name']??''); if($odn===''){ flash_set('Укажите наименование оператора.'); redirect('?p=register'); } if(($_POST['op_code']??'')!==cfg()['operator_signup_code']){ flash_set('Неверный код регистрации оператора.'); redirect('?p=register'); } $og=$_POST['op_group']??''; if(!in_array($og,['school','region'])){ flash_set('Выберите департамент.'); redirect('?p=register'); } [$ok,$res]=create_user('operator',$login,$pass,['display_name'=>$odn,'email'=>$email,'op_group'=>$og,'district'=>$district,'contact_name'=>$c_name,'position'=>$c_pos,'phone'=>$c_phone]); }
 else { flash_set('Выберите роль.'); redirect('?p=register'); }
 if(!$ok){ flash_set($res); redirect('?p=register'); }
 flash_set($role==='speaker'?'Регистрация принята. Доступ откроется после подтверждения вашим фондом.':($role==='school'?'Регистрация принята. Доступ откроется после подтверждения профильным департаментом.':($role==='fund'&&($_POST['fund_type']??'head')==='sub'?'Регистрация подразделения принята. Доступ откроется после подтверждения головным фондом.':'Регистрация успешна. Войдите.'))); redirect('?p=login');
@@ -38,9 +39,13 @@ if(!filter_var($em,FILTER_VALIDATE_EMAIL)){ flash_set('Укажите корре
 $set=['display_name=?','email=?']; $par=[$dn,$em];
 $dsel=$_POST['district']??''; $dist=($dsel==='__other__')?ensure_district(trim($_POST['district_other']??'')):ensure_district($dsel);
 if($dist!==''){ $set[]='district=?'; $par[]=$dist; }
-if($u['role']==='speaker' && isset($_POST['phone'])){ $set[]='phone=?'; $par[]=trim($_POST['phone']); }
+if($u['role']==='speaker'){ $spPhone=trim($_POST['phone']??''); if($spPhone===''){ flash_set('Укажите телефон для связи.'); redirect('?p=profile'); } $set[]='phone=?'; $par[]=$spPhone; }
 if($u['role']==='speaker' && isset($_POST['fund_user_id'])){ $fid=(int)$_POST['fund_user_id']; if($fid>0){ $f=find_user_by_id($fid); if(!$f || $f['role']!=='fund'){ flash_set('Фонд не найден.'); redirect('?p=profile'); } $set[]='fund_user_id=?'; $par[]=$fid; } }
-if(in_array($u['role'],['school','fund','operator'],true)){ $set[]='contact_name=?'; $par[]=trim($_POST['contact_name']??''); $set[]='position=?'; $par[]=trim($_POST['position']??''); $set[]='phone=?'; $par[]=trim($_POST['phone']??''); }
+if(in_array($u['role'],['school','fund','operator'],true)){
+$cn=trim($_POST['contact_name']??''); $cp=trim($_POST['position']??''); $ph=trim($_POST['phone']??'');
+if($cn===''||$cp===''||$ph===''){ flash_set('Заполните ФИО контактного лица, должность и телефон.'); redirect('?p=profile'); }
+$set[]='contact_name=?'; $par[]=$cn; $set[]='position=?'; $par[]=$cp; $set[]='phone=?'; $par[]=$ph;
+}
 if($u['role']==='school'){
 $set[]='org_name=?'; $par[]=$dn;
 $addr=trim($_POST['address']??''); $build=trim($_POST['building']??'');
@@ -255,9 +260,12 @@ $u=current_user(); $c=cfg(); $sess='';
 if($u){ $nm=($u['role']==='school')?($u['org_name']?:$u['display_name']):$u['display_name']; $roleWord=['operator'=>'Департамент','school'=>'Заявитель','speaker'=>'Спикер','fund'=>'Фонд'][$u['role']]??''; $label=$roleWord.(trim((string)$nm)!==''?': '.$nm:'');
 $sess='<span class="rolebadge">'.esc($label).'</span> <a class="rolebadge" href="?p=profile" style="text-decoration:none">Профиль</a> <form method="post" style="display:inline"><input type="hidden" name="action" value="logout">'.csrf_field().'<button class="logout">Выйти</button></form>'; }
 $f=flash_get();
+$missing=profile_missing_fields($u);
 echo '<!DOCTYPE html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'.esc($title).'</title><link rel="icon" href="favicon.ico"><link rel="icon" type="image/png" href="favicon.png"><link rel="stylesheet" href="style.css"></head><body>';
 echo '<header class="top"><div class="topbar"><div class="mark"><img src="favicon.png" alt="" style="width:100%;height:100%;object-fit:contain"></div><div class="brand"><h1>Урок Мужества</h1></div><div class="session">'.$sess.'</div></div></header>';
-echo '<main class="wrap">'; if($f) echo '<div class="flash">'.esc($f).'</div>'; echo $body.'</main>';
+echo '<main class="wrap">'; if($f) echo '<div class="flash">'.esc($f).'</div>';
+if($missing) echo '<div class="hint-warn"><b>ⓘ Заполните профиль:</b> не указано — '.esc(implode(', ',$missing)).'. <a href="?p=profile">Перейти в профиль →</a></div>';
+echo $body.'</main>';
 echo '<footer style="text-align:center;padding:20px;color:var(--muted);font-size:12px"><a href="?p=privacy">Политика обработки персональных данных (152-ФЗ)</a></footer>';
 if(empty($_COOKIE['um72_cookie_consent'])){
 echo '<div id="um72-cookie" role="dialog" aria-live="polite" aria-label="Уведомление об использовании файлов cookie">'
@@ -398,19 +406,19 @@ $body.='<label class="lbl">Email <span style="color:#d11">*</span></label><input
 $distOptP=''; foreach(district_names() as $dn) $distOptP.='<option '.(($u['district']??'')===$dn?'selected':'').'>'.esc($dn).'</option>';
 $body.='<label class="lbl">Район Тюменской области</label><select name="district" id="pdistrict_sel" onchange="pdsw()"><option value="">— выберите район —</option>'.$distOptP.'<option value="__other__">Другой (вписать вручную)</option></select>';
 $body.='<div id="pdistrict_wrap" style="display:none"><label class="lbl">Впишите район</label><input name="district_other" placeholder="название района"></div>';
-if($u['role']==='speaker'){ $body.='<label class="lbl">Телефон для связи</label><input name="phone" value="'.esc($u['phone']??'').'">';
+if($u['role']==='speaker'){ $body.='<label class="lbl">Телефон для связи <span style="color:#d11">*</span></label><input name="phone" required value="'.esc($u['phone']??'').'">';
 $fo='<option value="">— выберите организацию (фонд) —</option>'; foreach(all_funds() as $ff){ $fo.='<option value="'.$ff['id'].'"'.((int)($u['fund_user_id']??0)===(int)$ff['id']?' selected':'').'>'.esc(fund_label($ff)).'</option>'; }
 $body.='<label class="lbl">Организация (фонд)</label><select name="fund_user_id">'.$fo.'</select><p class="muted" style="margin:4px 0 0">Организация, которая направляет вас как спикера.</p>';
 }
 if($u['role']==='school'){
-$body.='<label class="lbl">Адрес местонахождения</label><input name="address" value="'.esc($u['address']??'').'" placeholder="г. Тюмень, ул. ..., д. ...">';
-$body.='<label class="lbl">№ корпуса</label><input name="building" value="'.esc($u['building']??'').'" placeholder="напр. 1">';
+$body.='<label class="lbl">Адрес местонахождения <span style="color:#d11">*</span></label><input name="address" required value="'.esc($u['address']??'').'" placeholder="г. Тюмень, ул. ..., д. ...">';
+$body.='<label class="lbl">№ корпуса <span style="color:#d11">*</span></label><input name="building" required value="'.esc($u['building']??'').'" placeholder="напр. 1">';
 $body.='<p class="muted" style="margin:2px 0 8px">Если у организации нет отдельных корпусов, укажите «1».</p>';
 }
 if(in_array($u['role'],['school','fund','operator'],true)){
-$body.='<label class="lbl">ФИО контактного лица</label><input name="contact_name" value="'.esc($u['contact_name']??'').'">';
-$body.='<label class="lbl">Должность</label><input name="position" value="'.esc($u['position']??'').'">';
-$body.='<label class="lbl">Телефон</label><input name="phone" value="'.esc($u['phone']??'').'">';
+$body.='<label class="lbl">ФИО контактного лица <span style="color:#d11">*</span></label><input name="contact_name" required value="'.esc($u['contact_name']??'').'">';
+$body.='<label class="lbl">Должность <span style="color:#d11">*</span></label><input name="position" required value="'.esc($u['position']??'').'">';
+$body.='<label class="lbl">Телефон <span style="color:#d11">*</span></label><input name="phone" required value="'.esc($u['phone']??'').'">';
 }
 $body.='<label class="lbl">Новый пароль (необязательно)</label><input type="password" name="newpass" placeholder="от 5 символов">';
 $body.='<button class="btn primary" style="margin-top:12px">Сохранить</button></form>';
@@ -424,19 +432,50 @@ $ag=''; foreach(ages() as $k=>$v) $ag.='<label class="chk"><input type="checkbox
 $distOpt=''; foreach(district_names() as $dn) $distOpt.='<option>'.esc($dn).'</option>';
 $fundOpt='<option value="">— выберите фонд —</option>'; foreach(all_funds() as $ff) $fundOpt.='<option value="'.$ff['id'].'">'.esc(fund_label($ff)).'</option>';
 $headFundOpt='<option value="">— выберите головной фонд —</option>'; foreach(head_funds() as $ff) $headFundOpt.='<option value="'.$ff['id'].'">'.esc(fund_label($ff)).'</option>';
-$body='<div class="auth"><h2>Регистрация</h2><form method="post" class="card pad">'.csrf_field().'<input type="hidden" name="action" value="register">
+$body='<div class="auth"><h2>Регистрация</h2><form method="post" class="card pad" id="regform">'.csrf_field().'<input type="hidden" name="action" value="register">
 <label class="lbl">Кто вы?</label><select name="role" id="role" onchange="rsw()"><option value="school">Образовательная организация (заявитель)</option><option value="speaker">Спикер (ветеран)</option><option value="fund">Фонд (направляет спикеров)</option><option value="operator">Оператор</option></select>
 <label class="lbl">Логин <span style="color:#d11">*</span></label><input name="login" required><label class="lbl">Пароль (от 5 символов) <span style="color:#d11">*</span></label><input type="password" name="pass" required>
 <label class="lbl">Email (для уведомлений) <span style="color:#d11">*</span></label><input type="email" name="email" required>
-<label class="lbl">Район Тюменской области <span style="color:#d11">*</span></label><select name="district" id="district_sel" onchange="dsw()"><option value="">— выберите район —</option>'.$distOpt.'<option value="__other__">Другой (вписать вручную)</option></select>
-<div id="district_other_wrap" style="display:none"><label class="lbl">Впишите район</label><input name="district_other" placeholder="название района"></div>
-<div class="rf school"><label class="lbl">Наименование организации</label><input name="org_name"><label class="lbl">Уровень</label><select name="level"><option value="school">Школа</option><option value="spo">Профессиональная образовательная организация</option><option value="vuz">Высшее учебное заведение</option><option value="other">Иное (спортивная школа, детский дом и т.п.)</option></select><label class="lbl">Адрес местонахождения</label><input name="address" placeholder="г. Тюмень, ул. ..., д. ..."><label class="lbl">№ корпуса</label><input name="building" placeholder="напр. 1"><p class="muted" style="margin:2px 0 8px">Если у организации нет отдельных корпусов, укажите «1».</p><label class="lbl">ФИО контактного лица</label><input name="contact_name"><label class="lbl">Должность</label><input name="position"><label class="lbl">Телефон</label><input name="contact_phone"></div>
-<div class="rf speaker" style="display:none"><label class="lbl">ФИО</label><input name="display_name"><label class="lbl">Телефон для связи <span style="color:#d11">*</span></label><input name="phone"><label class="lbl">Фонд <span style="color:#d11">*</span></label><select name="fund_user_id">'.$fundOpt.'</select><label class="lbl">Возрастные группы</label><div class="chks">'.$ag.'</div></div>
-<div class="rf fund" style="display:none"><label class="lbl">Наименование Фонда</label><input name="fund_display_name"><label class="lbl">Тип</label><select name="fund_type" id="fund_type" onchange="ftsw()"><option value="head">Головной фонд</option><option value="sub">Структурное подразделение</option></select><div id="parentfund" style="display:none"><label class="lbl">Головной фонд <span style="color:#d11">*</span></label><select name="parent_fund_id">'.$headFundOpt.'</select></div><div id="fundcode"><label class="lbl">Код регистрации Фонда</label><input name="fund_code"></div><label class="lbl">ФИО контактного лица</label><input name="contact_name"><label class="lbl">Должность</label><input name="position"><label class="lbl">Телефон</label><input name="contact_phone"></div>
-<div class="rf operator" style="display:none"><label class="lbl">Наименование</label><input name="op_display_name"><label class="lbl">Департамент</label><select name="op_group"><option value="school">ДОА г. Тюмени (школы)</option><option value="region">ДОиН ТО (СПО и вузы)</option></select><label class="lbl">Код регистрации оператора</label><input name="op_code"><label class="lbl">ФИО контактного лица</label><input name="contact_name"><label class="lbl">Должность</label><input name="position"><label class="lbl">Телефон</label><input name="contact_phone"></div>
+<label class="lbl">Район Тюменской области <span style="color:#d11">*</span></label><select name="district" id="district_sel" onchange="dsw()" required><option value="">— выберите район —</option>'.$distOpt.'<option value="__other__">Другой (вписать вручную)</option></select>
+<div id="district_other_wrap" style="display:none"><label class="lbl">Впишите район <span style="color:#d11">*</span></label><input name="district_other" placeholder="название района" id="district_other"></div>
+<div class="rf school"><label class="lbl">Наименование организации <span style="color:#d11">*</span></label><input name="org_name" data-req><label class="lbl">Уровень</label><select name="level"><option value="school">Школа</option><option value="spo">Профессиональная образовательная организация</option><option value="vuz">Высшее учебное заведение</option><option value="other">Иное (спортивная школа, детский дом и т.п.)</option></select><label class="lbl">Адрес местонахождения <span style="color:#d11">*</span></label><input name="address" placeholder="г. Тюмень, ул. ..., д. ..." data-req><label class="lbl">№ корпуса <span style="color:#d11">*</span></label><input name="building" placeholder="напр. 1" data-req><p class="muted" style="margin:2px 0 8px">Если у организации нет отдельных корпусов, укажите «1».</p><label class="lbl">ФИО контактного лица <span style="color:#d11">*</span></label><input name="contact_name" data-req><label class="lbl">Должность <span style="color:#d11">*</span></label><input name="position" data-req><label class="lbl">Телефон <span style="color:#d11">*</span></label><input name="contact_phone" data-req></div>
+<div class="rf speaker" style="display:none"><label class="lbl">ФИО <span style="color:#d11">*</span></label><input name="display_name" data-req><label class="lbl">Телефон для связи <span style="color:#d11">*</span></label><input name="phone" data-req><label class="lbl">Фонд <span style="color:#d11">*</span></label><select name="fund_user_id" data-req>'.$fundOpt.'</select><label class="lbl">Возрастные группы <span style="color:#d11">*</span></label><div class="chks" id="groups_wrap">'.$ag.'</div></div>
+<div class="rf fund" style="display:none"><label class="lbl">Наименование Фонда <span style="color:#d11">*</span></label><input name="fund_display_name" data-req><label class="lbl">Тип</label><select name="fund_type" id="fund_type" onchange="ftsw()"><option value="head">Головной фонд</option><option value="sub">Структурное подразделение</option></select><div id="parentfund" style="display:none"><label class="lbl">Головной фонд <span style="color:#d11">*</span></label><select name="parent_fund_id" id="parent_fund_id">'.$headFundOpt.'</select></div><div id="fundcode"><label class="lbl">Код регистрации Фонда <span style="color:#d11">*</span></label><input name="fund_code" id="fund_code"></div><label class="lbl">ФИО контактного лица <span style="color:#d11">*</span></label><input name="contact_name" data-req><label class="lbl">Должность <span style="color:#d11">*</span></label><input name="position" data-req><label class="lbl">Телефон <span style="color:#d11">*</span></label><input name="contact_phone" data-req></div>
+<div class="rf operator" style="display:none"><label class="lbl">Наименование <span style="color:#d11">*</span></label><input name="op_display_name" data-req><label class="lbl">Департамент</label><select name="op_group"><option value="school">ДОА г. Тюмени (школы)</option><option value="region">ДОиН ТО (СПО и вузы)</option></select><label class="lbl">Код регистрации оператора <span style="color:#d11">*</span></label><input name="op_code" data-req><label class="lbl">ФИО контактного лица <span style="color:#d11">*</span></label><input name="contact_name" data-req><label class="lbl">Должность <span style="color:#d11">*</span></label><input name="position" data-req><label class="lbl">Телефон <span style="color:#d11">*</span></label><input name="contact_phone" data-req></div>
 <label class="chk" style="margin-top:10px"><input type="checkbox" name="consent" required> Согласие на обработку ПДн <span style="color:#d11">*</span> (<a href="?p=privacy" target="_blank">политика</a>)</label>
 <button class="btn primary" style="margin-top:12px">Зарегистрироваться</button></form><p class="muted"><a href="?p=login">← ко входу</a></p></div>
-<script>function rsw(){var r=document.getElementById("role").value;document.querySelectorAll(".rf").forEach(function(e){e.style.display="none"});var b=document.querySelector(".rf."+r);if(b)b.style.display="block";}rsw();function ftsw(){var t=document.getElementById("fund_type").value;document.getElementById("parentfund").style.display=(t==="sub")?"block":"none";document.getElementById("fundcode").style.display=(t==="sub")?"none":"block";}function dsw(){var w=document.getElementById("district_other_wrap");if(w)w.style.display=(document.getElementById("district_sel").value==="__other__")?"block":"none";}</script>';
+<script>
+function rsw(){
+var r=document.getElementById("role").value;
+document.querySelectorAll(".rf").forEach(function(e){ e.style.display="none"; e.querySelectorAll("[data-req]").forEach(function(inp){ inp.required=false; }); });
+document.getElementById("parent_fund_id").required=false;
+document.getElementById("fund_code").required=false;
+var b=document.querySelector(".rf."+r);
+if(b){ b.style.display="block"; b.querySelectorAll("[data-req]").forEach(function(inp){ inp.required=true; }); }
+if(r==="fund") ftsw();
+validateGroups();
+}
+rsw();
+function ftsw(){
+var t=document.getElementById("fund_type").value; var sub=(t==="sub");
+document.getElementById("parentfund").style.display=sub?"block":"none";
+document.getElementById("fundcode").style.display=sub?"none":"block";
+document.getElementById("parent_fund_id").required=sub;
+document.getElementById("fund_code").required=!sub;
+}
+function dsw(){
+var w=document.getElementById("district_other_wrap"); var isOther=(document.getElementById("district_sel").value==="__other__");
+if(w)w.style.display=isOther?"block":"none";
+document.getElementById("district_other").required=isOther;
+}
+function validateGroups(){
+var boxes=document.querySelectorAll("#groups_wrap input[type=checkbox]"); if(!boxes.length)return;
+var checked=Array.prototype.some.call(boxes,function(b){return b.checked;});
+var needed=document.getElementById("role").value==="speaker";
+boxes[0].setCustomValidity((needed&&!checked)?"Выберите хотя бы одну возрастную группу":"");
+}
+document.querySelectorAll("#groups_wrap input[type=checkbox]").forEach(function(b){ b.addEventListener("change",validateGroups); });
+</script>';
 layout('Регистрация',$body); exit;
 }
 require_login();

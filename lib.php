@@ -163,6 +163,22 @@ function require_role($role){ $u=current_user(); if(!$u||$u['role']!==$role){ ht
 function find_user_by_login($login){ $st=db()->prepare('SELECT * FROM users WHERE login=?'); $st->execute([$login]); return $st->fetch()?:null; }
 function find_user_by_email($email){ $st=db()->prepare('SELECT * FROM users WHERE email=?'); $st->execute([$email]); return $st->fetch()?:null; }
 function find_user_by_id($id){ if(!$id) return null; $st=db()->prepare('SELECT * FROM users WHERE id=?'); $st->execute([$id]); return $st->fetch()?:null; }
+function profile_missing_fields($u){
+if(!$u) return [];
+$missing=[];
+$blank=fn($k)=>trim((string)($u[$k]??''))==='';
+if(in_array($u['role'],['school','fund','operator'],true)){
+if($blank('contact_name')) $missing[]='ФИО контактного лица';
+if($blank('position')) $missing[]='Должность';
+if($blank('phone')) $missing[]='Телефон';
+}
+if($u['role']==='school'){
+if($blank('address')) $missing[]='Адрес местонахождения';
+if($blank('building')) $missing[]='№ корпуса';
+}
+if($u['role']==='speaker' && $blank('phone')) $missing[]='Телефон';
+return $missing;
+}
 function create_user($role,$login,$pass,$extra=[]){
 if(find_user_by_login($login)) return [false,'Такой логин уже занят.'];
 $active=array_key_exists('active',$extra)?(int)$extra['active']:(($role==='speaker'||$role==='school')?0:1);
