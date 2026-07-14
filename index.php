@@ -302,6 +302,13 @@ foreach(statuses() as $i=>$s){ if($i<=$idx){ $cls='done'; $mk='✓'; } elseif($i
 return $h.'</div>'; }
 function fbline($role,$comment){ $comment=trim((string)$comment); if($comment==='') return '<div class="fbsum"><b>'.esc($role).'</b> <span class="muted">— отзыв не оставлен</span></div>'; return '<div class="fbsum"><b>'.esc($role).'</b><div class="cmt">«'.esc($comment).'»</div></div>'; }
 function dt($r){ $t=$r['utime']?(' '.esc($r['utime']).(!empty($r['utime_end'])?('–'.esc($r['utime_end'])):'')):''; return esc($r['udate']).$t; }
+function sort_th($label,$key){
+$cur=$_GET['sort']??''; $curDir=$_GET['dir']??'asc';
+$newDir=($cur===$key && $curDir==='asc')?'desc':'asc';
+$q=$_GET; $q['sort']=$key; $q['dir']=$newDir;
+$arrow=$cur===$key?($curDir==='asc'?' ▲':' ▼'):'';
+return '<th><a href="?'.esc(http_build_query($q)).'" class="sort-th">'.esc($label).$arrow.'</a></th>';
+}
 function render_reason_select($name,$reasons,$withOther=true){
 $o='<option value="">— выберите причину —</option>';
 foreach($reasons as $rs) $o.='<option value="'.esc($rs).'">'.esc($rs).'</option>';
@@ -582,10 +589,11 @@ layout('Реестр спикеров',$body); exit;
 if($tab==='archive'){
 $afil=['archived'=>1]; if(($u['op_group']??'')==='school') $afil['op_group']='school';
 $rows=get_requests_list($afil);
+if(!empty($_GET['sort'])) $rows=sort_requests($rows,$_GET['sort'],$_GET['dir']??'asc');
 $body='<div class="head"><h2>Архив заявок</h2><a class="btn ghost" href="?p=operator">← к заявкам</a></div>';
 $body.='<p class="muted">Закрытые заявки старше 30 дней автоматически переносятся в архив.</p>';
 $tr=''; foreach($rows as $r){ $tr.='<tr onclick="location=\'?p=request&id='.$r['id'].'\'"><td class="id">'.esc($r['code']).'</td><td>'.esc($r['org']).'</td><td>'.dt($r).'</td><td>'.esc(req_label($r['id'])).'</td><td>'.pill($r['status']).'</td><td class="muted">'.esc($r['archived_at']??'').'</td></tr>'; }
-$body.= $rows ? '<table class="card-view"><thead><tr><th>Код</th><th>Организация</th><th>Дата</th><th>Спикеры</th><th>Статус</th><th>Архивировано</th></tr></thead><tbody>'.$tr.'</tbody></table>' : '<div class="card pad muted">Архив пуст.</div>';
+$body.= $rows ? '<table class="card-view"><thead><tr>'.sort_th('Код','code').sort_th('Организация','org').sort_th('Дата','date').'<th>Спикеры</th>'.sort_th('Статус','status').'<th>Архивировано</th></tr></thead><tbody>'.$tr.'</tbody></table>' : '<div class="card pad muted">Архив пуст.</div>';
 layout('Архив заявок',$body); exit;
 }
 if($tab==='moderation'){
@@ -621,6 +629,7 @@ if(!empty($_GET['org'])) $filters['org']=$_GET['org'];
 if(!empty($_GET['from_date'])) $filters['from_date']=$_GET['from_date'];
 if(!empty($_GET['to_date'])) $filters['to_date']=$_GET['to_date'];
 $rows=get_requests_list($filters);
+if(!empty($_GET['sort'])) $rows=sort_requests($rows,$_GET['sort'],$_GET['dir']??'asc');
 $pendN=count(pending_applicants($u));
 $action_req = get_action_required_requests($u);
 $body = '';
@@ -653,7 +662,7 @@ $urgent_tr = is_request_urgent($r) ? 'urgent' : '';
 $tr.='<tr class="'.$urgent_tr.'" onclick="location=\'?p=request&id='.$r['id'].'\'"><td class="id">'.esc($r['code']).'</td><td>'.esc($r['org']).'</td><td>'.dt($r).'</td><td>'.esc(req_label($r['id'])).'</td><td>'.pill($r['status']).'</td></tr>';
 }
 $body.='<div class="head"><h2>Реестр заявок ('.count($rows).')</h2></div><div class="kpis">'.$kp.'</div>';
-$body.= $rows ? '<table class="card-view"><thead><tr><th>Код</th><th>Организация</th><th>Дата и время</th><th>Спикеры</th><th>Статус</th></tr></thead><tbody>'.$tr.'</tbody></table>' : '<div class="card pad muted">Заявок не найдено.</div>';
+$body.= $rows ? '<table class="card-view"><thead><tr>'.sort_th('Код','code').sort_th('Организация','org').sort_th('Дата и время','date').'<th>Спикеры</th>'.sort_th('Статус','status').'</tr></thead><tbody>'.$tr.'</tbody></table>' : '<div class="card pad muted">Заявок не найдено.</div>';
 layout('Кабинет оператора',$body); exit;
 }
 // ========== ОТЗЫВЫ ==========
@@ -777,6 +786,7 @@ $body.='<div style="margin-top:14px;display:flex;gap:8px"><a class="btn ghost" h
 layout('Спикеры Фонда',$body); exit;
 }
 $rows=fund_requests($u);
+if(!empty($_GET['sort'])) $rows=sort_requests($rows,$_GET['sort'],$_GET['dir']??'asc');
 $action_req = get_action_required_requests($u);
 $body = '';
 $subpend=pending_subfunds($u);
@@ -796,7 +806,7 @@ $need=in_array($r['status'],['chosen','confirmed'])?' <span class="pill amber">�
 $tr.='<tr class="'.$urgent_tr.'" onclick="location=\'?p=request&id='.$r['id'].'\'"><td class="id">'.esc($r['code']).'</td><td>'.esc($r['org']).'</td><td>'.dt($r).'</td><td>'.esc(req_label($r['id'])).'</td><td>'.pill($r['status']).$need.'</td></tr>';
 }
 $body.='<div class="head"><h2>Заявки со спикерами</h2><div><a class="btn ghost" href="?p=fund&tab=speakers">Спикеры Фонда</a> <a class="btn ghost" href="?p=calendar">📅 Календарь</a> <a class="btn ghost" href="?p=materials">🗂️ Материалы</a></div></div>';
-$body.= $rows ? '<table class="card-view"><thead><tr><th>Код</th><th>Организация</th><th>Дата и время</th><th>Спикеры</th><th>Статус</th></tr></thead><tbody>'.$tr.'</tbody></table>' : '<div class="card pad muted">Пока нет заявок с выбранными спикерами.</div>';
+$body.= $rows ? '<table class="card-view"><thead><tr>'.sort_th('Код','code').sort_th('Организация','org').sort_th('Дата и время','date').'<th>Спикеры</th>'.sort_th('Статус','status').'</tr></thead><tbody>'.$tr.'</tbody></table>' : '<div class="card pad muted">Пока нет заявок с выбранными спикерами.</div>';
 layout('Кабинет Фонда',$body); exit;
 }
 // ========== КАБИНЕТ ЗАЯВИТЕЛЯ ==========
@@ -835,6 +845,7 @@ return '<select name="topic" onchange="var b=this.form.querySelector(\'.topic-ot
 layout('Подать заявку',$body); exit;
 }
 $st=db()->prepare('SELECT * FROM requests WHERE school_user_id=? AND (archived=0 OR archived IS NULL) ORDER BY id DESC'); $st->execute([$u['id']]); $rows=$st->fetchAll();
+if(!empty($_GET['sort'])) $rows=sort_requests($rows,$_GET['sort'],$_GET['dir']??'asc');
 $action_req = get_action_required_requests($u);
 $body = '';
 if ($action_req) {
@@ -851,7 +862,7 @@ $urgent_tr = is_request_urgent($r) ? 'urgent' : '';
 $tr.='<tr class="'.$urgent_tr.'" onclick="location=\'?p=request&id='.$r['id'].'\'"><td class="id">'.esc($r['code']).'</td><td>'.dt($r).'</td><td>'.esc(ages()[$r['age_group']]??'').'</td><td>'.esc(req_label($r['id'])).'</td><td>'.pill($r['status']).'</td></tr>';
 }
 $body.='<div class="head"><h2>'.esc($u['org_name']).'</h2><div><a class="btn primary" href="?p=school&tab=new">+ Подать заявку</a> <a class="btn ghost" href="?p=calendar">📅 Календарь</a> <a class="btn ghost" href="?p=materials">🗂️ Материалы</a></div></div>';
-$body.= $rows ? '<table class="card-view"><thead><tr><th>Код</th><th>Дата и время</th><th>Аудитория</th><th>Спикеры</th><th>Статус</th></tr></thead><tbody>'.$tr.'</tbody></table>' : '<div class="card pad muted">Заявок пока нет. Нажмите «Подать заявку».</div>';
+$body.= $rows ? '<table class="card-view"><thead><tr>'.sort_th('Код','code').sort_th('Дата и время','date').'<th>Аудитория</th><th>Спикеры</th>'.sort_th('Статус','status').'</tr></thead><tbody>'.$tr.'</tbody></table>' : '<div class="card pad muted">Заявок пока нет. Нажмите «Подать заявку».</div>';
 layout('Кабинет заявителя',$body); exit;
 }
 // ========== КАБИНЕТ СПИКЕРА ==========
@@ -859,12 +870,13 @@ if($p==='speaker'){
 require_role('speaker');
 if(!$u['active']){ layout('Кабинет спикера','<div class="card pad"><h2>Ожидает подтверждения</h2><p class="muted">Ваша учётная запись ожидает подтверждения Фондом.</p></div>'); exit; }
 $rows=speaker_lessons($u['id']);
+if(!empty($_GET['sort'])) $rows=sort_requests($rows,$_GET['sort'],$_GET['dir']??'asc');
 $daily=speaker_daily_count($u['id'],date('Y-m-d'));
 $weekly=speaker_weekly_count($u['id'],date('Y-m-d'));
 $tr=''; foreach($rows as $r){ $mark=$r['cfd']?'<span class="pill green">в составе</span>':(st_index($r['status'])>=st_index('confirmed')?'<span class="pill gray">не выбран</span>':'<span class="pill gray">кандидат</span>'); $tr.='<tr onclick="location=\'?p=request&id='.$r['id'].'\'"><td class="id">'.esc($r['code']).'</td><td>'.esc($r['org']).'</td><td>'.dt($r).'</td><td>'.$mark.'</td><td>'.pill($r['status']).'</td></tr>'; }
 $body='<div class="head"><h2>Мои уроки</h2><div><a class="btn ghost" href="?p=calendar">📅 Календарь</a> <a class="btn ghost" href="?p=materials">🗂️ Материалы</a></div></div>';
 $body.='<div class="kpis"><div class="kpi"><div class="n">'.$daily.' / 2</div><div class="l">Уроков сегодня</div></div><div class="kpi"><div class="n">'.$weekly.' / 7</div><div class="l">Уроков на неделе</div></div><div class="kpi"><div class="n">'.count($rows).'</div><div class="l">Всего назначено</div></div></div>';
-$body.= $rows ? '<table class="card-view"><thead><tr><th>Код</th><th>Организация</th><th>Дата и время</th><th>Вы</th><th>Статус</th></tr></thead><tbody>'.$tr.'</tbody></table>' : '<div class="card pad muted">Назначенных уроков пока нет.</div>';
+$body.= $rows ? '<table class="card-view"><thead><tr>'.sort_th('Код','code').sort_th('Организация','org').sort_th('Дата и время','date').'<th>Вы</th>'.sort_th('Статус','status').'</tr></thead><tbody>'.$tr.'</tbody></table>' : '<div class="card pad muted">Назначенных уроков пока нет.</div>';
 // ========== КАЛЕНДАРЬ НЕДОСТУПНОСТИ ==========
 $body.='<div class="block" style="margin-top:20px"><h4>📅 Календарь недоступности</h4>';
 $body.='<p class="muted">Укажите периоды, когда вы не можете проводить занятия (отпуск, больничный и т.п.). В эти даты вы не будете попадать в список доступных спикеров.</p>';

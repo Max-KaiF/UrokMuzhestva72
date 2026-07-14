@@ -753,6 +753,26 @@ if(!empty($filters['to_date'])) { $where.=' AND created_at<=?'; $params[]=$filte
 $st=db()->prepare("SELECT al.*, u.login, u.display_name FROM audit_log al LEFT JOIN users u ON u.id=al.user_id WHERE $where ORDER BY al.id DESC LIMIT 200");
 $st->execute($params); return $st->fetchAll();
 }
+// ========== СОРТИРОВКА СПИСКОВ ЗАЯВОК ==========
+function sort_status_rank($k){
+$ranks=['new'=>0,'chosen'=>1,'confirmed'=>2,'brief'=>2,'prep'=>3,'done'=>4,'cancelled'=>5,'closed'=>6];
+return $ranks[$k]??0;
+}
+function sort_requests($rows,$key,$dir='asc'){
+if(!$key||!$rows) return $rows;
+$mul=$dir==='desc'?-1:1;
+usort($rows,function($a,$b) use($key,$mul){
+switch($key){
+case 'code': $cmp=strnatcasecmp($a['code']??'',$b['code']??''); break;
+case 'org': $cmp=strcasecmp($a['org']??'',$b['org']??''); break;
+case 'date': $cmp=strcmp(($a['udate']??'').' '.($a['utime']??''),($b['udate']??'').' '.($b['utime']??'')); break;
+case 'status': $cmp=sort_status_rank($a['status']??'')<=>sort_status_rank($b['status']??''); break;
+default: $cmp=0;
+}
+return $cmp*$mul;
+});
+return $rows;
+}
 // ========== АРХИВАЦИЯ ==========
 function archive_old_requests($days=30){
 $cutoff=date('Y-m-d H:i:s',strtotime("-$days days"));
