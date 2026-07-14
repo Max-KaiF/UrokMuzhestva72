@@ -489,6 +489,13 @@ if($r['status']==='new') upd($r['id'],['status'=>'chosen']);
 log_action(current_user()['id']??null,'school','add_candidate','requests',$r['id'],"Добавлен спикер #$sid");
 return [true,'Спикер добавлен в список желаемых.'];
 }
+function delete_request($r,$actor){
+if($actor['role']!=='school'||(int)$r['school_user_id']!==(int)$actor['id']) return [false,'Нет доступа.'];
+if($r['status']!=='new') return [false,'Удалить можно только заявку на этапе «Новая».'];
+db()->prepare("DELETE FROM requests WHERE id=?")->execute([$r['id']]);
+log_action($actor['id'],'school','request_delete','requests',$r['id'],"Удалена заявка {$r['code']}");
+return [true,'Заявка удалена.'];
+}
 function remove_candidate($r,$sid){
 if(!in_array($r['status'],['new','chosen'])) return [false,'Список уже подтверждён.'];
 db()->prepare("DELETE FROM request_speakers WHERE request_id=? AND speaker_user_id=?")->execute([$r['id'],$sid]);

@@ -179,6 +179,13 @@ require_role('operator');
 [$ok,$msg]=delete_material((int)($_POST['id']??0));
 flash_set($msg); redirect('?p=materials');
 }
+if($a==='delete_request'){
+require_role('school');
+$rid=(int)($_POST['id']??0); $r=$rid?get_request($rid):null;
+if(!$r){ flash_set('Заявка не найдена.'); redirect('?p=school'); }
+[$ok,$msg]=delete_request($r,$u);
+flash_set($msg); redirect('?p=school');
+}
 $rid=(int)($_POST['id']??0); $r=$rid?get_request($rid):null;
 if($r){
 $msg=null; $sid=(int)($_POST['sid']??0);
@@ -971,6 +978,7 @@ foreach($rows as $row){ $badge=$row['confirmed']?'<span class="pill green">в с
 if($u['role']==='school'){
 $body.='<div class="block" style="display:flex;gap:8px;flex-wrap:wrap"><a class="btn ghost sm" href="?p=school&tab=new&copy='.$r['id'].'">📋 Повторить заявку</a>';
 if(in_array($r['status'],['new','chosen','confirmed'])) $body.='<a class="btn ghost sm" href="?p=request_edit&id='.$r['id'].'">✏️ Редактировать</a>';
+if($r['status']==='new') $body.='<form method="post" style="display:inline" onsubmit="return confirm(\'Удалить заявку? Действие необратимо.\')">'.csrf_field().'<input type="hidden" name="action" value="delete_request"><input type="hidden" name="id" value="'.$r['id'].'"><button type="submit" class="btn ghost sm" style="color:#b23b2c;border-color:#f5c6c0">🗑️ Удалить</button></form>';
 $body.='</div>';
 if(in_array($r['status'],['new','chosen'])){
 $free=free_speakers_for_request($r); $opt='<option value="">— выбрать свободного спикера —</option>';
