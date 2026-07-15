@@ -92,6 +92,7 @@ foreach([
 "ALTER TABLE users ADD COLUMN sp_bio TEXT",
 "ALTER TABLE requests ADD COLUMN claimed_fund_id INTEGER",
 "ALTER TABLE requests ADD COLUMN claimed_at VARCHAR(40)",
+"ALTER TABLE requests ADD COLUMN desired_speaker_id INTEGER",
 ] as $sql){ try{ db()->exec($sql); }catch(Throwable $e){} }
 try{ db()->exec("UPDATE requests SET speakers_needed=1 WHERE speakers_needed IS NULL"); }catch(Throwable $e){}
 try{ db()->exec("UPDATE requests SET lessons_per_speaker=1 WHERE lessons_per_speaker IS NULL OR lessons_per_speaker<1"); }catch(Throwable $e){}
@@ -149,9 +150,8 @@ function guide_content(){ return [
 'school'=>['label'=>'Образовательная организация','short'=>'Заявитель','subtitle'=>'Подаёт заявки на Урок Мужества и принимает спикеров','steps'=>[
 ['t'=>'Регистрация','d'=>'Укажите наименование организации, уровень (школа / СПО / вуз / иное), адрес, ФИО и телефон контактного лица.'],
 ['t'=>'Подтверждение','d'=>'Заявку на регистрацию проверяет профильный департамент образования. После одобрения открывается доступ в личный кабинет.'],
-['t'=>'Подать заявку','d'=>'Укажите дату, время, возрастную группу, число участников и тему урока (из готовых технологических карт или свою).'],
-['t'=>'Выбрать спикеров','d'=>'Из списка подходящих ветеранов выберите кандидатов вручную или нажмите «Подобрать автоматически».'],
-['t'=>'Ожидание Фонда','d'=>'Фонд, направляющий выбранных спикеров, рассматривает кандидатов и формирует итоговый состав.'],
+['t'=>'Подать заявку','d'=>'Укажите дату, время, возрастную группу, число участников и тему урока (из готовых технологических карт или свою). Можно указать желаемого спикера — это необязательное пожелание.'],
+['t'=>'Ожидание Фонда','d'=>'Заявка сразу становится доступна всем Фондам. Один из них берёт её в обработку и сам назначает спикера — выбирать спикеров вручную не нужно.'],
 ['t'=>'Подтвердить готовность','d'=>'Отметьте готовность площадки: согласие родителей (если нужно), готовность аудитории, сопровождение.'],
 ['t'=>'Провести урок','d'=>'После урока отметьте «Проведён» или «Не состоялся» с указанием причины.'],
 ['t'=>'Оставить отзыв','d'=>'Короткий отзыв о том, как прошёл урок — это последний шаг перед закрытием заявки.'],
@@ -160,7 +160,8 @@ function guide_content(){ return [
 ['t'=>'Регистрация','d'=>'Укажите ФИО, телефон, выберите Фонд, который вас направляет, и возрастные группы, с которыми готовы работать.'],
 ['t'=>'Подтверждение Фондом','d'=>'Фонд проверяет данные и открывает доступ в личный кабинет.'],
 ['t'=>'Календарь недоступности','d'=>'Отметьте даты, когда не сможете проводить уроки (отпуск, лечение и т.п.) — в эти дни вас не предложат заявителям.'],
-['t'=>'Вас выбрали кандидатом','d'=>'Образовательная организация может выбрать вас в состав урока — заявка появится в разделе «Мои уроки» со статусом «кандидат».'],
+['t'=>'Фонд взял заявку в обработку','d'=>'Пока Фонд не назначил конкретного спикера, заявка видна всем спикерам фонда в разделе «Заявки фонда в обработке».'],
+['t'=>'Вас назначили','d'=>'Как только Фонд назначил именно вас, заявка появляется в разделе «Мои уроки» и пропадает у остальных спикеров фонда.'],
 ['t'=>'Фонд подтверждает состав','d'=>'Если вас утвердили окончательно, статус изменится на «в составе».'],
 ['t'=>'Проведение урока','d'=>'Проведите урок в назначенные дату и время.'],
 ['t'=>'Отзыв','d'=>'Оставьте короткий отзыв о проведённом уроке.'],
@@ -168,8 +169,8 @@ function guide_content(){ return [
 'fund'=>['label'=>'Фонд','short'=>'Направляет спикеров','subtitle'=>'Формирует и подтверждает состав спикеров для заявок','steps'=>[
 ['t'=>'Регистрация','d'=>'Головной фонд регистрируется по коду регистрации. Структурное подразделение указывает головной фонд и ждёт его подтверждения.'],
 ['t'=>'Подтверждение спикеров','d'=>'Проверяйте спикеров, указавших ваш фонд при регистрации, и открывайте им доступ, отмечая возрастные группы.'],
-['t'=>'Заявки «Спикеры выбраны»','d'=>'Здесь появляются заявки, где заявитель выбрал кандидатами ваших спикеров.'],
-['t'=>'Формирование состава','d'=>'Подтверждайте подходящих кандидатов, при необходимости отклоняйте с указанием причины или заменяйте спикера.'],
+['t'=>'Новые заявки','d'=>'Все новые заявки сразу видны всем Фондам. Возьмите подходящую «в обработку» — она закрепится за вашим фондом, и другие фонды её уже не возьмут.'],
+['t'=>'Назначение спикера','d'=>'Назначьте своего спикера (при желании — учитывая пожелание заявителя), затем подтвердите его в списке кандидатов. Если не нашли подходящего — верните заявку в общий список.'],
 ['t'=>'Состав укомплектован','d'=>'Как только подтверждено нужное число спикеров, заявка переходит на этап «Состав подтверждён», остальные кандидаты снимаются автоматически.'],
 ['t'=>'Инструктаж','d'=>'При необходимости отметьте дату проведения инструктажа спикеров перед уроком.'],
 ['t'=>'После урока','d'=>'Доступен просмотр отзывов заявителя и спикеров о проведённом уроке.'],
@@ -437,9 +438,9 @@ function get_request($id){ $st=db()->prepare('SELECT * FROM requests WHERE id=?'
 function create_request($schoolUser,$f){
 $lvl=$f['level'];
 $lps=max(1,min(2,(int)($f['lessons_per_speaker']??1)));
-$st=db()->prepare('INSERT INTO requests(code,school_user_id,org,level,op_group,operator,contact_name,phone,email,udate,utime,utime_end,age_group,participants,speakers_needed,lessons_per_speaker,topic,notes,status,created_at,district) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
+$st=db()->prepare('INSERT INTO requests(code,school_user_id,org,level,op_group,operator,contact_name,phone,email,udate,utime,utime_end,age_group,participants,speakers_needed,lessons_per_speaker,topic,notes,status,created_at,district,desired_speaker_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
 $st->execute([gen_code(),$schoolUser['id'],$schoolUser['org_name'],$lvl,opgroup_of($lvl),operator_of($lvl),
-$f['contact_name'],$f['phone'],$f['email']??'',$f['udate'],$f['utime']??'',$f['utime_end']??'',$f['age_group'],$f['participants']??'',max(1,(int)($f['speakers_needed']??1)),$lps,$f['topic']??'',$f['notes']??'','new',now(),$schoolUser['district']??'']);
+$f['contact_name'],$f['phone'],$f['email']??'',$f['udate'],$f['utime']??'',$f['utime_end']??'',$f['age_group'],$f['participants']??'',max(1,(int)($f['speakers_needed']??1)),$lps,$f['topic']??'',$f['notes']??'','new',now(),$schoolUser['district']??'',$f['desired_speaker_id']?:null]);
 $rid=db()->lastInsertId();
 log_action($schoolUser['id'],'school','request_create','requests',$rid,"Создана заявка {$f['udate']}");
 return $rid;
@@ -479,6 +480,11 @@ $topicRaw=$f['topic']??'';
 $allowed['topic']=($topicRaw==='__other__')?trim($f['topic_other']??''):trim($topicRaw);
 if(!$allowed['contact_name']||!$allowed['phone']) return [false,'Заполните контактное лицо и телефон.'];
 if(!in_array($allowed['age_group'],array_keys(ages()),true)) return [false,'Некорректная возрастная группа.'];
+if($r['status']==='new'){
+$dsid=(int)($f['desired_speaker_id']??0);
+if($dsid){ $dsp=find_user_by_id($dsid); if(!$dsp||$dsp['role']!=='speaker'||!$dsp['active']) $dsid=0; }
+$allowed['desired_speaker_id']=$dsid?:null;
+}
 $rescheduled=false;
 if(reschedulable_status($r) && isset($f['udate'])){
 [$ok,$res]=reschedule_fields($r,$f['udate'],$f['utime']??'',$f['utime_end']??'');
@@ -562,15 +568,6 @@ function auto_claim_from_speaker($rid,$sid){
 $sp=find_user_by_id($sid); if(!$sp||empty($sp['fund_user_id'])) return;
 db()->prepare("UPDATE requests SET claimed_fund_id=?, claimed_at=COALESCE(claimed_at,?) WHERE id=? AND claimed_fund_id IS NULL")->execute([$sp['fund_user_id'],now(),$rid]);
 }
-function add_candidate($r,$sid){
-if(!in_array($r['status'],['new','chosen'])) return [false,'Спикеров можно менять только до подтверждения состава Фондом.'];
-if(!in_array((int)$sid,array_map(fn($s)=>(int)$s['id'],free_speakers_for_request($r)))) return [false,'Спикер недоступен (занят, не подходит по возрасту/фонду, превышен лимит или уже добавлен).'];
-db()->prepare("INSERT INTO request_speakers(request_id,speaker_user_id,confirmed,created_at) VALUES(?,?,0,?)")->execute([$r['id'],$sid,now()]);
-auto_claim_from_speaker($r['id'],$sid);
-if($r['status']==='new') upd($r['id'],['status'=>'chosen']);
-log_action(current_user()['id']??null,'school','add_candidate','requests',$r['id'],"Добавлен спикер #$sid");
-return [true,'Спикер добавлен в список желаемых.'];
-}
 function claim_request($fund,$r){
 if($r['status']!=='new') return [false,'Взять в обработку можно только новую заявку.'];
 $st=db()->prepare("UPDATE requests SET claimed_fund_id=?, claimed_at=? WHERE id=? AND claimed_fund_id IS NULL AND status='new'");
@@ -593,31 +590,6 @@ if($r['status']!=='new') return [false,'Удалить можно только �
 db()->prepare("DELETE FROM requests WHERE id=?")->execute([$r['id']]);
 log_action($actor['id'],'school','request_delete','requests',$r['id'],"Удалена заявка {$r['code']}");
 return [true,'Заявка удалена.'];
-}
-function remove_candidate($r,$sid){
-if(!in_array($r['status'],['new','chosen'])) return [false,'Список уже подтверждён.'];
-db()->prepare("DELETE FROM request_speakers WHERE request_id=? AND speaker_user_id=?")->execute([$r['id'],$sid]);
-if(count(req_speaker_rows($r['id']))===0) upd($r['id'],['status'=>'new']);
-log_action(current_user()['id']??null,'school','remove_candidate','requests',$r['id'],"Убран спикер #$sid");
-return [true,'Спикер убран из списка.'];
-}
-function auto_pick_multiple($r,$maxCount=null){
-if(!in_array($r['status'],['new','chosen'])) return [false,'Автоподбор доступен только до подтверждения состава.'];
-$currentCount=count(req_speaker_rows($r['id']));
-$need=(int)$r['speakers_needed'];
-if($maxCount===null) $maxCount=max(0,$need-$currentCount);
-if($maxCount<=0) return [false,'Состав уже укомплектован или превышает потребность.'];
-$free=free_speakers_for_request($r);
-if(!$free) return [false,'Нет свободных подходящих спикеров на эту дату.'];
-$added=0; $names=[];
-foreach($free as $s){
-if($added>=$maxCount) break;
-$rr=get_request($r['id']);
-[$ok,$msg]=add_candidate($rr,(int)$s['id']);
-if($ok){ $added++; $names[]=$s['display_name']; }
-}
-if($added===0) return [false,'Не удалось добавить ни одного спикера (возможно, все подходящие уже заняты).'];
-return [true,"Автоматически подобрано спикеров: $added из $maxCount. ".implode(', ',$names).'. Итоговый состав утвердит Фонд.'];
 }
 function fund_scope_ids($fund){ $ids=[(int)$fund['id']]; if(empty($fund['parent_fund_id'])){ foreach(child_subfunds($fund) as $c) $ids[]=(int)$c['id']; } return array_values(array_unique($ids)); }
 function speaker_fund_of($sid){ $sp=find_user_by_id($sid); if(!$sp) return null; return $sp['fund_user_id']?find_user_by_id($sp['fund_user_id']):null; }
@@ -1074,7 +1046,7 @@ return [
 // ========== СЛОЙ 1: БЛОК "ТРЕБУЕТ ДЕЙСТВИЯ" ==========
 function whose_turn($r){
 $s=$r['status']; if($s==='brief') $s='confirmed';
-if($s==='new') return ['Заявитель','Выбрать спикеров (можно «Подобрать автоматически»)'];
+if($s==='new') return ['Фонд','Взять заявку в обработку и назначить спикера'];
 if($s==='chosen') return ['Фонд','Сформировать и подтвердить состав'];
 if($s==='confirmed') return ['Заявитель','Подтвердить готовность площадки'];
 if($s==='prep'){ $over=!empty($r['udate']) && strtotime(substr($r['udate'],0,10))<strtotime(date('Y-m-d')); return ['Заявитель',$over?'Урок должен был состояться — отметьте «Проведён» или «Не состоялся»':'После урока отметить «Проведён» или «Не состоялся»']; }
@@ -1094,7 +1066,7 @@ function get_action_required_requests($user) {
 $role = $user['role'];
 $uid = $user['id'];
 if ($role === 'school') {
-$st = db()->prepare("SELECT * FROM requests WHERE school_user_id = ? AND (archived=0 OR archived IS NULL) AND (status='new' OR (status IN ('confirmed','brief') AND (prep_confirmed_at IS NULL OR prep_confirmed_at='')) OR status='prep' OR (status='done' AND (fb_app_comment IS NULL OR fb_app_comment=''))) ORDER BY udate ASC");
+$st = db()->prepare("SELECT * FROM requests WHERE school_user_id = ? AND (archived=0 OR archived IS NULL) AND ((status IN ('confirmed','brief') AND (prep_confirmed_at IS NULL OR prep_confirmed_at='')) OR status='prep' OR (status='done' AND (fb_app_comment IS NULL OR fb_app_comment=''))) ORDER BY udate ASC");
 $st->execute([$uid]); return $st->fetchAll();
 }
 if ($role === 'fund') {
