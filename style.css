@@ -140,6 +140,18 @@ a{color:var(--rf-blue);}
 .hint-warn b{color:#9a6000}
 .notes-block{background:#fffbea;border:1px solid #ffe082;border-left:4px solid #C77700;border-radius:8px;padding:10px 14px;margin:10px 0;color:#7a5200;font-size:14px}
 .notes-block b{color:#9a6000}
+.guide-tabs{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0 22px}
+.guide-tab{background:#fff;border:1px solid var(--line2);color:var(--ink);border-radius:999px;padding:9px 18px;font:inherit;font-size:14.5px;font-weight:600;cursor:pointer}
+.guide-tab:hover{border-color:var(--navy)}
+.guide-tab.active{background:var(--navy);border-color:var(--navy);color:#fff}
+.guide-steps{position:relative;margin-top:6px}
+.guide-step{display:flex;gap:16px;position:relative;padding-bottom:26px}
+.guide-step:last-child{padding-bottom:0}
+.guide-step:not(:last-child):before{content:"";position:absolute;left:17px;top:36px;bottom:0;width:2px;background:var(--line)}
+.guide-num{flex:0 0 auto;width:36px;height:36px;border-radius:50%;background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:15px;z-index:1}
+.guide-step-body{background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px 16px;flex:1;box-shadow:0 1px 2px rgba(16,35,66,.05)}
+.guide-step-body b{color:var(--navy);font-size:15.5px}
+.guide-step-body p{margin:5px 0 0;color:var(--ink);font-size:14px;line-height:1.5}
 @media (max-width: 680px){
 table.card-view{display:block;border:none;background:transparent;box-shadow:none}
 table.card-view thead{display:none}
