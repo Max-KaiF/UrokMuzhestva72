@@ -83,6 +83,15 @@ foreach([
 "ALTER TABLE materials ADD COLUMN link VARCHAR(500)",
 "ALTER TABLE materials MODIFY COLUMN file_path VARCHAR(500) NULL",
 "UPDATE requests SET status='confirmed', briefing_done=1 WHERE status='brief'",
+"ALTER TABLE users ADD COLUMN photo_path VARCHAR(255)",
+"ALTER TABLE users ADD COLUMN sp_rank VARCHAR(190)",
+"ALTER TABLE users ADD COLUMN sp_branch VARCHAR(190)",
+"ALTER TABLE users ADD COLUMN sp_awards TEXT",
+"ALTER TABLE users ADD COLUMN sp_achievements TEXT",
+"ALTER TABLE users ADD COLUMN sp_hobbies VARCHAR(255)",
+"ALTER TABLE users ADD COLUMN sp_bio TEXT",
+"ALTER TABLE requests ADD COLUMN claimed_fund_id INTEGER",
+"ALTER TABLE requests ADD COLUMN claimed_at VARCHAR(40)",
 ] as $sql){ try{ db()->exec($sql); }catch(Throwable $e){} }
 try{ db()->exec("UPDATE requests SET speakers_needed=1 WHERE speakers_needed IS NULL"); }catch(Throwable $e){}
 try{ db()->exec("UPDATE requests SET lessons_per_speaker=1 WHERE lessons_per_speaker IS NULL OR lessons_per_speaker<1"); }catch(Throwable $e){}
@@ -97,6 +106,16 @@ if((int)db()->query("SELECT COUNT(*) c FROM request_speakers")->fetch()['c']===0
 foreach(db()->query("SELECT id,speaker_user_id,fb_vet_rating,fb_vet_comment,fb_vet_at FROM requests WHERE speaker_user_id IS NOT NULL")->fetchAll() as $r){
 db()->prepare("INSERT INTO request_speakers(request_id,speaker_user_id,confirmed,vet_rating,vet_comment,vet_at,created_at) VALUES(?,?,1,?,?,?,?)")
 ->execute([$r['id'],$r['speaker_user_id'],$r['fb_vet_rating'],$r['fb_vet_comment'],$r['fb_vet_at'],now()]);
+}
+}
+}catch(Throwable $e){}
+try{
+$cnt=(int)db()->query("SELECT COUNT(DISTINCT r.id) c FROM requests r JOIN request_speakers rs ON rs.request_id=r.id WHERE r.claimed_fund_id IS NULL")->fetch()['c'];
+if($cnt>0){
+foreach(db()->query("SELECT DISTINCT request_id FROM request_speakers")->fetchAll(PDO::FETCH_COLUMN) as $rid){
+$sp=db()->prepare("SELECT u.fund_user_id FROM request_speakers rs JOIN users u ON u.id=rs.speaker_user_id WHERE rs.request_id=? AND u.fund_user_id IS NOT NULL ORDER BY rs.confirmed DESC, rs.id LIMIT 1");
+$sp->execute([$rid]); $row=$sp->fetch();
+if($row) db()->prepare("UPDATE requests SET claimed_fund_id=?, claimed_at=COALESCE(claimed_at,?) WHERE id=? AND claimed_fund_id IS NULL")->execute([$row['fund_user_id'],now(),$rid]);
 }
 }
 }catch(Throwable $e){}
@@ -198,7 +217,7 @@ function csrf_check(){ if(($_POST['csrf']??'')!==($_SESSION['csrf']??'-')){ http
 // ---------- пользователи / вход ----------
 function current_user(){ if(empty($_SESSION['uid'])) return null; static $u=null; if($u&&$u['id']===$_SESSION['uid']) return $u; $st=db()->prepare('SELECT * FROM users WHERE id=?'); $st->execute([$_SESSION['uid']]); $u=$st->fetch()?:null; return $u; }
 function require_login(){ if(!current_user()) redirect('?p=login'); }
-function require_role($role){ $u=current_user(); if(!$u||$u['role']!==$role){ http_response_code(403); exit('Нет доступа.'); } }
+function require_role($role){ $u=current_user(); $ok=is_array($role)?in_array($u['role']??null,$role,true):(($u['role']??null)===$role); if(!$u||!$ok){ http_response_code(403); exit('Нет доступа.'); } }
 function find_user_by_login($login){ $st=db()->prepare('SELECT * FROM users WHERE login=?'); $st->execute([$login]); return $st->fetch()?:null; }
 function find_user_by_email($email){ $st=db()->prepare('SELECT * FROM users WHERE email=?'); $st->execute([$email]); return $st->fetch()?:null; }
 function find_user_by_id($id){ if(!$id) return null; $st=db()->prepare('SELECT * FROM users WHERE id=?'); $st->execute([$id]); return $st->fetch()?:null; }
@@ -346,6 +365,7 @@ function update_district_neighbors($name,$neighbors){ $clean=implode(',',array_v
 function request_district($r){ $d=trim((string)($r['district']??'')); if($d!=='') return $d; $s=find_user_by_id($r['school_user_id']??0); return $s? (string)($s['district']??'') : ''; }
 function all_funds(){ return db()->query("SELECT * FROM users WHERE role='fund' ORDER BY (parent_fund_id IS NOT NULL AND parent_fund_id<>0), display_name")->fetchAll(); }
 function speaker_org_name($sid){ $s=find_user_by_id((int)$sid); if(!$s || empty($s['fund_user_id'])) return ''; $f=find_user_by_id((int)$s['fund_user_id']); return $f ? (string)$f['display_name'] : ''; }
+function fund_name_by_id($fid){ $f=$fid?find_user_by_id((int)$fid):null; return $f ? (string)$f['display_name'] : ''; }
 function head_funds(){ return db()->query("SELECT * FROM users WHERE role='fund' AND (parent_fund_id IS NULL OR parent_fund_id=0) ORDER BY display_name")->fetchAll(); }
 function pending_subfunds($head){ $st=db()->prepare("SELECT * FROM users WHERE role='fund' AND parent_fund_id=? AND active=0 ORDER BY id DESC"); $st->execute([$head['id']]); return $st->fetchAll(); }
 function child_subfunds($head){ $st=db()->prepare("SELECT * FROM users WHERE role='fund' AND parent_fund_id=? ORDER BY display_name"); $st->execute([$head['id']]); return $st->fetchAll(); }
@@ -375,6 +395,20 @@ log_action($operator['id'],'operator','reject_applicant','users',$uid,"Заяв�
 return [true,'Заявитель отклонён.'];
 }
 function speaker_lessons($id){ $st=db()->prepare("SELECT r.*, rs.confirmed cfd, rs.vet_rating vr, rs.vet_comment vc FROM requests r JOIN request_speakers rs ON rs.request_id=r.id WHERE rs.speaker_user_id=? ORDER BY r.id DESC"); $st->execute([$id]); return $st->fetchAll(); }
+function speaker_stats($sid){
+$st=db()->prepare("SELECT r.id,r.udate,r.participants FROM request_speakers rs JOIN requests r ON r.id=rs.request_id WHERE rs.speaker_user_id=? AND rs.confirmed=1 AND r.status IN ('done','closed')");
+$st->execute([$sid]); $rows=$st->fetchAll();
+$monthStart=date('Y-m-01'); $weekStart=date('Y-m-d',strtotime('monday this week'));
+$total=count($rows); $month=0; $week=0; $kids=0;
+foreach($rows as $r){
+$d=substr((string)$r['udate'],0,10);
+if($d>=$monthStart) $month++;
+if($d>=$weekStart) $week++;
+$n=max(1,count_confirmed($r['id']));
+$kids+=intdiv((int)($r['participants']??0),$n);
+}
+return ['total'=>$total,'month'=>$month,'week'=>$week,'kids'=>$kids];
+}
 // ========== ОГРАНИЧЕНИЯ НАГРУЗКИ СПИКЕРА ==========
 function speaker_daily_count($sid,$date,$excludeRid=null){
 $sql="SELECT COALESCE(SUM(COALESCE(r.lessons_per_speaker,1)),0) c FROM request_speakers rs JOIN requests r ON r.id=rs.request_id WHERE rs.speaker_user_id=? AND rs.confirmed=1 AND r.udate=? AND r.status NOT IN ('closed','cancelled')";
@@ -457,6 +491,7 @@ return [true,'Заявка обновлена.'.($rescheduled?'':' Дата и �
 }
 function fund_edit_request($actor,$r,$f){
 if($actor['role']!=='fund') return [false,'Нет доступа.'];
+if(!empty($r['claimed_fund_id']) && !in_array((int)$r['claimed_fund_id'],fund_scope_ids($actor),true)) return [false,'Эта заявка закреплена за другим фондом.'];
 if(!reschedulable_status($r)) return [false,'Редактирование доступно на этапах «Спикеры выбраны» и «Состав подтверждён Фондом».'];
 $allowed=[
 'contact_name'=>trim($f['contact_name']??''),
@@ -485,7 +520,7 @@ function req_confirmed_rows($rid){ return array_values(array_filter(req_speaker_
 function count_confirmed($rid){ $st=db()->prepare("SELECT COUNT(*) c FROM request_speakers WHERE request_id=? AND confirmed=1"); $st->execute([$rid]); return (int)$st->fetch()['c']; }
 function is_candidate($rid,$sid){ $st=db()->prepare("SELECT id FROM request_speakers WHERE request_id=? AND speaker_user_id=?"); $st->execute([$rid,$sid]); return (bool)$st->fetch(); }
 function get_rs_row($rid,$sid){ $st=db()->prepare("SELECT * FROM request_speakers WHERE request_id=? AND speaker_user_id=?"); $st->execute([$rid,$sid]); return $st->fetch()?:null; }
-function req_label($rid){ $rows=req_speaker_rows($rid); $conf=array_filter($rows,fn($x)=>$x['confirmed']); if($conf) return implode(', ',array_map(fn($x)=>$x['display_name'],$conf)); if($rows) return 'кандидатов: '.count($rows); return 'не выбран'; }
+function req_label($rid){ $rows=req_speaker_rows($rid); $conf=array_filter($rows,fn($x)=>$x['confirmed']); if($conf) return implode(', ',array_map(function($x){ $org=speaker_org_name($x['speaker_user_id']); return $x['display_name'].($org!==''?' ('.$org.')':''); },$conf)); if($rows) return 'кандидатов: '.count($rows); return 'не выбран'; }
 function tmin($s){ if(!$s||strpos($s,':')===false) return null; $p=explode(':',$s); return ((int)$p[0])*60+((int)$p[1]); }
 function valid_slot($s){ $m=tmin($s); if($m===null) return false; if($m%10!==0) return false; return $m>=8*60 && $m<=18*60; }
 function time_options($sel){ $o=''; for($m=8*60;$m<=18*60;$m+=10){ $v=sprintf('%02d:%02d',intdiv($m,60),$m%60); $o.='<option value="'.$v.'"'.($sel===$v?' selected':'').'>'.$v.'</option>'; } return $o; }
@@ -507,8 +542,11 @@ $res=[];
 $appDistrict=request_district($r);
 $allowed=allowed_speaker_districts($appDistrict);
 $lps=max(1,(int)($r['lessons_per_speaker']??1));
+$claimScope=null;
+if(!empty($r['claimed_fund_id'])){ $cf=find_user_by_id((int)$r['claimed_fund_id']); if($cf) $claimScope=fund_scope_ids($cf); }
 foreach(active_speakers() as $s){
 if(is_candidate($r['id'],$s['id'])) continue;
+if($claimScope!==null && !in_array((int)$s['fund_user_id'],$claimScope,true)) continue;
 $g=array_filter(explode(',',$s['age_groups']));
 if($r['age_group'] && $g && !in_array($r['age_group'],$g)) continue;
 if($allowed && !in_array(trim((string)$s['district']),$allowed)) continue;
@@ -520,13 +558,34 @@ $res[]=$s;
 usort($res,function($a,$b) use($appDistrict){ $aa=(trim((string)$a['district'])===$appDistrict)?0:1; $bb=(trim((string)$b['district'])===$appDistrict)?0:1; return $aa<=>$bb; });
 return $res;
 }
+function auto_claim_from_speaker($rid,$sid){
+$sp=find_user_by_id($sid); if(!$sp||empty($sp['fund_user_id'])) return;
+db()->prepare("UPDATE requests SET claimed_fund_id=?, claimed_at=COALESCE(claimed_at,?) WHERE id=? AND claimed_fund_id IS NULL")->execute([$sp['fund_user_id'],now(),$rid]);
+}
 function add_candidate($r,$sid){
 if(!in_array($r['status'],['new','chosen'])) return [false,'Спикеров можно менять только до подтверждения состава Фондом.'];
-if(!in_array((int)$sid,array_map(fn($s)=>(int)$s['id'],free_speakers_for_request($r)))) return [false,'Спикер недоступен (занят, не подходит по возрасту, превышен лимит или уже добавлен).'];
+if(!in_array((int)$sid,array_map(fn($s)=>(int)$s['id'],free_speakers_for_request($r)))) return [false,'Спикер недоступен (занят, не подходит по возрасту/фонду, превышен лимит или уже добавлен).'];
 db()->prepare("INSERT INTO request_speakers(request_id,speaker_user_id,confirmed,created_at) VALUES(?,?,0,?)")->execute([$r['id'],$sid,now()]);
+auto_claim_from_speaker($r['id'],$sid);
 if($r['status']==='new') upd($r['id'],['status'=>'chosen']);
 log_action(current_user()['id']??null,'school','add_candidate','requests',$r['id'],"Добавлен спикер #$sid");
 return [true,'Спикер добавлен в список желаемых.'];
+}
+function claim_request($fund,$r){
+if($r['status']!=='new') return [false,'Взять в обработку можно только новую заявку.'];
+$st=db()->prepare("UPDATE requests SET claimed_fund_id=?, claimed_at=? WHERE id=? AND claimed_fund_id IS NULL AND status='new'");
+$st->execute([$fund['id'],now(),$r['id']]);
+if($st->rowCount()===0) return [false,'Заявка уже взята в обработку другим фондом.'];
+log_action($fund['id'],'fund','claim_request','requests',$r['id'],'Фонд взял заявку в обработку');
+return [true,'Заявка взята в обработку. Теперь назначьте спикера.'];
+}
+function release_request($fund,$r){
+$scope=fund_scope_ids($fund);
+if(empty($r['claimed_fund_id']) || !in_array((int)$r['claimed_fund_id'],$scope,true)) return [false,'Эта заявка не в вашей обработке.'];
+if(count(req_speaker_rows($r['id']))>0) return [false,'Сначала уберите назначенного спикера через отклонение/замену кандидата.'];
+db()->prepare("UPDATE requests SET claimed_fund_id=NULL, claimed_at=NULL WHERE id=?")->execute([$r['id']]);
+log_action($fund['id'],'fund','release_request','requests',$r['id'],'Фонд вернул заявку в обработку (без назначения спикера)');
+return [true,'Заявка возвращена в общий список — её могут взять другие фонды.'];
 }
 function delete_request($r,$actor){
 if($actor['role']!=='school'||(int)$r['school_user_id']!==(int)$actor['id']) return [false,'Нет доступа.'];
@@ -602,8 +661,22 @@ return [true,'Спикер подтверждён. Состав укомплек
 return [true,'Спикер подтверждён. Ожидаются остальные ('.count_confirmed($r['id']).' из '.$r['speakers_needed'].').'];
 }
 function fund_requests($fund){ $ids=fund_scope_ids($fund); if(!$ids) return []; $in=implode(',',array_fill(0,count($ids),'?')); $st=db()->prepare("SELECT DISTINCT r.* FROM requests r JOIN request_speakers rs ON rs.request_id=r.id JOIN users u ON u.id=rs.speaker_user_id WHERE u.fund_user_id IN ($in) AND (r.archived=0 OR r.archived IS NULL) ORDER BY r.id DESC"); $st->execute($ids); return $st->fetchAll(); }
+function fund_dashboard_requests($fund){
+$ids=fund_scope_ids($fund); if(!$ids) return [];
+$in=implode(',',array_fill(0,count($ids),'?'));
+$st=db()->prepare("SELECT * FROM requests WHERE (archived=0 OR archived IS NULL) AND ((status='new' AND claimed_fund_id IS NULL) OR claimed_fund_id IN ($in)) ORDER BY id DESC");
+$st->execute($ids); return $st->fetchAll();
+}
+function fund_pool_requests_for_speaker($speaker){
+if(empty($speaker['fund_user_id'])) return [];
+$f=find_user_by_id($speaker['fund_user_id']); if(!$f) return [];
+$ids=fund_scope_ids($f); $in=implode(',',array_fill(0,count($ids),'?'));
+$st=db()->prepare("SELECT r.* FROM requests r WHERE (r.archived=0 OR r.archived IS NULL) AND r.claimed_fund_id IN ($in) AND r.status IN ('new','chosen') AND NOT EXISTS (SELECT 1 FROM request_speakers rs WHERE rs.request_id=r.id) ORDER BY r.udate ASC");
+$st->execute($ids); return $st->fetchAll();
+}
 function fund_actionable($fund){ $res=[]; foreach(fund_requests($fund) as $r){ if($r['status']!=='chosen') continue; foreach(req_speaker_rows($r['id']) as $row){ $a=candidate_action($fund,$row); if($a==='recommend'||$a==='confirm'){ $res[]=$r; break; } } } return $res; }
-function fund_briefing($r,$date){
+function fund_briefing($fund,$r,$date){
+if(!empty($r['claimed_fund_id']) && !in_array((int)$r['claimed_fund_id'],fund_scope_ids($fund),true)) return [false,'Эта заявка закреплена за другим фондом.'];
 if(!$r['fund_confirmed_at']) return [false,'Инструктаж отмечается после подтверждения состава.'];
 if(in_array($r['status'],['closed','cancelled'])) return [false,'Заявка уже завершена.'];
 $d=DateTime::createFromFormat('Y-m-d',substr((string)$date,0,10));
@@ -677,12 +750,14 @@ if(!in_array($r['status'],['new','chosen'])) return [false,'Назначить �
 $ok=false; foreach(replacement_speakers($fund,$r,0) as $s){ if((int)$s['id']===(int)$sid){ $ok=true; break; } }
 if(!$ok) return [false,'Спикер недоступен (занят, не подходит по возрасту/району, превышен лимит или относится к другому фонду).'];
 db()->prepare("INSERT INTO request_speakers(request_id,speaker_user_id,confirmed,recommended,created_at) VALUES(?,?,0,0,?)")->execute([$r['id'],$sid,now()]);
+auto_claim_from_speaker($r['id'],$sid);
 if($r['status']==='new') upd($r['id'],['status'=>'chosen']);
 $nm=(find_user_by_id($sid)['display_name']??('#'.$sid));
 log_action($fund['id'],'fund','fund_assign_speaker','requests',$r['id'],"Фонд назначил спикера: $nm");
 return [true,'Спикер назначен: '.$nm.'. Теперь рекомендуйте или подтвердите его в списке ниже.'];
 }
 function fund_finalize($fund,$r){
+if(!empty($r['claimed_fund_id']) && !in_array((int)$r['claimed_fund_id'],fund_scope_ids($fund),true)) return [false,'Эта заявка закреплена за другим фондом.'];
 if($r['status']!=='chosen') return [false,'Закрыть состав можно только на этапе согласования.'];
 $c=count_confirmed($r['id']);
 if($c<1) return [false,'Сначала подтвердите хотя бы одного спикера.'];
@@ -696,6 +771,7 @@ return [true,'Состав закрыт ('.$c.' из '.$r['speakers_needed'].').
 function set_vet_feedback($rid,$sid,$comment){ db()->prepare("UPDATE request_speakers SET vet_comment=?, vet_at=? WHERE request_id=? AND speaker_user_id=?")->execute([$comment,now(),$rid,$sid]); log_action(current_user()['id']??null,'speaker','vet_feedback','requests',$rid,"Отзыв спикера #$sid сохранён"); }
 // ========== МАТЕРИАЛЫ ==========
 const MATERIAL_MAX_BYTES = 104857600; // 100 МБ
+const PHOTO_MAX_BYTES = 8388608; // 8 МБ
 function material_topics(){ return db()->query("SELECT DISTINCT topic FROM materials WHERE type='tech_map' AND topic IS NOT NULL AND topic<>'' ORDER BY topic")->fetchAll(PDO::FETCH_COLUMN); }
 function add_material($title,$desc,$type,$topic,$link,$filePath,$fileName,$fileSize,$uploadedBy){
 db()->prepare("INSERT INTO materials(title,description,type,topic,link,file_path,file_name,file_size,uploaded_by,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)")
@@ -953,6 +1029,46 @@ return [
 ['Охвачено детей',$participants],
 ['Отзывы заявителей',$appReviews,'?p=reviews&type=app'.$rq],
 ['Отзывы спикеров',$spkReviews,'?p=reviews&type=speaker'.$rq],
+];
+}
+function fund_scope_requests($fund){
+$ids=fund_scope_ids($fund); if(!$ids) return [];
+$in=implode(',',array_fill(0,count($ids),'?'));
+$st=db()->prepare("SELECT * FROM requests WHERE (archived=0 OR archived IS NULL) AND claimed_fund_id IN ($in)");
+$st->execute($ids); return $st->fetchAll();
+}
+function list_app_reviews_for_fund($fund){
+$ids=fund_scope_ids($fund); if(!$ids) return [];
+$in=implode(',',array_fill(0,count($ids),'?'));
+$st=db()->prepare("SELECT * FROM requests WHERE (archived=0 OR archived IS NULL) AND claimed_fund_id IN ($in) AND fb_app_comment IS NOT NULL AND fb_app_comment<>'' ORDER BY fb_app_at DESC");
+$st->execute($ids); return $st->fetchAll();
+}
+function list_speaker_reviews_for_fund($fund){
+$ids=fund_scope_ids($fund); if(!$ids) return [];
+$in=implode(',',array_fill(0,count($ids),'?'));
+$st=db()->prepare("SELECT rs.*, r.code, r.org, r.topic, u.display_name speaker_name FROM request_speakers rs JOIN requests r ON r.id=rs.request_id JOIN users u ON u.id=rs.speaker_user_id WHERE (r.archived=0 OR r.archived IS NULL) AND rs.vet_comment IS NOT NULL AND rs.vet_comment<>'' AND u.fund_user_id IN ($in) ORDER BY rs.vet_at DESC");
+$st->execute($ids); return $st->fetchAll();
+}
+function fund_kpis($fund){
+$all=fund_scope_requests($fund); $total=count($all);
+$inwork=count(array_filter($all,fn($r)=>in_array($r['status'],['chosen','confirmed','brief','prep'])));
+$reached=array_filter($all,fn($r)=>in_array($r['status'],['done','closed']));
+$done=count($reached);
+$participants=array_sum(array_map(fn($r)=>(int)($r['participants']??0),$reached));
+$ids=fund_scope_ids($fund); $in=implode(',',array_fill(0,count($ids),'?'));
+$spkSt=db()->prepare("SELECT COUNT(*) c FROM users WHERE role='speaker' AND active=1 AND fund_user_id IN ($in)"); $spkSt->execute($ids); $spk=$spkSt->fetch()['c'];
+$cancelled=count(array_filter($all,fn($r)=>$r['status']==='cancelled'));
+$appReviews=count(list_app_reviews_for_fund($fund));
+$spkReviews=count(list_speaker_reviews_for_fund($fund));
+return [
+['Всего заявок',$total],
+['В работе',$inwork],
+['Проведено и закрыто',$done],
+['Не состоялось',$cancelled],
+['Спикеров в реестре',$spk],
+['Охвачено детей',$participants],
+['Отзывы заявителей',$appReviews,'?p=reviews&type=app'],
+['Отзывы спикеров',$spkReviews,'?p=reviews&type=speaker'],
 ];
 }
 // ========== СЛОЙ 1: БЛОК "ТРЕБУЕТ ДЕЙСТВИЯ" ==========
