@@ -294,7 +294,7 @@ $sess='<span class="rolebadge">'.esc($label).'</span> <a class="rolebadge" href=
 $f=flash_get();
 $missing=profile_missing_fields($u);
 echo '<!DOCTYPE html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'.esc($title).'</title><link rel="icon" href="favicon.ico"><link rel="icon" type="image/png" href="favicon.png"><link rel="stylesheet" href="style.css"></head><body>';
-echo '<header class="top"><div class="topbar"><div class="mark"><img src="favicon.png" alt="" style="width:100%;height:100%;object-fit:contain"></div><div class="brand"><h1>Урок Мужества</h1><p>Региональный проект «Боевой кадровый резерв Тюменской области»</p></div><div class="session">'.$sess.'</div></div></header>';
+echo '<header class="top"><div class="topbar"><div class="mark"><img src="favicon.png" alt="" style="width:100%;height:100%;object-fit:contain"></div><div class="brand"><h1>Урок Мужества</h1><p class="brand-full">Проект разработан в рамках региональной программы «Боевой кадровый резерв Тюменской области»</p><p class="brand-short">Региональная программа «БКР ТО»</p></div><div class="session">'.$sess.'</div></div></header>';
 echo '<main class="wrap">'; if($f) echo '<div class="flash">'.esc($f).'</div>';
 if($missing) echo '<div class="hint-warn"><b>ⓘ Заполните профиль:</b> не указано — '.esc(implode(', ',$missing)).'. <a href="?p=profile">Перейти в профиль →</a></div>';
 echo $body.'</main>';
