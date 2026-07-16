@@ -294,7 +294,7 @@ $sess='<span class="rolebadge">'.esc($label).'</span> <a class="rolebadge" href=
 $f=flash_get();
 $missing=profile_missing_fields($u);
 echo '<!DOCTYPE html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'.esc($title).'</title><link rel="icon" href="favicon.ico"><link rel="icon" type="image/png" href="favicon.png"><link rel="stylesheet" href="style.css"></head><body>';
-echo '<header class="top"><div class="topbar"><div class="mark"><img src="favicon.png" alt="" style="width:100%;height:100%;object-fit:contain"></div><div class="brand"><h1>Урок Мужества</h1></div><div class="session">'.$sess.'</div></div></header>';
+echo '<header class="top"><div class="topbar"><div class="mark"><img src="favicon.png" alt="" style="width:100%;height:100%;object-fit:contain"></div><div class="brand"><h1>Урок Мужества</h1><p>Региональный проект «Боевой кадровый резерв Тюменской области»</p></div><div class="session">'.$sess.'</div></div></header>';
 echo '<main class="wrap">'; if($f) echo '<div class="flash">'.esc($f).'</div>';
 if($missing) echo '<div class="hint-warn"><b>ⓘ Заполните профиль:</b> не указано — '.esc(implode(', ',$missing)).'. <a href="?p=profile">Перейти в профиль →</a></div>';
 echo $body.'</main>';
@@ -629,7 +629,24 @@ $body.='<tr><td><b>'.esc($d['name']).'</b></td><td><form method="post" style="di
 $body.='</tbody></table>';
 layout('Районы',$body); exit;
 }
-if($p==='audit' && $u && $u['role']==='operator'){
+if($p==='audit' && $u){
+$targetType=$_GET['target_type']??''; $targetId=(int)($_GET['target_id']??0);
+if($targetType==='requests' && $targetId){
+$rr=get_request($targetId);
+if(!$rr){ layout('История','<div class="card pad">Заявка не найдена.</div>'); exit; }
+if($u['role']==='school' && (int)$rr['school_user_id']!==(int)$u['id']) exit('Нет доступа.');
+if($u['role']==='speaker' && !is_candidate($targetId,$u['id'])) exit('Нет доступа.');
+$logs=get_audit_log(['target_type'=>'requests','target_id'=>$targetId]);
+$body='<div class="head"><h2>История заявки '.esc($rr['code']).'</h2><a class="btn ghost" href="?p=request&id='.$targetId.'">← К заявке</a></div>';
+$body.='<table class="card-view"><thead><tr><th>Время</th><th>Пользователь</th><th>Действие</th><th>Детали</th></tr></thead><tbody>';
+foreach($logs as $l){
+$body.='<tr><td class="id" data-label="Время">'.esc($l['created_at']).'</td><td data-label="Пользователь">'.esc($l['display_name']?:$l['login']?:'система').' <span class="muted">('.esc($l['user_role']).')</span></td><td data-label="Действие">'.esc($l['action']).'</td><td data-label="Детали">'.esc($l['details']).'</td></tr>';
+}
+if(!$logs) $body.='<tr><td colspan="4" class="muted">Записей не найдено</td></tr>';
+$body.='</tbody></table>';
+layout('История заявки',$body); exit;
+}
+if($u['role']==='operator'){
 $body='<div class="head"><h2>Журнал действий</h2><a class="btn ghost" href="?p='.$u['role'].'">← в кабинет</a></div>';
 $filters=[];
 if(!empty($_GET['target_type'])) $filters['target_type']=$_GET['target_type'];
@@ -651,6 +668,24 @@ $body.='<tr><td class="id" data-label="Время">'.esc($l['created_at']).'</td
 if(!$logs) $body.='<tr><td colspan="5" class="muted">Записей не найдено</td></tr>';
 $body.='</tbody></table>';
 layout('Журнал действий',$body); exit;
+}
+if($u['role']==='fund'){
+$scope=fund_scope_ids($u);
+$in=implode(',',array_fill(0,count($scope),'?'));
+$spSt=db()->prepare("SELECT id FROM users WHERE role='speaker' AND fund_user_id IN ($in)"); $spSt->execute($scope);
+$scopeIds=array_merge($scope,$spSt->fetchAll(PDO::FETCH_COLUMN));
+$filters=[]; if(!empty($_GET['from_date'])) $filters['from_date']=$_GET['from_date']; if(!empty($_GET['to_date'])) $filters['to_date']=$_GET['to_date'];
+$logs=get_audit_log($filters,$scopeIds);
+$body='<div class="head"><h2>Журнал действий</h2><a class="btn ghost" href="?p=fund">← в кабинет</a></div><p class="muted">Действия вашего фонда и ваших спикеров.</p>';
+$body.='<table class="card-view"><thead><tr><th>Время</th><th>Пользователь</th><th>Действие</th><th>Объект</th><th>Детали</th></tr></thead><tbody>';
+foreach($logs as $l){
+$body.='<tr><td class="id" data-label="Время">'.esc($l['created_at']).'</td><td data-label="Пользователь">'.esc($l['display_name']?:$l['login']?:'система').' <span class="muted">('.esc($l['user_role']).')</span></td><td data-label="Действие">'.esc($l['action']).'</td><td data-label="Объект">'.esc($l['target_type']).'#'.$l['target_id'].'</td><td data-label="Детали">'.esc($l['details']).'</td></tr>';
+}
+if(!$logs) $body.='<tr><td colspan="5" class="muted">Записей не найдено</td></tr>';
+$body.='</tbody></table>';
+layout('Журнал действий',$body); exit;
+}
+exit('Нет доступа.');
 }
 if($p==='calendar' && $u){
 $month=$_GET['month']??date('m'); $year=$_GET['year']??date('Y');
@@ -1011,7 +1046,16 @@ $tr=''; foreach($rows as $r){ $mark=$r['cfd']?'<span class="pill green">в со�
 $body='<div class="head"><h2>Мои уроки</h2><div><a class="btn ghost" href="?p=calendar">📅 Календарь</a> <a class="btn ghost" href="?p=materials">🗂️ Материалы</a></div></div>';
 $body.='<div class="kpis"><div class="kpi"><div class="n">'.$daily.' / 2</div><div class="l">Уроков сегодня</div></div><div class="kpi"><div class="n">'.$weekly.' / 7</div><div class="l">Уроков на неделе</div></div><div class="kpi"><div class="n">'.count($rows).'</div><div class="l">Всего назначено</div></div></div>';
 $stats=speaker_stats($u['id']);
-$body.='<h4 style="margin-top:18px">Проведено уроков</h4><div class="kpis"><div class="kpi"><div class="n">'.$stats['total'].'</div><div class="l">Всего проведено</div></div><div class="kpi"><div class="n">'.$stats['month'].'</div><div class="l">За месяц</div></div><div class="kpi"><div class="n">'.$stats['week'].'</div><div class="l">За неделю</div></div><div class="kpi"><div class="n">'.$stats['kids'].'</div><div class="l">Детей охвачено</div></div></div>';
+$statCard=function($period,$lessons,$kids){
+return '<div class="stat-card"><div class="stat-period">'.esc($period).'</div><div class="stat-row"><span class="n">'.$lessons.'</span><span class="l">'.($lessons==1?'урок':($lessons>=2&&$lessons<=4?'урока':'уроков')).'</span></div><div class="stat-row"><span class="n">'.$kids.'</span><span class="l">детей</span></div></div>';
+};
+$body.='<h4 style="margin-top:18px">Проведено уроков и охват детей</h4>';
+$body.='<div class="stat-grid">'.$statCard('Сегодня',$stats['day'],$stats['day_kids']).$statCard('За неделю',$stats['week'],$stats['week_kids']).$statCard('За месяц',$stats['month'],$stats['month_kids']).$statCard('Всего',$stats['total'],$stats['total_kids']).'</div>';
+if($stats['by_month']){
+$body.='<details class="card pad" style="margin-bottom:18px"><summary style="cursor:pointer;font-weight:600;color:var(--navy)">📅 Разбивка по месяцам</summary><table class="card-view" style="margin-top:12px"><thead><tr><th>Месяц</th><th>Уроков</th><th>Детей</th></tr></thead><tbody>';
+foreach($stats['by_month'] as $mk=>$mv) $body.='<tr><td class="id" data-label="Месяц">'.esc(month_label($mk)).'</td><td data-label="Уроков">'.$mv['lessons'].'</td><td data-label="Детей">'.$mv['kids'].'</td></tr>';
+$body.='</tbody></table></details>';
+}
 $body.= $rows ? '<table class="card-view"><thead><tr>'.sort_th('Код','code').sort_th('Организация','org').sort_th('Дата и время','date').'<th>Вы</th>'.sort_th('Статус','status').'</tr></thead><tbody>'.$tr.'</tbody></table>' : '<div class="card pad muted">Назначенных уроков пока нет.</div>';
 $pool=fund_pool_requests_for_speaker($u);
 if($pool){ $body.='<div class="block" style="margin-top:20px"><h4>📋 Заявки вашего фонда в обработке</h4><p class="muted">Ваш Фонд взял эти заявки в работу и подбирает спикера. Как только он назначит конкретного спикера, заявка появится в разделе «Мои уроки» у него.</p>';
