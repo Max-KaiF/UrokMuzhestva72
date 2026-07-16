@@ -556,11 +556,11 @@ $body='<div class="auth"><h2>Регистрация</h2><p class="muted" style="
 <script>
 function rsw(){
 var r=document.getElementById("role").value;
-document.querySelectorAll(".rf").forEach(function(e){ e.style.display="none"; e.querySelectorAll("[data-req]").forEach(function(inp){ inp.required=false; }); });
+document.querySelectorAll(".rf").forEach(function(e){ e.style.display="none"; e.querySelectorAll("input,select,textarea").forEach(function(inp){ inp.disabled=true; inp.required=false; }); });
 document.getElementById("parent_fund_id").required=false;
 document.getElementById("fund_code").required=false;
 var b=document.querySelector(".rf."+r);
-if(b){ b.style.display="block"; b.querySelectorAll("[data-req]").forEach(function(inp){ inp.required=true; }); }
+if(b){ b.style.display="block"; b.querySelectorAll("input,select,textarea").forEach(function(inp){ inp.disabled=false; }); b.querySelectorAll("[data-req]").forEach(function(inp){ inp.required=true; }); }
 if(r==="fund") ftsw();
 validateGroups();
 }
