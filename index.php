@@ -152,6 +152,7 @@ redirect('?p=request&id='.$rid);
 }
 if($a==='approve_subfund'){ require_role('fund'); db()->prepare("UPDATE users SET active=1 WHERE id=? AND role='fund' AND parent_fund_id=?")->execute([(int)($_POST['uid']??0),$u['id']]); flash_set('Подразделение подтверждено.'); redirect('?p=fund'); }
 if($a==='approve_speaker'){ require_role('fund'); db()->prepare("UPDATE users SET active=1, age_groups=? WHERE id=? AND role='speaker' AND fund_user_id=?")->execute([implode(',',array_keys($_POST['groups']??[])),(int)$_POST['uid'],$u['id']]); flash_set('Спикер подтверждён.'); redirect('?p=fund&tab=speakers'); }
+if($a==='reject_speaker'){ require_role('fund'); [$ok,$msg]=reject_speaker($u,(int)($_POST['uid']??0)); flash_set($msg); redirect('?p=fund&tab=speakers'); }
 if($a==='approve_applicant'){ require_role('operator'); [$ok,$msg]=approve_applicant($u,(int)($_POST['uid']??0)); flash_set($msg); redirect('?p=operator&tab=moderation'); }
 if($a==='reject_applicant'){ require_role('operator'); [$ok,$msg]=reject_applicant($u,(int)($_POST['uid']??0)); flash_set($msg); redirect('?p=operator&tab=moderation'); }
 if($a==='add_unavailable'){ require_role('speaker'); [$ok,$msg]=add_unavailable_period($u,$_POST['date_from']??'',$_POST['date_to']??'',$_POST['reason']??''); flash_set($msg); redirect('?p=speaker'); }
@@ -892,7 +893,10 @@ if($tab==='speakers'){
 $body='<div class="head"><h2>Спикеры Фонда</h2><a class="btn ghost" href="?p=fund">← к заявкам</a></div><h4 style="margin-top:6px">На подтверждении</h4>';
 $pend=pending_speakers($u); if(!$pend) $body.='<div class="card pad muted" style="margin-bottom:14px">Новых заявок на регистрацию спикеров нет.</div>';
 foreach($pend as $s){ $ag=''; foreach(ages() as $k=>$v) $ag.='<label class="chk"><input type="checkbox" name="groups['.esc($k).']" '.(in_array($k,explode(',',$s['age_groups']))?'checked':'').'> '.esc($v).'</label>';
-$body.='<form method="post" class="card pad" style="margin-bottom:10px">'.csrf_field().'<input type="hidden" name="action" value="approve_speaker"><input type="hidden" name="uid" value="'.$s['id'].'"><b>'.esc($s['display_name']).'</b> <span class="muted">(логин: '.esc($s['login']).' · район: '.esc($s['district']?:'—').' · тел.: '.esc($s['phone']?:'—').')</span><div class="chks" style="margin:8px 0">'.$ag.'</div><button class="btn primary">Подтвердить и дать доступ</button></form>'; }
+$body.='<div class="card pad" style="margin-bottom:10px"><b>'.esc($s['display_name']).'</b> <span class="muted">(логин: '.esc($s['login']).' · район: '.esc($s['district']?:'—').' · тел.: '.esc($s['phone']?:'—').')</span>'
+.'<form method="post">'.csrf_field().'<input type="hidden" name="action" value="approve_speaker"><input type="hidden" name="uid" value="'.$s['id'].'"><div class="chks" style="margin:8px 0">'.$ag.'</div><div style="display:flex;gap:8px"><button class="btn primary">Подтвердить и дать доступ</button></div></form>'
+.'<form method="post" style="margin-top:6px" onsubmit="return confirm(\'Отклонить регистрацию спикера?\')">'.csrf_field().'<input type="hidden" name="action" value="reject_speaker"><input type="hidden" name="uid" value="'.$s['id'].'"><button class="btn ghost sm" style="color:#b23b2c;border-color:#f5c6c0">Отклонить</button></form>'
+.'</div>'; }
 $act=active_speakers($u); $body.='<h4>Подтверждённые спикеры</h4><table class="card-view"><thead><tr><th>Спикер</th><th>Район</th><th>Телефон</th><th>Возрастные группы</th></tr></thead><tbody>';
 foreach($act as $s){ $g=array_map(fn($k)=>ages()[$k]??$k,array_filter(explode(',',$s['age_groups']))); $body.='<tr onclick="location=\'?p=speaker_view&id='.$s['id'].'\'"><td class="id">'.esc($s['display_name']).'</td><td class="muted">'.esc($s['district']?:'—').'</td><td class="muted">'.esc($s['phone']?:'—').'</td><td class="muted">'.esc(implode(', ',$g)).'</td></tr>'; }
 if(!$act) $body.='<tr><td colspan="4" class="muted">Пока нет.</td></tr>'; $body.='</tbody></table>';

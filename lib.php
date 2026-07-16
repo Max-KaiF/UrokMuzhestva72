@@ -404,6 +404,14 @@ db()->prepare("DELETE FROM users WHERE id=? AND active=0")->execute([$uid]);
 log_action($operator['id'],'operator','reject_applicant','users',$uid,"Заявитель отклонён: ".$a['org_name']);
 return [true,'Заявитель отклонён.'];
 }
+function reject_speaker($fund,$uid){
+$s=find_user_by_id($uid); if(!$s||$s['role']!=='speaker') return [false,'Спикер не найден.'];
+if((int)($s['fund_user_id']??0)!==(int)$fund['id']) return [false,'Этот спикер относится к другому фонду.'];
+if((int)$s['active']===1) return [false,'Этот спикер уже подтверждён.'];
+db()->prepare("DELETE FROM users WHERE id=? AND active=0")->execute([$uid]);
+log_action($fund['id'],'fund','reject_speaker','users',$uid,"Спикер отклонён: ".$s['display_name']);
+return [true,'Спикер отклонён.'];
+}
 function speaker_lessons($id){ $st=db()->prepare("SELECT r.*, rs.confirmed cfd, rs.vet_rating vr, rs.vet_comment vc FROM requests r JOIN request_speakers rs ON rs.request_id=r.id WHERE rs.speaker_user_id=? ORDER BY r.id DESC"); $st->execute([$id]); return $st->fetchAll(); }
 function speaker_stats($sid){
 $st=db()->prepare("SELECT r.id,r.udate,r.participants FROM request_speakers rs JOIN requests r ON r.id=rs.request_id WHERE rs.speaker_user_id=? AND rs.confirmed=1 AND r.status IN ('done','closed')");
