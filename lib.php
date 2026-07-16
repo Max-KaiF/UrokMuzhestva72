@@ -120,6 +120,10 @@ if($row) db()->prepare("UPDATE requests SET claimed_fund_id=?, claimed_at=COALES
 }
 }
 }catch(Throwable $e){}
+try{
+db()->exec("UPDATE users SET op_group='school' WHERE role='school' AND (op_group IS NULL OR op_group='') AND level IN ('school','other')");
+db()->exec("UPDATE users SET op_group='region' WHERE role='school' AND (op_group IS NULL OR op_group='') AND level IN ('spo','vuz')");
+}catch(Throwable $e){}
 }
 // ---------- утилиты ----------
 function esc($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
@@ -132,6 +136,8 @@ const OP_CITY='Департамент образования Администр�
 const OP_REGION='Департамент образования и науки Тюменской области';
 function operator_of($lvl){ return in_array($lvl,['school','other'],true)?OP_CITY:OP_REGION; }
 function opgroup_of($lvl){ return in_array($lvl,['school','other'],true)?'school':'region'; }
+function operator_label_for_group($og){ return $og==='region'?OP_REGION:OP_CITY; }
+function school_dept_group($school){ return $school['op_group']?:opgroup_of($school['level']??''); }
 function ages(){ return ['1-4'=>'1–4 классы','5-9'=>'5–9 классы','10-11'=>'10–11 классы','spo'=>'профессиональные образовательные организации','vuz'=>'высшие учебные заведения']; }
 function level_label($l){ return ['school'=>'Школа','spo'=>'Профессиональная образовательная организация','vuz'=>'Высшее учебное заведение','other'=>'Иное'][$l]??$l; }
 function level_ages($lvl){ return ['school'=>['1-4','5-9','10-11'],'spo'=>['spo'],'vuz'=>['vuz'],'other'=>['1-4','5-9','10-11']][$lvl]??[]; }
@@ -278,7 +284,7 @@ if($actor['role']==='operator'){
 $og=$actor['op_group']??'';
 if($og==='') return true;
 if($target['role']!=='school') return false;
-return in_array($target['level'],applicant_group_levels($og));
+return school_dept_group($target)===$og;
 }
 if($actor['role']==='fund'){
 return $target['role']==='speaker' && (int)($target['fund_user_id']??0)===(int)$actor['id'];
@@ -375,21 +381,24 @@ function active_speakers($fund=null){ if($fund){ $st=db()->prepare("SELECT * FRO
 // ---- модерация заявителей ----
 function applicant_group_levels($opGroup){ if($opGroup==='school') return ['school','other']; if($opGroup==='region') return ['spo','vuz']; return ['school','spo','vuz','other']; }
 function pending_applicants($operator){
-$levels=applicant_group_levels($operator['op_group']??'');
-$in=implode(',',array_fill(0,count($levels),'?'));
-$st=db()->prepare("SELECT * FROM users WHERE role='school' AND active=0 AND level IN ($in) ORDER BY id DESC");
-$st->execute($levels); return $st->fetchAll();
+$og=$operator['op_group']??'';
+$st=db()->query("SELECT * FROM users WHERE role='school' AND active=0 ORDER BY id DESC");
+$all=$st->fetchAll();
+if($og==='') return $all;
+return array_values(array_filter($all,fn($a)=>school_dept_group($a)===$og));
 }
 function approve_applicant($operator,$uid){
 $a=find_user_by_id($uid); if(!$a||$a['role']!=='school') return [false,'Заявитель не найден.'];
-if(!in_array($a['level'],applicant_group_levels($operator['op_group']??''))) return [false,'Этот заявитель относится к другому департаменту.'];
+$og=$operator['op_group']??'';
+if($og!=='' && school_dept_group($a)!==$og) return [false,'Этот заявитель относится к другому департаменту.'];
 db()->prepare("UPDATE users SET active=1 WHERE id=?")->execute([$uid]);
 log_action($operator['id'],'operator','approve_applicant','users',$uid,"Заявитель подтверждён: ".$a['org_name']);
 return [true,'Заявитель подтверждён и получил доступ.'];
 }
 function reject_applicant($operator,$uid){
 $a=find_user_by_id($uid); if(!$a||$a['role']!=='school') return [false,'Заявитель не найден.'];
-if(!in_array($a['level'],applicant_group_levels($operator['op_group']??''))) return [false,'Этот заявитель относится к другому департаменту.'];
+$og=$operator['op_group']??'';
+if($og!=='' && school_dept_group($a)!==$og) return [false,'Этот заявитель относится к другому департаменту.'];
 if((int)$a['active']===1) return [false,'Этот заявитель уже подтверждён.'];
 db()->prepare("DELETE FROM users WHERE id=? AND active=0")->execute([$uid]);
 log_action($operator['id'],'operator','reject_applicant','users',$uid,"Заявитель отклонён: ".$a['org_name']);
@@ -437,9 +446,10 @@ function gen_code(){ $max=db()->query('SELECT COALESCE(MAX(id),0) m FROM request
 function get_request($id){ $st=db()->prepare('SELECT * FROM requests WHERE id=?'); $st->execute([$id]); return $st->fetch()?:null; }
 function create_request($schoolUser,$f){
 $lvl=$f['level'];
+$og=school_dept_group($schoolUser);
 $lps=max(1,min(2,(int)($f['lessons_per_speaker']??1)));
 $st=db()->prepare('INSERT INTO requests(code,school_user_id,org,level,op_group,operator,contact_name,phone,email,udate,utime,utime_end,age_group,participants,speakers_needed,lessons_per_speaker,topic,notes,status,created_at,district,desired_speaker_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
-$st->execute([gen_code(),$schoolUser['id'],$schoolUser['org_name'],$lvl,opgroup_of($lvl),operator_of($lvl),
+$st->execute([gen_code(),$schoolUser['id'],$schoolUser['org_name'],$lvl,$og,operator_label_for_group($og),
 $f['contact_name'],$f['phone'],$f['email']??'',$f['udate'],$f['utime']??'',$f['utime_end']??'',$f['age_group'],$f['participants']??'',max(1,(int)($f['speakers_needed']??1)),$lps,$f['topic']??'',$f['notes']??'','new',now(),$schoolUser['district']??'',$f['desired_speaker_id']?:null]);
 $rid=db()->lastInsertId();
 log_action($schoolUser['id'],'school','request_create','requests',$rid,"Создана заявка {$f['udate']}");
