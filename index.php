@@ -1044,7 +1044,8 @@ $daily=speaker_daily_count($u['id'],date('Y-m-d'));
 $weekly=speaker_weekly_count($u['id'],date('Y-m-d'));
 $tr=''; foreach($rows as $r){ $mark=$r['cfd']?'<span class="pill green">в составе</span>':(st_index($r['status'])>=st_index('confirmed')?'<span class="pill gray">не выбран</span>':'<span class="pill gray">кандидат</span>'); $tr.='<tr onclick="location=\'?p=request&id='.$r['id'].'\'"><td class="id">'.esc($r['code']).'</td><td>'.esc($r['org']).'</td><td>'.dt($r).'</td><td>'.$mark.'</td><td>'.pill($r['status']).'</td></tr>'; }
 $body='<div class="head"><h2>Мои уроки</h2><div><a class="btn ghost" href="?p=calendar">📅 Календарь</a> <a class="btn ghost" href="?p=materials">🗂️ Материалы</a></div></div>';
-$body.='<div class="kpis"><div class="kpi"><div class="n">'.$daily.' / 2</div><div class="l">Уроков сегодня</div></div><div class="kpi"><div class="n">'.$weekly.' / 7</div><div class="l">Уроков на неделе</div></div><div class="kpi"><div class="n">'.count($rows).'</div><div class="l">Всего назначено</div></div></div>';
+$body.='<div class="kpis"><div class="kpi"><div class="n">'.$daily.' / 2</div><div class="l">Загрузка сегодня</div></div><div class="kpi"><div class="n">'.$weekly.' / 7</div><div class="l">Загрузка на неделе</div></div><div class="kpi"><div class="n">'.count($rows).'</div><div class="l">Всего назначено</div></div></div>';
+$body.='<p class="muted" style="margin-top:-8px;font-size:12.5px">Загрузка — активные уроки в пределах лимита (2 в день / 7 в неделю). Сколько уроков уже проведено — смотрите ниже.</p>';
 $stats=speaker_stats($u['id']);
 $statCard=function($period,$lessons,$kids){
 return '<div class="stat-card"><div class="stat-period">'.esc($period).'</div><div class="stat-row"><span class="n">'.$lessons.'</span><span class="l">'.($lessons==1?'урок':($lessons>=2&&$lessons<=4?'урока':'уроков')).'</span></div><div class="stat-row"><span class="n">'.$kids.'</span><span class="l">детей</span></div></div>';
