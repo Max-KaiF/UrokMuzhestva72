@@ -7,7 +7,30 @@ function role_home($u){ return '?p='.$u['role']; }
 // ========== ОБРАБОТЧИКИ ДЕЙСТВИЙ ==========
 if($method==='POST'){
 csrf_check(); $a=$_POST['action']??'';
-if($a==='login'){ [$ok,$res]=login_user(trim($_POST['login']??''),$_POST['pass']??''); if($ok) redirect(role_home($res)); flash_set($res); redirect('?p=login'); }
+if($a==='login'){
+[$ok,$res]=verify_credentials(trim($_POST['login']??''),$_POST['pass']??'');
+if(!$ok){ flash_set($res); redirect('?p=login'); }
+unset($_SESSION['uid']); $_SESSION['pending_uid']=$res['id'];
+$sent=send_login_otp($res);
+flash_set($sent?'Мы отправили код подтверждения на ваш email.':'Не удалось отправить код на email. Попробуйте ещё раз или запросите код повторно.');
+redirect('?p=verify_otp');
+}
+if($a==='resend_otp'){
+$pid=(int)($_SESSION['pending_uid']??0); $pu=$pid?find_user_by_id($pid):null;
+if(!$pu){ unset($_SESSION['pending_uid']); flash_set('Сессия входа истекла. Войдите заново.'); redirect('?p=login'); }
+$sent=send_login_otp($pu);
+flash_set($sent?'Код отправлен повторно.':'Не удалось отправить код. Попробуйте позже.');
+redirect('?p=verify_otp');
+}
+if($a==='verify_otp'){
+$pid=(int)($_SESSION['pending_uid']??0); $pu=$pid?find_user_by_id($pid):null;
+if(!$pu){ unset($_SESSION['pending_uid']); flash_set('Сессия входа истекла. Войдите заново.'); redirect('?p=login'); }
+[$ok,$err]=verify_login_otp($pid,trim($_POST['code']??''));
+if(!$ok){ flash_set($err); redirect('?p=verify_otp'); }
+unset($_SESSION['pending_uid']);
+finalize_login($pu);
+redirect(role_home($pu));
+}
 if($a==='register'){
 $role=$_POST['role']??''; $login=trim($_POST['login']??''); $pass=$_POST['pass']??''; $email=trim($_POST['email']??'');
 if(strlen($login)<3||strlen($pass)<5){ flash_set('Логин от 3 и пароль от 5 символов.'); redirect('?p=register'); }
@@ -245,7 +268,9 @@ redirect('?p=login');
 }
 // ========== GET-ДЕЙСТВИЯ ==========
 $u=current_user();
-if(!$u && !in_array($p,['login','register','reset_password','reset_request','privacy','guide'])) $p='login';
+if(!$u && $p==='login') unset($_SESSION['pending_uid']);
+if(!$u && !empty($_SESSION['pending_uid']) && !in_array($p,['login','verify_otp'])) redirect('?p=verify_otp');
+if(!$u && !in_array($p,['login','register','reset_password','reset_request','privacy','guide','verify_otp'])) $p='login';
 if($u && ($p===''||$p==='login'||$p==='register')) $p=$u['role'];
 if($p==='export' && $u && $u['role']==='operator'){
 require_login();
@@ -382,6 +407,15 @@ layout('Как это работает',$body); exit;
 if($p==='login'){
 $body='<div class="auth"><h2>Вход</h2><form method="post" class="card pad">'.csrf_field().'<input type="hidden" name="action" value="login"><label class="lbl">Логин</label><input name="login" required><label class="lbl">Пароль</label><input type="password" name="pass" required><button class="btn primary" style="margin-top:12px">Войти</button></form><p class="muted"><a href="?p=reset_request">Забыли пароль?</a> · <a href="?p=register">Зарегистрироваться</a> · <a href="?p=guide">Как это работает?</a></p></div>';
 layout('Вход',$body); exit;
+}
+if($p==='verify_otp'){
+$pid=(int)($_SESSION['pending_uid']??0); $pu=$pid?find_user_by_id($pid):null;
+if(!$pu){ unset($_SESSION['pending_uid']); redirect('?p=login'); }
+$masked=preg_replace('/^(.).*(@.*)$/u','$1***$2',(string)$pu['email']);
+$body='<div class="auth"><h2>Подтверждение входа</h2><p class="muted">Мы отправили код подтверждения на '.esc($masked).'. Введите его ниже — код действует 10 минут.</p>'
+.'<form method="post" class="card pad">'.csrf_field().'<input type="hidden" name="action" value="verify_otp"><label class="lbl">Код из письма</label><input name="code" inputmode="numeric" pattern="[0-9]*" maxlength="6" autofocus required><button class="btn primary" style="margin-top:12px">Подтвердить</button></form>'
+.'<div style="display:flex;gap:10px;margin-top:10px"><form method="post">'.csrf_field().'<input type="hidden" name="action" value="resend_otp"><button class="btn ghost sm">Отправить код повторно</button></form><a class="btn ghost sm" href="?p=login">Отмена</a></div></div>';
+layout('Подтверждение входа',$body); exit;
 }
 if($p==='reset_request'){
 $body='<div class="auth"><h2>Сброс пароля</h2><form method="post" class="card pad">'.csrf_field().'<input type="hidden" name="action" value="request_reset"><label class="lbl">Email</label><input type="email" name="email" required><button class="btn primary" style="margin-top:12px">Отправить ссылку</button></form><p class="muted"><a href="?p=login">← ко входу</a></p></div>';

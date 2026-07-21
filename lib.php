@@ -41,6 +41,9 @@ vet_rating INTEGER, vet_comment TEXT, vet_at VARCHAR(40), created_at VARCHAR(40)
 db()->exec("CREATE TABLE IF NOT EXISTS password_resets (
 id $pk, user_id INTEGER, token VARCHAR(128), expires_at VARCHAR(40), used INTEGER DEFAULT 0, created_at VARCHAR(40)
 )$tail");
+db()->exec("CREATE TABLE IF NOT EXISTS login_otp (
+id $pk, user_id INTEGER, code VARCHAR(10), expires_at VARCHAR(40), used INTEGER DEFAULT 0, attempts INTEGER DEFAULT 0, created_at VARCHAR(40)
+)$tail");
 db()->exec("CREATE TABLE IF NOT EXISTS audit_log (
 id $pk, user_id INTEGER, user_role VARCHAR(20), action VARCHAR(100), target_type VARCHAR(40), target_id INTEGER, details TEXT, created_at VARCHAR(40)
 )$tail");
@@ -254,7 +257,35 @@ $newId=db()->lastInsertId();
 log_action(null,$role,'user_create','users',$newId,"Создан пользователь $login");
 return [true,$newId];
 }
-function login_user($login,$pass){ $u=find_user_by_login($login); if(!$u||!password_verify($pass,$u['pass_hash'])) return [false,'Неверный логин или пароль.']; session_regenerate_id(true); $_SESSION['uid']=$u['id']; log_action($u['id'],$u['role'],'login','users',$u['id'],'Вход в систему'); return [true,$u]; }
+function verify_credentials($login,$pass){ $u=find_user_by_login($login); if(!$u||!password_verify($pass,$u['pass_hash'])) return [false,'Неверный логин или пароль.']; return [true,$u]; }
+function finalize_login($u){ session_regenerate_id(true); $_SESSION['uid']=$u['id']; log_action($u['id'],$u['role'],'login','users',$u['id'],'Вход в систему'); }
+// ========== ДВУХФАКТОРНАЯ АУТЕНТИФИКАЦИЯ (код на email) ==========
+function generate_otp_code(){ return str_pad((string)random_int(0,999999),6,'0',STR_PAD_LEFT); }
+function create_login_otp($userId){
+$code=generate_otp_code();
+$expires=date('Y-m-d H:i:s',strtotime('+10 minutes'));
+db()->prepare("INSERT INTO login_otp(user_id,code,expires_at,used,attempts,created_at) VALUES(?,?,?,0,0,?)")->execute([$userId,$code,$expires,now()]);
+return $code;
+}
+function send_login_otp($u){
+$code=create_login_otp($u['id']);
+$site=cfg()['site_title'];
+$body="Здравствуйте, {$u['display_name']}!\r\n\r\nВаш код подтверждения входа в систему \"$site\": $code\r\n\r\nКод действует 10 минут. Если вы не пытались войти — просто проигнорируйте это письмо.\r\n";
+return send_smtp_email($u['email'],$u['display_name']?:$u['login'],"[$site] Код подтверждения входа",$body);
+}
+function verify_login_otp($userId,$code){
+$st=db()->prepare("SELECT * FROM login_otp WHERE user_id=? AND used=0 ORDER BY id DESC LIMIT 1");
+$st->execute([$userId]); $row=$st->fetch();
+if(!$row) return [false,'Код не найден. Запросите новый.'];
+if(strtotime($row['expires_at'])<time()) return [false,'Код истёк. Запросите новый.'];
+if((int)$row['attempts']>=5) return [false,'Превышено число попыток. Запросите новый код.'];
+if(trim((string)$code)!==$row['code']){
+db()->prepare("UPDATE login_otp SET attempts=attempts+1 WHERE id=?")->execute([$row['id']]);
+return [false,'Неверный код.'];
+}
+db()->prepare("UPDATE login_otp SET used=1 WHERE id=?")->execute([$row['id']]);
+return [true,null];
+}
 // ========== СБРОС ПАРОЛЯ ==========
 function create_reset_token($email){
 $u=find_user_by_email($email);
