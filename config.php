@@ -29,6 +29,7 @@ return [
 'operator_signup_code' => $get('UM_OP_CODE', ''),
 'fund_signup_code'     => $get('UM_FUND_CODE', ''),
 'cron_key'             => $get('UM_CRON_KEY', ''),
+'support_email'        => $get('UM_SUPPORT_EMAIL', 'task@урокмужества72.рф'),
 // Настройки почты (SMTP).
 'smtp' => [
 'host' => $get('UM_SMTP_HOST', 'mail.xn--72-6kchof1aqqtqmfe.xn--p1ai'),

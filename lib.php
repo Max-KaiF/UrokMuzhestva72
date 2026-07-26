@@ -134,6 +134,12 @@ function now(){ return date('Y-m-d H:i:s'); }
 function redirect($u){ header('Location: '.$u); exit; }
 function flash_set($m){ $_SESSION['flash']=$m; }
 function flash_get(){ $m=$_SESSION['flash']??null; unset($_SESSION['flash']); return $m; }
+// ---------- сохранение введённых данных формы при ошибке валидации ----------
+function fail_redirect($msg,$url){ flash_set($msg); $_SESSION['old_input']=$_POST; redirect($url); }
+function pull_old_input(){ $v=$_SESSION['old_input']??[]; unset($_SESSION['old_input']); return $v; }
+function ov($old,$key,$default=''){ return esc($old[$key]??$default); }
+function osel($old,$key,$val){ return ((string)($old[$key]??''))===(string)$val?' selected':''; }
+function ochk($old,$group,$val){ return isset($old[$group][$val])?' checked':''; }
 // ---------- предметная область ----------
 const OP_CITY='Департамент образования Администрации города Тюмени';
 const OP_REGION='Департамент образования и науки Тюменской области';

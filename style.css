@@ -1,4 +1,4 @@
-:root{--navy:#16305B;--navy-d:#0F2342;--amber:#C77700;--ink:#222A33;--muted:#6B7682;--line:#E2E7EE;--line2:#CDD5DF;--bg:#F4F6F9;--green:#2E7D52;--blue:#2E5496;--gray:#8A95A1;--tint:#EEF2F8;--sans:"Segoe UI",Roboto,"PT Sans","Helvetica Neue",Arial,sans-serif}
+:root{--navy:#16305B;--navy-d:#0F2342;--amber:#C77700;--ink:#222A33;--muted:#5B6672;--line:#E2E7EE;--line2:#CDD5DF;--bg:#F4F6F9;--green:#2E7D52;--blue:#2E5496;--gray:#8A95A1;--tint:#EEF2F8;--sans:"Segoe UI",Roboto,"PT Sans","Helvetica Neue",Arial,sans-serif}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.5}
 button,input,select,textarea{font-family:inherit}
@@ -9,6 +9,7 @@ button,input,select,textarea{font-family:inherit}
 .brand h1{font-size:17px;margin:0;font-weight:600}
 .brand p{margin:1px 0 0;font-size:12px;color:#c4d0e4}
 .brand-short{display:none}
+.rolebadge-full-mobile{display:none}
 .session{margin-left:auto;display:flex;align-items:center;gap:10px}
 .rolebadge{font-size:12.5px;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.22);padding:5px 11px;border-radius:999px;color:#dde5f1;display:inline-block;max-width:240px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:middle}
 .logout{background:#fff;color:var(--navy);border:none;border-radius:8px;padding:6px 13px;font:inherit;font-size:13px;font-weight:600;cursor:pointer}
@@ -32,8 +33,8 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--navy);bo
 .btn{border:none;border-radius:9px;font:inherit;font-weight:600;cursor:pointer}
 .btn.primary{background:var(--navy);color:#fff;padding:11px 20px;font-size:15px}
 .btn.primary:hover{background:var(--navy-d)}
-.btn.ghost{background:#fff;border:1px solid var(--line2);color:#3a444f;padding:8px 13px;font-size:14px}
-.btn.sm{padding:7px 12px;font-size:13px}
+.btn.ghost{background:#fff;border:1px solid var(--line2);color:#3a444f;padding:8px 13px;font-size:14px;white-space:nowrap;flex-shrink:0}
+.btn.sm{padding:12px 14px;font-size:13px;min-height:44px;display:inline-flex;align-items:center}
 .btn:disabled{opacity:.45;cursor:not-allowed}
 .inline{display:inline-block;margin:0 8px 8px 0}
 table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden;box-shadow:0 1px 2px rgba(16,35,66,.05),0 8px 24px rgba(16,35,66,.06)}
@@ -45,6 +46,8 @@ tbody tr{cursor:pointer}
 tbody tr:hover{background:#f7f9fc}
 tbody tr:last-child td{border-bottom:none}
 .id{font-size:13px;color:var(--navy)}
+.id a{color:inherit;text-decoration:none}
+.id a:hover,.id a:focus-visible{text-decoration:underline}
 .pill{display:inline-block;font-size:12px;font-weight:600;padding:3px 10px;border-radius:999px;white-space:nowrap}
 .pill.gray{background:#eef0f3;color:#5c6672}
 .pill.blue{background:#e8eef8;color:#2c4f93}
@@ -121,6 +124,7 @@ tbody tr.urgent:hover{background:#ffe0b2!important}
 /* ===== фирменная тема (флаг РФ) ===== */
 :root{--rf-blue:#0039A6;--rf-red:#D52B1E;}
 body{background:linear-gradient(rgba(255,255,255,.78),rgba(255,255,255,.78)), url(flag-russia.jpg) center center / cover no-repeat fixed !important;color:#1a1a1a;}
+@media(max-width:768px){body{background-attachment:scroll !important}}
 header.top{background:var(--rf-blue) !important;}
 header.top .brand h1, header.top .brand p, header.top .mark{color:#ffffff !important;}
 header.top .rolebadge{background:rgba(255,255,255,.18) !important;color:#fff !important;}
@@ -184,4 +188,5 @@ table.card-view td:before{content:attr(data-label);display:block;font-size:11px;
 .brand-full{display:none}
 .brand-short{display:block}
 .rolebadge{max-width:150px;font-size:12px}
+.rolebadge-full-mobile{display:block;padding:6px 12px 0;font-size:12.5px;color:#dde5f1}
 }
