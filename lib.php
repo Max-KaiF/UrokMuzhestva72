@@ -422,7 +422,7 @@ function fund_label($f){ $n=($f['display_name']!=='')?$f['display_name']:('Ор�
 function active_speakers($fund=null){ if($fund){ $st=db()->prepare("SELECT * FROM users WHERE role='speaker' AND active=1 AND fund_user_id=? ORDER BY display_name"); $st->execute([$fund['id']]); return $st->fetchAll(); } return db()->query("SELECT * FROM users WHERE role='speaker' AND active=1 ORDER BY display_name")->fetchAll(); }
 // ---- объединение заявителей в одну организацию (школа/СПО/вуз) ----
 function school_root_row($school){ if(!empty($school['parent_school_id'])){ $r=find_user_by_id((int)$school['parent_school_id']); if($r) return $r; } return $school; }
-function school_scope_ids($school){ $ids=[(int)$school['id']]; if(empty($school['parent_school_id'])){ $st=db()->prepare("SELECT id FROM users WHERE role='school' AND parent_school_id=?"); $st->execute([$school['id']]); foreach($st->fetchAll(PDO::FETCH_COLUMN) as $mid) $ids[]=(int)$mid; } return array_values(array_unique($ids)); }
+function school_scope_ids($school){ $root=school_root_row($school); $ids=[(int)$root['id'],(int)$school['id']]; $st=db()->prepare("SELECT id FROM users WHERE role='school' AND parent_school_id=?"); $st->execute([$root['id']]); foreach($st->fetchAll(PDO::FETCH_COLUMN) as $mid) $ids[]=(int)$mid; return array_values(array_unique($ids)); }
 function school_effective($school){ $root=school_root_row($school); if((int)$root['id']===(int)$school['id']) return $school; $eff=$school; foreach(['org_name','level','district','address','building','op_group'] as $k) $eff[$k]=$root[$k]; return $eff; }
 function school_owns_request($school,$r){ return in_array((int)$r['school_user_id'],school_scope_ids($school),true); }
 function head_schools(){ return db()->query("SELECT * FROM users WHERE role='school' AND active=1 AND (parent_school_id IS NULL OR parent_school_id=0) ORDER BY org_name")->fetchAll(); }
@@ -443,6 +443,20 @@ if((int)$m['active']===1) return [false,'Этот сотрудник уже по
 db()->prepare("DELETE FROM users WHERE id=? AND active=0")->execute([$uid]);
 log_action($root['id'],'school','reject_school_member','users',$uid,"Сотрудник отклонён: ".$m['contact_name']);
 return [true,'Сотрудник отклонён.'];
+}
+function transfer_school_head($actor,$newHeadId){
+if(!empty($actor['parent_school_id'])) return [false,'Передать права головного аккаунта может только текущий головной аккаунт.'];
+$target=find_user_by_id($newHeadId);
+if(!$target||$target['role']!=='school'||(int)($target['parent_school_id']??0)!==(int)$actor['id']||!$target['active']) return [false,'Выберите подтверждённого сотрудника вашей организации.'];
+// остальные сотрудники (кроме нового головного) переходят под нового головного
+db()->prepare("UPDATE users SET parent_school_id=? WHERE role='school' AND parent_school_id=? AND id<>?")->execute([$target['id'],$actor['id'],$target['id']]);
+// новый головной получает данные организации и становится корнем
+db()->prepare("UPDATE users SET org_name=?,level=?,district=?,address=?,building=?,op_group=?,display_name=?,parent_school_id=NULL WHERE id=?")
+->execute([$actor['org_name'],$actor['level'],$actor['district'],$actor['address'],$actor['building'],$actor['op_group'],$actor['org_name'],$target['id']]);
+// прежний головной становится обычным сотрудником
+db()->prepare("UPDATE users SET org_name='',address='',building='',op_group='',parent_school_id=? WHERE id=?")->execute([$target['id'],$actor['id']]);
+log_action($actor['id'],'school','transfer_school_head','users',$target['id'],"Права головного аккаунта переданы сотруднику: ".$target['contact_name']);
+return [true,'Права головного аккаунта переданы сотруднику «'.$target['contact_name'].'». Теперь вы — сотрудник организации.'];
 }
 // ---- модерация заявителей ----
 function applicant_group_levels($opGroup){ if($opGroup==='school') return ['school','other']; if($opGroup==='region') return ['spo','vuz']; return ['school','spo','vuz','other']; }
