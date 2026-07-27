@@ -135,6 +135,14 @@ function now(){ return date('Y-m-d H:i:s'); }
 function redirect($u){ header('Location: '.$u); exit; }
 function flash_set($m){ $_SESSION['flash']=$m; }
 function flash_get(){ $m=$_SESSION['flash']??null; unset($_SESSION['flash']); return $m; }
+// ---------- телефон: приводим к формату +7XXXXXXXXXX (10 цифр после +7) ----------
+function normalize_phone($raw){
+$d=preg_replace('/\D+/','',(string)$raw);
+if($d==='') return null;
+if(strlen($d)===11 && ($d[0]==='7'||$d[0]==='8')) $d=substr($d,1);
+if(strlen($d)!==10) return null;
+return '+7'.$d;
+}
 // ---------- сохранение введённых данных формы при ошибке валидации ----------
 function fail_redirect($msg,$url){ flash_set($msg); $_SESSION['old_input']=$_POST; redirect($url); }
 function pull_old_input(){ $v=$_SESSION['old_input']??[]; unset($_SESSION['old_input']); return $v; }
@@ -581,7 +589,7 @@ if($actor['role']!=='school'||!school_owns_request($actor,$r)) return [false,'Н
 if(in_array($r['status'],['done','closed','cancelled'])) return [false,'Заявка уже завершена, редактирование недоступно.'];
 $allowed=[
 'contact_name'=>trim($f['contact_name']??''),
-'phone'=>trim($f['phone']??''),
+'phone'=>normalize_phone($f['phone']??''),
 'participants'=>trim($f['participants']??''),
 'speakers_needed'=>max(1,(int)($f['speakers_needed']??1)),
 'lessons_per_speaker'=>max(1,min(2,(int)($f['lessons_per_speaker']??1))),
@@ -590,7 +598,8 @@ $allowed=[
 ];
 $topicRaw=$f['topic']??'';
 $allowed['topic']=($topicRaw==='__other__')?trim($f['topic_other']??''):trim($topicRaw);
-if(!$allowed['contact_name']||!$allowed['phone']) return [false,'Заполните контактное лицо и телефон.'];
+if(!$allowed['contact_name']) return [false,'Заполните контактное лицо.'];
+if($allowed['phone']===null) return [false,'Укажите телефон в формате +7XXXXXXXXXX (10 цифр после +7).'];
 if(!in_array($allowed['age_group'],array_keys(ages()),true)) return [false,'Некорректная возрастная группа.'];
 if($r['status']==='new'){
 $dsid=(int)($f['desired_speaker_id']??0);
@@ -613,14 +622,15 @@ if(!empty($r['claimed_fund_id']) && !in_array((int)$r['claimed_fund_id'],fund_sc
 if(!reschedulable_status($r)) return [false,'Редактирование доступно на этапах «Спикеры выбраны» и «Состав подтверждён Фондом».'];
 $allowed=[
 'contact_name'=>trim($f['contact_name']??''),
-'phone'=>trim($f['phone']??''),
+'phone'=>normalize_phone($f['phone']??''),
 'participants'=>trim($f['participants']??''),
 'age_group'=>$f['age_group']??$r['age_group'],
 'notes'=>trim($f['notes']??''),
 ];
 $topicRaw=$f['topic']??'';
 $allowed['topic']=($topicRaw==='__other__')?trim($f['topic_other']??''):trim($topicRaw);
-if(!$allowed['contact_name']||!$allowed['phone']) return [false,'Заполните контактное лицо и телефон.'];
+if(!$allowed['contact_name']) return [false,'Заполните контактное лицо.'];
+if($allowed['phone']===null) return [false,'Укажите телефон в формате +7XXXXXXXXXX (10 цифр после +7).'];
 $rescheduled=false;
 if(isset($f['udate'])){
 [$ok,$res]=reschedule_fields($r,$f['udate'],$f['utime']??'',$f['utime_end']??'');
@@ -958,6 +968,26 @@ function sort_status_rank($k){
 $ranks=['new'=>0,'chosen'=>1,'confirmed'=>2,'brief'=>2,'prep'=>3,'done'=>4,'cancelled'=>5,'closed'=>6];
 return $ranks[$k]??0;
 }
+function sort_users_rows($rows,$key,$dir='asc'){
+if(!$key||!$rows) return $rows;
+$mul=$dir==='desc'?-1:1;
+usort($rows,function($a,$b) use($key,$mul){
+switch($key){
+case 'name': $cmp=strcasecmp($a['display_name']?:$a['org_name'],$b['display_name']?:$b['org_name']); break;
+case 'role': $cmp=strcasecmp($a['role']??'',$b['role']??''); break;
+case 'email': $cmp=strcasecmp($a['email']??'',$b['email']??''); break;
+case 'contact_name': $cmp=strcasecmp($a['contact_name']??'',$b['contact_name']??''); break;
+case 'position': $cmp=strcasecmp($a['position']??'',$b['position']??''); break;
+case 'phone': $cmp=strcasecmp($a['phone']??'',$b['phone']??''); break;
+case 'address': $cmp=strcasecmp($a['address']??'',$b['address']??''); break;
+case 'building': $cmp=strnatcasecmp($a['building']??'',$b['building']??''); break;
+case 'status': $cmp=(int)($a['active']??0)<=>(int)($b['active']??0); break;
+default: $cmp=0;
+}
+return $cmp*$mul;
+});
+return $rows;
+}
 function sort_requests($rows,$key,$dir='asc'){
 if(!$key||!$rows) return $rows;
 $mul=$dir==='desc'?-1:1;
@@ -967,6 +997,8 @@ case 'code': $cmp=strnatcasecmp($a['code']??'',$b['code']??''); break;
 case 'org': $cmp=strcasecmp($a['org']??'',$b['org']??''); break;
 case 'date': $cmp=strcmp(($a['udate']??'').' '.($a['utime']??''),($b['udate']??'').' '.($b['utime']??'')); break;
 case 'status': $cmp=sort_status_rank($a['status']??'')<=>sort_status_rank($b['status']??''); break;
+case 'fund': $cmp=strcasecmp(!empty($a['claimed_fund_id'])?fund_name_by_id($a['claimed_fund_id']):'',!empty($b['claimed_fund_id'])?fund_name_by_id($b['claimed_fund_id']):''); break;
+case 'speakers': $cmp=strcasecmp(req_label($a['id']),req_label($b['id'])); break;
 default: $cmp=0;
 }
 return $cmp*$mul;
@@ -1092,10 +1124,37 @@ if($opGroup){ $sql.=' AND r.op_group=?'; $p[]=$opGroup; }
 $sql.=' ORDER BY rs.vet_at DESC';
 $st=db()->prepare($sql); $st->execute($p); return $st->fetchAll();
 }
-function kpis($opGroup=null){
+function operator_scope_requests($opGroup=null){
 $sql='SELECT * FROM requests WHERE (archived=0 OR archived IS NULL)'; $p=[];
 if($opGroup){ $sql.=' AND op_group=?'; $p[]=$opGroup; }
-$st=db()->prepare($sql); $st->execute($p); $all=$st->fetchAll(); $total=count($all);
+$st=db()->prepare($sql); $st->execute($p); return $st->fetchAll();
+}
+function requests_month_breakdown($all){
+$by=[];
+foreach($all as $r){
+$ym=substr((string)($r['udate']??''),0,7); if($ym==='') continue;
+if(!isset($by[$ym])) $by[$ym]=['done'=>0,'kids'=>0,'cancelled'=>0];
+if(in_array($r['status'],['done','closed'],true)){ $by[$ym]['done']++; $by[$ym]['kids']+=(int)($r['participants']??0); }
+if($r['status']==='cancelled') $by[$ym]['cancelled']++;
+}
+$cur=date('Y-m'); if(!isset($by[$cur])) $by[$cur]=['done'=>0,'kids'=>0,'cancelled'=>0];
+krsort($by);
+return $by;
+}
+function month_stats_widget($all,$domId){
+$by=requests_month_breakdown($all);
+$opts=''; foreach(array_keys($by) as $ym) $opts.='<option value="'.esc($ym).'">'.esc(month_label($ym)).'</option>';
+$html='<div class="card pad" style="margin:14px 0"><div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><label class="lbl" style="margin:0">Показатели за месяц</label><select id="'.$domId.'_sel" onchange="'.$domId.'_upd()">'.$opts.'</select></div>'
+.'<div style="display:flex;gap:28px;margin-top:12px;flex-wrap:wrap">'
+.'<div><div class="n" id="'.$domId.'_done" style="font-size:22px;color:var(--navy)">0</div><div class="l muted">Проведено и закрыто</div></div>'
+.'<div><div class="n" id="'.$domId.'_cancel" style="font-size:22px;color:var(--navy)">0</div><div class="l muted">Не состоялось</div></div>'
+.'<div><div class="n" id="'.$domId.'_kids" style="font-size:22px;color:var(--green)">0</div><div class="l muted">Охвачено детей</div></div>'
+.'</div></div>'
+.'<script>var '.$domId.'_data='.json_encode($by).';function '.$domId.'_upd(){var v=document.getElementById("'.$domId.'_sel").value;var d='.$domId.'_data[v]||{done:0,cancelled:0,kids:0};document.getElementById("'.$domId.'_done").textContent=d.done;document.getElementById("'.$domId.'_cancel").textContent=d.cancelled;document.getElementById("'.$domId.'_kids").textContent=d.kids;}'.$domId.'_upd();</script>';
+return $html;
+}
+function kpis($opGroup=null){
+$all=operator_scope_requests($opGroup); $total=count($all);
 $inwork=count(array_filter($all,fn($r)=>in_array($r['status'],['chosen','confirmed','brief','prep'])));
 $reached=array_filter($all,fn($r)=>in_array($r['status'],['done','closed']));
 $done=count($reached);
