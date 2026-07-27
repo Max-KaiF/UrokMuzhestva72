@@ -67,6 +67,7 @@ foreach([
 "ALTER TABLE users ADD COLUMN contact_name VARCHAR(190)",
 "ALTER TABLE users ADD COLUMN position VARCHAR(190)",
 "ALTER TABLE users ADD COLUMN parent_fund_id INTEGER",
+"ALTER TABLE users ADD COLUMN parent_school_id INTEGER",
 "ALTER TABLE requests ADD COLUMN utime VARCHAR(20)",
 "ALTER TABLE requests ADD COLUMN prep_confirmed_at VARCHAR(40)",
 "ALTER TABLE requests ADD COLUMN speakers_needed INTEGER DEFAULT 1",
@@ -247,7 +248,7 @@ if($blank('contact_name')) $missing[]='ФИО контактного лица';
 if($blank('position')) $missing[]='Должность';
 if($blank('phone')) $missing[]='Телефон';
 }
-if($u['role']==='school'){
+if($u['role']==='school' && empty($u['parent_school_id'])){
 if($blank('address')) $missing[]='Адрес местонахождения';
 if($blank('building')) $missing[]='№ корпуса';
 }
@@ -257,8 +258,8 @@ return $missing;
 function create_user($role,$login,$pass,$extra=[]){
 if(find_user_by_login($login)) return [false,'Такой логин уже занят.'];
 $active=array_key_exists('active',$extra)?(int)$extra['active']:(($role==='speaker'||$role==='school')?0:1);
-$st=db()->prepare('INSERT INTO users(role,login,pass_hash,display_name,org_name,level,age_groups,active,created_at,email,op_group,district,phone,parent_fund_id,fund_user_id,contact_name,position,address,building) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
-$st->execute([$role,$login,password_hash($pass,PASSWORD_DEFAULT),$extra['display_name']??'',$extra['org_name']??'',$extra['level']??'',$extra['groups']??'',$active,now(),$extra['email']??'',$extra['op_group']??'',$extra['district']??'',$extra['phone']??'',($extra['parent_fund_id']??null)?:null,($extra['fund_user_id']??null)?:null,$extra['contact_name']??'',$extra['position']??'',$extra['address']??'',$extra['building']??'']);
+$st=db()->prepare('INSERT INTO users(role,login,pass_hash,display_name,org_name,level,age_groups,active,created_at,email,op_group,district,phone,parent_fund_id,fund_user_id,contact_name,position,address,building,parent_school_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
+$st->execute([$role,$login,password_hash($pass,PASSWORD_DEFAULT),$extra['display_name']??'',$extra['org_name']??'',$extra['level']??'',$extra['groups']??'',$active,now(),$extra['email']??'',$extra['op_group']??'',$extra['district']??'',$extra['phone']??'',($extra['parent_fund_id']??null)?:null,($extra['fund_user_id']??null)?:null,$extra['contact_name']??'',$extra['position']??'',$extra['address']??'',$extra['building']??'',($extra['parent_school_id']??null)?:null]);
 $newId=db()->lastInsertId();
 log_action(null,$role,'user_create','users',$newId,"Создан пользователь $login");
 return [true,$newId];
@@ -326,6 +327,9 @@ return school_dept_group($target)===$og;
 }
 if($actor['role']==='fund'){
 return $target['role']==='speaker' && (int)($target['fund_user_id']??0)===(int)$actor['id'];
+}
+if($actor['role']==='school'){
+return $target['role']==='school' && (int)($target['parent_school_id']??0)===(int)$actor['id'];
 }
 return false;
 }
@@ -416,17 +420,42 @@ function pending_subfunds($head){ $st=db()->prepare("SELECT * FROM users WHERE r
 function child_subfunds($head){ $st=db()->prepare("SELECT * FROM users WHERE role='fund' AND parent_fund_id=? ORDER BY display_name"); $st->execute([$head['id']]); return $st->fetchAll(); }
 function fund_label($f){ $n=($f['display_name']!=='')?$f['display_name']:('Организация №'.$f['id']); if(!empty($f['parent_fund_id'])) $n='— '.$n.' (подразделение'.(!empty($f['district'])?', '.$f['district']:'').')'; elseif(!empty($f['district'])) $n.=' ('.$f['district'].')'; return $n; }
 function active_speakers($fund=null){ if($fund){ $st=db()->prepare("SELECT * FROM users WHERE role='speaker' AND active=1 AND fund_user_id=? ORDER BY display_name"); $st->execute([$fund['id']]); return $st->fetchAll(); } return db()->query("SELECT * FROM users WHERE role='speaker' AND active=1 ORDER BY display_name")->fetchAll(); }
+// ---- объединение заявителей в одну организацию (школа/СПО/вуз) ----
+function school_root_row($school){ if(!empty($school['parent_school_id'])){ $r=find_user_by_id((int)$school['parent_school_id']); if($r) return $r; } return $school; }
+function school_scope_ids($school){ $ids=[(int)$school['id']]; if(empty($school['parent_school_id'])){ $st=db()->prepare("SELECT id FROM users WHERE role='school' AND parent_school_id=?"); $st->execute([$school['id']]); foreach($st->fetchAll(PDO::FETCH_COLUMN) as $mid) $ids[]=(int)$mid; } return array_values(array_unique($ids)); }
+function school_effective($school){ $root=school_root_row($school); if((int)$root['id']===(int)$school['id']) return $school; $eff=$school; foreach(['org_name','level','district','address','building','op_group'] as $k) $eff[$k]=$root[$k]; return $eff; }
+function school_owns_request($school,$r){ return in_array((int)$r['school_user_id'],school_scope_ids($school),true); }
+function head_schools(){ return db()->query("SELECT * FROM users WHERE role='school' AND active=1 AND (parent_school_id IS NULL OR parent_school_id=0) ORDER BY org_name")->fetchAll(); }
+function school_label($s){ $n=($s['org_name']!=='')?$s['org_name']:('Организация №'.$s['id']); return $n.' — '.level_label($s['level']??'').(!empty($s['district'])?', '.$s['district']:''); }
+function pending_school_members($root){ $st=db()->prepare("SELECT * FROM users WHERE role='school' AND parent_school_id=? AND active=0 ORDER BY id DESC"); $st->execute([$root['id']]); return $st->fetchAll(); }
+function school_members($root){ $st=db()->prepare("SELECT * FROM users WHERE role='school' AND parent_school_id=? ORDER BY contact_name"); $st->execute([$root['id']]); return $st->fetchAll(); }
+function approve_school_member($root,$uid){
+$m=find_user_by_id($uid); if(!$m||$m['role']!=='school') return [false,'Сотрудник не найден.'];
+if((int)($m['parent_school_id']??0)!==(int)$root['id']) return [false,'Этот сотрудник относится к другой организации.'];
+db()->prepare("UPDATE users SET active=1 WHERE id=?")->execute([$uid]);
+log_action($root['id'],'school','approve_school_member','users',$uid,"Сотрудник подтверждён: ".$m['contact_name']);
+return [true,'Сотрудник подтверждён и получил доступ.'];
+}
+function reject_school_member($root,$uid){
+$m=find_user_by_id($uid); if(!$m||$m['role']!=='school') return [false,'Сотрудник не найден.'];
+if((int)($m['parent_school_id']??0)!==(int)$root['id']) return [false,'Этот сотрудник относится к другой организации.'];
+if((int)$m['active']===1) return [false,'Этот сотрудник уже подтверждён.'];
+db()->prepare("DELETE FROM users WHERE id=? AND active=0")->execute([$uid]);
+log_action($root['id'],'school','reject_school_member','users',$uid,"Сотрудник отклонён: ".$m['contact_name']);
+return [true,'Сотрудник отклонён.'];
+}
 // ---- модерация заявителей ----
 function applicant_group_levels($opGroup){ if($opGroup==='school') return ['school','other']; if($opGroup==='region') return ['spo','vuz']; return ['school','spo','vuz','other']; }
 function pending_applicants($operator){
 $og=$operator['op_group']??'';
-$st=db()->query("SELECT * FROM users WHERE role='school' AND active=0 ORDER BY id DESC");
+$st=db()->query("SELECT * FROM users WHERE role='school' AND active=0 AND (parent_school_id IS NULL OR parent_school_id=0) ORDER BY id DESC");
 $all=$st->fetchAll();
 if($og==='') return $all;
 return array_values(array_filter($all,fn($a)=>school_dept_group($a)===$og));
 }
 function approve_applicant($operator,$uid){
 $a=find_user_by_id($uid); if(!$a||$a['role']!=='school') return [false,'Заявитель не найден.'];
+if(!empty($a['parent_school_id'])) return [false,'Это сотрудник организации — подтверждается представителем организации, а не департаментом.'];
 $og=$operator['op_group']??'';
 if($og!=='' && school_dept_group($a)!==$og) return [false,'Этот заявитель относится к другому департаменту.'];
 db()->prepare("UPDATE users SET active=1 WHERE id=?")->execute([$uid]);
@@ -534,7 +563,7 @@ if(!empty($r['briefing_done']) && !empty($r['briefing_date']) && $udate<substr((
 return [true,$fields];
 }
 function update_request($r,$f,$actor){
-if($actor['role']!=='school'||(int)$r['school_user_id']!==(int)$actor['id']) return [false,'Нет доступа.'];
+if($actor['role']!=='school'||!school_owns_request($actor,$r)) return [false,'Нет доступа.'];
 if(in_array($r['status'],['done','closed','cancelled'])) return [false,'Заявка уже завершена, редактирование недоступно.'];
 $allowed=[
 'contact_name'=>trim($f['contact_name']??''),
@@ -654,7 +683,7 @@ log_action($fund['id'],'fund','release_request','requests',$r['id'],'Фонд в
 return [true,'Заявка возвращена в общий список — её могут взять другие фонды.'];
 }
 function delete_request($r,$actor){
-if($actor['role']!=='school'||(int)$r['school_user_id']!==(int)$actor['id']) return [false,'Нет доступа.'];
+if($actor['role']!=='school'||!school_owns_request($actor,$r)) return [false,'Нет доступа.'];
 if($r['status']!=='new') return [false,'Удалить можно только заявку на этапе «Новая».'];
 db()->prepare("DELETE FROM requests WHERE id=?")->execute([$r['id']]);
 log_action($actor['id'],'school','request_delete','requests',$r['id'],"Удалена заявка {$r['code']}");
@@ -1136,8 +1165,9 @@ function get_action_required_requests($user) {
 $role = $user['role'];
 $uid = $user['id'];
 if ($role === 'school') {
-$st = db()->prepare("SELECT * FROM requests WHERE school_user_id = ? AND (archived=0 OR archived IS NULL) AND ((status IN ('confirmed','brief') AND (prep_confirmed_at IS NULL OR prep_confirmed_at='')) OR status='prep' OR (status='done' AND (fb_app_comment IS NULL OR fb_app_comment=''))) ORDER BY udate ASC");
-$st->execute([$uid]); return $st->fetchAll();
+$ids=school_scope_ids($user); $in=implode(',',array_fill(0,count($ids),'?'));
+$st = db()->prepare("SELECT * FROM requests WHERE school_user_id IN ($in) AND (archived=0 OR archived IS NULL) AND ((status IN ('confirmed','brief') AND (prep_confirmed_at IS NULL OR prep_confirmed_at='')) OR status='prep' OR (status='done' AND (fb_app_comment IS NULL OR fb_app_comment=''))) ORDER BY udate ASC");
+$st->execute($ids); return $st->fetchAll();
 }
 if ($role === 'fund') {
 return fund_actionable($user);

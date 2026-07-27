@@ -41,26 +41,36 @@ if($district===''){ fail_redirect('Укажите район Тюменской 
 $c_name=trim($_POST['contact_name']??''); $c_pos=trim($_POST['position']??''); $c_phone=trim($_POST['contact_phone']??'');
 if($role!=='speaker' && ($c_name===''||$c_pos===''||$c_phone==='')){ fail_redirect('Заполните ФИО контактного лица, должность и телефон.','?p=register'); }
 if($role==='school'){
+$schoolType=($_POST['school_type']??'owner')==='member'?'member':'owner';
+if($schoolType==='member'){
+$parentId=(int)($_POST['parent_school_id']??0);
+$parentSchool=$parentId?find_user_by_id($parentId):null;
+if(!$parentSchool||$parentSchool['role']!=='school'||!$parentSchool['active']||!empty($parentSchool['parent_school_id'])){ fail_redirect('Выберите организацию из списка.','?p=register'); }
+[$ok,$res]=create_user('school',$login,$pass,['org_name'=>'','level'=>$parentSchool['level'],'display_name'=>$c_name,'email'=>$email,'district'=>$district,'contact_name'=>$c_name,'position'=>$c_pos,'phone'=>$c_phone,'address'=>'','building'=>'','op_group'=>$parentSchool['op_group']??'','parent_school_id'=>$parentSchool['id']]);
+} else {
 $c_addr=trim($_POST['address']??''); $c_build=trim($_POST['building']??'');
 if(empty($_POST['org_name'])||empty($_POST['level'])){ fail_redirect('Заполните наименование организации и уровень.','?p=register'); }
 if($c_addr===''||$c_build===''){ fail_redirect('Укажите адрес местонахождения и номер корпуса.','?p=register'); }
 $schoolOg=$_POST['school_op_group']??''; if(!in_array($schoolOg,['school','region'],true)){ fail_redirect('Выберите департамент, к которому относится организация.','?p=register'); }
 [$ok,$res]=create_user('school',$login,$pass,['org_name'=>trim($_POST['org_name']),'level'=>$_POST['level'],'display_name'=>trim($_POST['org_name']),'email'=>$email,'district'=>$district,'contact_name'=>$c_name,'position'=>$c_pos,'phone'=>$c_phone,'address'=>$c_addr,'building'=>$c_build,'op_group'=>$schoolOg]);
 }
+}
 elseif($role==='speaker'){ if(empty($_POST['display_name'])){ fail_redirect('Укажите ФИО.','?p=register'); } $phone=trim($_POST['phone']??''); if($phone===''){ fail_redirect('Укажите телефон для связи.','?p=register'); } $fid=(int)($_POST['fund_user_id']??0); if(!$fid || !find_user_by_id($fid) || find_user_by_id($fid)['role']!=='fund'){ fail_redirect('Выберите фонд.','?p=register'); } $groups=implode(',',array_keys($_POST['groups']??[])); if($groups===''){ fail_redirect('Выберите хотя бы одну возрастную группу.','?p=register'); } [$ok,$res]=create_user('speaker',$login,$pass,['display_name'=>trim($_POST['display_name']),'groups'=>$groups,'email'=>$email,'district'=>$district,'phone'=>$phone,'fund_user_id'=>$fid]); }
 elseif($role==='fund'){ $fdn=trim($_POST['fund_display_name']??''); if($fdn===''){ fail_redirect('Укажите наименование Фонда.','?p=register'); } $ftype=$_POST['fund_type']??'head'; if($ftype==='sub'){ $pfid=(int)($_POST['parent_fund_id']??0); $pf=$pfid?find_user_by_id($pfid):null; if(!$pf || $pf['role']!=='fund'){ fail_redirect('Подразделение должно указать головной фонд.','?p=register'); } [$ok,$res]=create_user('fund',$login,$pass,['display_name'=>$fdn,'email'=>$email,'district'=>$district,'parent_fund_id'=>$pfid,'active'=>0,'contact_name'=>$c_name,'position'=>$c_pos,'phone'=>$c_phone]); } else { if(($_POST['fund_code']??'')!==cfg()['fund_signup_code']){ fail_redirect('Неверный код регистрации Фонда. Если у вас его нет, напишите на '.cfg()['support_email'].'.','?p=register'); } [$ok,$res]=create_user('fund',$login,$pass,['display_name'=>$fdn,'email'=>$email,'district'=>$district,'contact_name'=>$c_name,'position'=>$c_pos,'phone'=>$c_phone]); } }
 elseif($role==='operator'){ $odn=trim($_POST['op_display_name']??''); if($odn===''){ fail_redirect('Укажите наименование оператора.','?p=register'); } if(($_POST['op_code']??'')!==cfg()['operator_signup_code']){ fail_redirect('Неверный код регистрации оператора. Если у вас его нет, напишите на '.cfg()['support_email'].'.','?p=register'); } $og=$_POST['op_group']??''; if(!in_array($og,['school','region'])){ fail_redirect('Выберите департамент.','?p=register'); } [$ok,$res]=create_user('operator',$login,$pass,['display_name'=>$odn,'email'=>$email,'op_group'=>$og,'district'=>$district,'contact_name'=>$c_name,'position'=>$c_pos,'phone'=>$c_phone]); }
 else { fail_redirect('Выберите роль.','?p=register'); }
 if(!$ok){ fail_redirect($res,'?p=register'); }
-flash_set($role==='speaker'?'Регистрация принята. Доступ откроется после подтверждения вашим фондом.':($role==='school'?'Регистрация принята. Доступ откроется после подтверждения профильным департаментом.':($role==='fund'&&($_POST['fund_type']??'head')==='sub'?'Регистрация подразделения принята. Доступ откроется после подтверждения головным фондом.':'Регистрация успешна. Войдите.'))); redirect('?p=login');
+flash_set($role==='speaker'?'Регистрация принята. Доступ откроется после подтверждения вашим фондом.':($role==='school'?($schoolType==='member'?'Регистрация принята. Доступ откроется после подтверждения представителем вашей организации.':'Регистрация принята. Доступ откроется после подтверждения профильным департаментом.'):($role==='fund'&&($_POST['fund_type']??'head')==='sub'?'Регистрация подразделения принята. Доступ откроется после подтверждения головным фондом.':'Регистрация успешна. Войдите.'))); redirect('?p=login');
 }
 if($a==='logout'){ session_destroy(); redirect('?p=login'); }
 if($a==='update_profile'){
 require_login(); $u=current_user();
+$isSchoolMember=$u['role']==='school' && !empty($u['parent_school_id']);
 $dn=trim($_POST['display_name']??''); $em=trim($_POST['email']??''); $np=$_POST['newpass']??'';
-if($dn===''){ flash_set('Укажите наименование / ФИО.'); redirect('?p=profile'); }
+if(!$isSchoolMember && $dn===''){ flash_set('Укажите наименование / ФИО.'); redirect('?p=profile'); }
 if(!filter_var($em,FILTER_VALIDATE_EMAIL)){ flash_set('Укажите корректный email.'); redirect('?p=profile'); }
-$set=['display_name=?','email=?']; $par=[$dn,$em];
+$set=['email=?']; $par=[$em];
+if(!$isSchoolMember){ $set[]='display_name=?'; $par[]=$dn; }
 $dsel=$_POST['district']??''; $dist=($dsel==='__other__')?ensure_district(trim($_POST['district_other']??'')):ensure_district($dsel);
 if($dist!==''){ $set[]='district=?'; $par[]=$dist; }
 if($u['role']==='speaker'){ $spPhone=trim($_POST['phone']??''); if($spPhone===''){ flash_set('Укажите телефон для связи.'); redirect('?p=profile'); } $set[]='phone=?'; $par[]=$spPhone; }
@@ -89,7 +99,7 @@ $cn=trim($_POST['contact_name']??''); $cp=trim($_POST['position']??''); $ph=trim
 if($cn===''||$cp===''||$ph===''){ flash_set('Заполните ФИО контактного лица, должность и телефон.'); redirect('?p=profile'); }
 $set[]='contact_name=?'; $par[]=$cn; $set[]='position=?'; $par[]=$cp; $set[]='phone=?'; $par[]=$ph;
 }
-if($u['role']==='school'){
+if($u['role']==='school' && !$isSchoolMember){
 $set[]='org_name=?'; $par[]=$dn;
 $addr=trim($_POST['address']??''); $build=trim($_POST['building']??'');
 if($addr===''||$build===''){ flash_set('Укажите адрес местонахождения и номер корпуса.'); redirect('?p=profile'); }
@@ -142,7 +152,8 @@ require_login(); $u=current_user();
 if($a==='submit_request'){
 require_role('school');
 if(empty($u['active'])){ flash_set('Ваша учётная запись ещё не подтверждена.'); redirect('?p=school'); }
-$f=['level'=>$u['level'],'contact_name'=>trim($_POST['contact_name']??''),'phone'=>trim($_POST['phone']??''),'email'=>trim($_POST['email']??''),
+$eff=school_effective($u);
+$f=['level'=>$eff['level'],'contact_name'=>trim($_POST['contact_name']??''),'phone'=>trim($_POST['phone']??''),'email'=>trim($_POST['email']??''),
 'udate'=>$_POST['udate']??'','utime'=>$_POST['utime']??'','utime_end'=>$_POST['utime_end']??'','age_group'=>$_POST['age_group']??'','participants'=>trim($_POST['participants']??''),
 'speakers_needed'=>(int)($_POST['speakers_needed']??1),'topic'=>(($_POST['topic']??'')==='__other__'?trim($_POST['topic_other']??''):trim($_POST['topic']??'')),'notes'=>trim($_POST['notes']??'')];
 if(!$f['contact_name']||!$f['phone']||!$f['udate']||!$f['utime']||!$f['utime_end']||!$f['age_group']||empty($_POST['consent'])){ fail_redirect('Заполните обязательные поля и согласие.','?p=school&tab=new'); }
@@ -152,14 +163,14 @@ if(tmin($f['utime_end'])<=tmin($f['utime'])){ fail_redirect('Время окон
 $dsid=(int)($_POST['desired_speaker_id']??0);
 if($dsid){ $dsp=find_user_by_id($dsid); if(!$dsp||$dsp['role']!=='speaker'||!$dsp['active']) $dsid=0; }
 $f['desired_speaker_id']=$dsid;
-$id=create_request($u,$f); flash_set('Заявка отправлена всем фондам. Как только фонд назначит спикера, вы увидите его здесь.'); redirect('?p=request&id='.$id);
+$id=create_request($eff,$f); flash_set('Заявка отправлена всем фондам. Как только фонд назначит спикера, вы увидите его здесь.'); redirect('?p=request&id='.$id);
 }
 // ========== РЕДАКТИРОВАНИЕ ЗАЯВКИ ==========
 if($a==='update_request'){
 require_role('school');
 $rid=(int)($_POST['id']??0); $r=$rid?get_request($rid):null;
 if(!$r){ flash_set('Заявка не найдена.'); redirect('?p=school'); }
-if($r['school_user_id']!=$u['id']){ flash_set('Нет доступа.'); redirect('?p=school'); }
+if(!school_owns_request($u,$r)){ flash_set('Нет доступа.'); redirect('?p=school'); }
 if(!in_array($r['status'],['new','chosen','confirmed'])){ flash_set('Редактирование доступно только на этапах «Новая», «Спикеры выбраны» и «Состав подтверждён Фондом».'); redirect('?p=request&id='.$rid); }
 [$ok,$msg]=update_request($r,$_POST,$u);
 flash_set($msg); redirect('?p=request&id='.$rid);
@@ -178,6 +189,8 @@ if($a==='approve_speaker'){ require_role('fund'); db()->prepare("UPDATE users SE
 if($a==='reject_speaker'){ require_role('fund'); [$ok,$msg]=reject_speaker($u,(int)($_POST['uid']??0)); flash_set($msg); redirect('?p=fund&tab=speakers'); }
 if($a==='approve_applicant'){ require_role('operator'); [$ok,$msg]=approve_applicant($u,(int)($_POST['uid']??0)); flash_set($msg); redirect('?p=operator&tab=moderation'); }
 if($a==='reject_applicant'){ require_role('operator'); [$ok,$msg]=reject_applicant($u,(int)($_POST['uid']??0)); flash_set($msg); redirect('?p=operator&tab=moderation'); }
+if($a==='approve_school_member'){ require_role('school'); [$ok,$msg]=approve_school_member($u,(int)($_POST['uid']??0)); flash_set($msg); redirect('?p=school'); }
+if($a==='reject_school_member'){ require_role('school'); [$ok,$msg]=reject_school_member($u,(int)($_POST['uid']??0)); flash_set($msg); redirect('?p=school'); }
 if($a==='add_unavailable'){ require_role('speaker'); [$ok,$msg]=add_unavailable_period($u,$_POST['date_from']??'',$_POST['date_to']??'',$_POST['reason']??''); flash_set($msg); redirect('?p=speaker'); }
 if($a==='remove_unavailable'){ require_role('speaker'); [$ok,$msg]=remove_unavailable_period($u,(int)($_POST['uid']??0)); flash_set($msg); redirect('?p=speaker'); }
 if($a==='add_material'){
@@ -243,12 +256,12 @@ elseif($a==='fund_assign_speaker'){ require_role('fund'); [$ok,$msg]=fund_assign
 elseif($a==='fund_finalize'){ require_role('fund'); [$ok,$msg]=fund_finalize($u,$r); }
 elseif($a==='claim_request'){ require_role('fund'); [$ok,$msg]=claim_request($u,$r); }
 elseif($a==='release_request'){ require_role('fund'); [$ok,$msg]=release_request($u,$r); }
-elseif($a==='confirm_prep'){ require_role('school'); if($r['school_user_id']!=$u['id']) exit('Нет доступа.'); [$ok,$msg]=school_set_prep($r,isset($_POST['parents'])?1:0,isset($_POST['venue'])?1:0,isset($_POST['escort'])?1:0); }
+elseif($a==='confirm_prep'){ require_role('school'); if(!school_owns_request($u,$r)) exit('Нет доступа.'); [$ok,$msg]=school_set_prep($r,isset($_POST['parents'])?1:0,isset($_POST['venue'])?1:0,isset($_POST['escort'])?1:0); }
 elseif($a==='fund_recommend'){ require_role('fund'); [$ok,$msg]=fund_recommend($u,$r,(int)($_POST['sid']??0)); }
 elseif($a==='fund_confirm_speaker'){ require_role('fund'); [$ok,$msg]=fund_confirm_speaker($u,$r,(int)($_POST['sid']??0)); }
 elseif($a==='fund_briefing'){ require_role('fund'); [$ok,$msg]=fund_briefing($u,$r,$_POST['bdate']??''); }
-elseif($a==='mark_done'){ require_role('school'); if($r['school_user_id']!=$u['id']) exit('Нет доступа.'); [$ok,$msg]=mark_done($r); }
-elseif($a==='not_held'){ require_role('school'); if($r['school_user_id']!=$u['id']) exit('Нет доступа.'); $reasonRaw=$_POST['reason']??''; $reasonOther=trim($_POST['reason_comment']??''); $reason=($reasonRaw==='__other__')?$reasonOther:$reasonRaw; [$ok,$msg]=mark_not_held($r,$reason,$reasonRaw==='__other__'?'':$reasonOther); }
+elseif($a==='mark_done'){ require_role('school'); if(!school_owns_request($u,$r)) exit('Нет доступа.'); [$ok,$msg]=mark_done($r); }
+elseif($a==='not_held'){ require_role('school'); if(!school_owns_request($u,$r)) exit('Нет доступа.'); $reasonRaw=$_POST['reason']??''; $reasonOther=trim($_POST['reason_comment']??''); $reason=($reasonRaw==='__other__')?$reasonOther:$reasonRaw; [$ok,$msg]=mark_not_held($r,$reason,$reasonRaw==='__other__'?'':$reasonOther); }
 elseif($a==='close'){ require_role('operator'); [$ok,$msg]=close_request($r); }
 elseif($a==='step_back'){ require_role('operator'); step_back($r); $msg='Возврат на шаг назад.'; }
 elseif($a==='fund_replace'){ require_role('fund'); $reasonRaw=$_POST['reason']??''; $reasonOther=trim($_POST['reason_other']??''); $reason=($reasonRaw==='__other__')?$reasonOther:$reasonRaw; [$ok,$msg]=fund_replace_speaker($u,$r,(int)($_POST['old_sid']??0),(int)($_POST['new_sid']??0),$reason); }
@@ -257,7 +270,7 @@ elseif($a==='feedback'){
 $comment=trim($_POST['comment']??'');
 if($comment==='') $msg='Напишите отзыв.';
 elseif(st_index($r['status'])<st_index('done')) $msg='Отзыв можно оставить после проведения.';
-elseif($u['role']==='school' && $r['school_user_id']==$u['id']){ upd($rid,['fb_app_comment'=>$comment,'fb_app_at'=>now()]); $msg='Спасибо! Отзыв сохранён.'; }
+elseif($u['role']==='school' && school_owns_request($u,$r)){ upd($rid,['fb_app_comment'=>$comment,'fb_app_at'=>now()]); $msg='Спасибо! Отзыв сохранён.'; }
 elseif($u['role']==='speaker'){ $row=get_rs_row($rid,$u['id']); if($row&&$row['confirmed']){ set_vet_feedback($rid,$u['id'],$comment); $msg='Спасибо! Отзыв сохранён.'; } else $msg='Нет доступа.'; }
 else $msg='Нет доступа.';
 }
@@ -315,7 +328,7 @@ redirect('?p=operator&tab=archive');
 function layout($title,$body){
 $u=current_user(); $c=cfg(); $sess='';
 $fullLabel='';
-if($u){ $nm=($u['role']==='school')?($u['org_name']?:$u['display_name']):$u['display_name']; $roleWord=['operator'=>'Департамент','school'=>'Заявитель','speaker'=>'Спикер','fund'=>'Фонд'][$u['role']]??''; $label=$roleWord.(trim((string)$nm)!==''?': '.$nm:''); $fullLabel=$label;
+if($u){ $nm=($u['role']==='school')?(school_effective($u)['org_name']?:$u['display_name']):$u['display_name']; $roleWord=['operator'=>'Департамент','school'=>'Заявитель','speaker'=>'Спикер','fund'=>'Фонд'][$u['role']]??''; $label=$roleWord.(trim((string)$nm)!==''?': '.$nm:''); $fullLabel=$label;
 $sess='<span class="rolebadge" title="'.esc($label).'">'.esc($label).'</span> <a class="rolebadge" href="?p=profile" style="text-decoration:none">Профиль</a> <form method="post" style="display:inline"><input type="hidden" name="action" value="logout">'.csrf_field().'<button class="logout">Выйти</button></form>'; }
 $f=flash_get();
 $missing=profile_missing_fields($u);
@@ -528,12 +541,14 @@ layout('Спикер: '.$sp['display_name'],$body); exit;
 // ========== ПРОФИЛЬ ==========
 if($p==='profile'){
 require_login(); $u=current_user();
+$isMember=$u['role']==='school' && !empty($u['parent_school_id']);
 $dnLabel=['school'=>'Наименование организации','speaker'=>'ФИО','fund'=>'Название Фонда','operator'=>'Наименование (оператор / департамент)'][$u['role']]??'Отображаемое имя';
 $cur=($u['role']==='school')?($u['org_name']?:$u['display_name']):$u['display_name'];
 $body='<div class="head"><h2>Профиль</h2><a class="btn ghost" href="?p='.esc($u['role']).'">← в кабинет</a></div>';
+if($isMember){ $effP=school_effective($u); $body.='<div class="card pad" style="max-width:560px;margin-bottom:12px"><p class="muted" style="margin:0">Вы — сотрудник организации</p><h3 style="margin:4px 0">'.esc($effP['org_name']).'</h3><p class="muted" style="margin:0">'.esc(level_label($effP['level'])).(!empty($effP['district'])?', '.esc($effP['district']):'').'</p><p class="muted" style="margin:8px 0 0">Название и адрес организации редактирует представитель, зарегистрировавший её.</p></div>'; }
 $body.='<form method="post" enctype="multipart/form-data" class="card pad" style="max-width:560px">'.csrf_field().'<input type="hidden" name="action" value="update_profile">';
 $body.='<p class="muted">Логин: <b>'.esc($u['login']).'</b> (не меняется).</p>';
-$body.='<label class="lbl">'.$dnLabel.' <span style="color:#d11">*</span></label><input name="display_name" required value="'.esc($cur).'">';
+if(!$isMember){ $body.='<label class="lbl">'.$dnLabel.' <span style="color:#d11">*</span></label><input name="display_name" required value="'.esc($cur).'">'; }
 $body.='<label class="lbl">Email <span style="color:#d11">*</span></label><input type="email" name="email" required value="'.esc($u['email']).'">';
 $distOptP=''; foreach(district_names() as $dn) $distOptP.='<option '.(($u['district']??'')===$dn?'selected':'').'>'.esc($dn).'</option>';
 $body.='<label class="lbl">Район Тюменской области</label><select name="district" id="pdistrict_sel" onchange="pdsw()"><option value="">— выберите район —</option>'.$distOptP.'<option value="__other__">Другой (вписать вручную)</option></select>';
@@ -552,7 +567,7 @@ $body.='<label class="lbl">Достижения</label><textarea name="sp_achiev
 $body.='<label class="lbl">Увлечения, хобби</label><input name="sp_hobbies" value="'.esc($u['sp_hobbies']??'').'">';
 $body.='<label class="lbl">Коротко о себе</label><textarea name="sp_bio" placeholder="как вас представить школьникам">'.esc($u['sp_bio']??'').'</textarea>';
 }
-if($u['role']==='school'){
+if($u['role']==='school' && !$isMember){
 $curOg=school_dept_group($u);
 $body.='<label class="lbl">Департамент <span style="color:#d11">*</span></label><select name="school_op_group" required><option value="school"'.($curOg==='school'?' selected':'').'>Департамент образования Администрации города Тюмени (школы)</option><option value="region"'.($curOg==='region'?' selected':'').'>Департамент образования и науки Тюменской области (СПО и вузы)</option></select><p class="muted" style="margin:2px 0 8px">Какой департамент модерирует ваши заявки. Если выбран неверно — поменяйте здесь.</p>';
 $body.='<label class="lbl">Адрес местонахождения <span style="color:#d11">*</span></label><input name="address" required value="'.esc($u['address']??'').'" placeholder="г. Тюмень, ул. ..., д. ...">';
@@ -566,7 +581,7 @@ $body.='<label class="lbl">Телефон <span style="color:#d11">*</span></lab
 }
 $body.='<label class="lbl">Новый пароль (необязательно)</label><input type="password" name="newpass" placeholder="от 5 символов">';
 $body.='<button class="btn primary" style="margin-top:12px">Сохранить</button></form>';
-if($u['role']==='school') $body.='<p class="muted" style="max-width:560px">При смене наименования ранее поданные заявки сохранят старое название.</p>';
+if($u['role']==='school' && !$isMember) $body.='<p class="muted" style="max-width:560px">При смене наименования ранее поданные заявки сохранят старое название.</p>';
 $body.='<script>function pdsw(){var w=document.getElementById("pdistrict_wrap");if(w)w.style.display=(document.getElementById("pdistrict_sel").value==="__other__")?"block":"none";}</script>';
 layout('Профиль',$body); exit;
 }
@@ -577,6 +592,7 @@ $ag=''; foreach(ages() as $k=>$v) $ag.='<label class="chk"><input type="checkbox
 $distOpt=''; foreach(district_names() as $dn) $distOpt.='<option'.osel($old,'district',$dn).'>'.esc($dn).'</option>';
 $fundOpt='<option value="">— выберите фонд —</option>'; foreach(all_funds() as $ff) $fundOpt.='<option value="'.$ff['id'].'"'.osel($old,'fund_user_id',$ff['id']).'>'.esc(fund_label($ff)).'</option>';
 $headFundOpt='<option value="">— выберите головной фонд —</option>'; foreach(head_funds() as $ff) $headFundOpt.='<option value="'.$ff['id'].'"'.osel($old,'parent_fund_id',$ff['id']).'>'.esc(fund_label($ff)).'</option>';
+$schoolOpt='<option value="">— выберите организацию —</option>'; foreach(head_schools() as $sc) $schoolOpt.='<option value="'.$sc['id'].'"'.osel($old,'parent_school_id',$sc['id']).'>'.esc(school_label($sc)).'</option>';
 $preRoleRaw=$old['role']??($_GET['role']??''); $preRole=in_array($preRoleRaw,['school','speaker','fund','operator'],true)?$preRoleRaw:'school';
 $roleOpt=''; foreach(['school'=>'Образовательная организация (заявитель)','speaker'=>'Спикер (ветеран)','fund'=>'Фонд (направляет спикеров)','operator'=>'Оператор'] as $rk=>$rl) $roleOpt.='<option value="'.$rk.'"'.($rk===$preRole?' selected':'').'>'.esc($rl).'</option>';
 $body='<div class="auth"><h2>Регистрация</h2><p class="muted" style="max-width:480px">Не уверены, что выбрать? Посмотрите <a href="?p=guide">как устроена работа по каждой роли</a> — от регистрации до завершения урока.</p><form method="post" class="card pad" id="regform">'.csrf_field().'<input type="hidden" name="action" value="register">
@@ -586,7 +602,10 @@ $body='<div class="auth"><h2>Регистрация</h2><p class="muted" style="
 <label class="lbl">Email (для уведомлений) <span style="color:#d11">*</span></label><input type="email" name="email" required value="'.ov($old,'email').'"><p class="muted" style="margin:2px 0 8px">На этот адрес будут приходить уведомления об изменении статуса заявок.</p>
 <label class="lbl">Район Тюменской области <span style="color:#d11">*</span></label><select name="district" id="district_sel" onchange="dsw()" required><option value="">— выберите район —</option>'.$distOpt.'<option value="__other__"'.osel($old,'district','__other__').'>Другой (вписать вручную)</option></select>
 <div id="district_other_wrap" style="display:none"><label class="lbl">Впишите район <span style="color:#d11">*</span></label><input name="district_other" placeholder="название района" id="district_other" value="'.ov($old,'district_other').'"></div>
-<div class="rf school"><p class="muted" style="margin:0 0 8px">После регистрации заявку проверит профильный департамент образования. Адрес и контакты нужны, чтобы Фонд и департамент могли согласовать визит спикера.</p><h4>Организация</h4><label class="lbl">Наименование организации <span style="color:#d11">*</span></label><input name="org_name" data-req value="'.ov($old,'org_name').'"><label class="lbl">Уровень</label><select name="level" id="level_sel" onchange="lvlSync()"><option value="school"'.osel($old,'level','school').'>Школа</option><option value="spo"'.osel($old,'level','spo').'>Профессиональная образовательная организация</option><option value="vuz"'.osel($old,'level','vuz').'>Высшее учебное заведение</option><option value="other"'.osel($old,'level','other').'>Иное (спортивная школа, детский дом и т.п.)</option></select><label class="lbl">Департамент <span style="color:#d11">*</span></label><select name="school_op_group" id="school_og" data-req><option value="school"'.osel($old,'school_op_group','school').'>Департамент образования Администрации города Тюмени (школы)</option><option value="region"'.osel($old,'school_op_group','region').'>Департамент образования и науки Тюменской области (СПО и вузы)</option></select><p class="muted" style="margin:2px 0 8px">Определяет, какой департамент будет модерировать вашу регистрацию и заявки. Подставляется по уровню организации — при необходимости выберите вручную.</p><label class="lbl">Адрес местонахождения <span style="color:#d11">*</span></label><input name="address" placeholder="г. Тюмень, ул. ..., д. ..." data-req value="'.ov($old,'address').'"><label class="lbl">№ корпуса <span style="color:#d11">*</span></label><input name="building" placeholder="напр. 1" data-req value="'.ov($old,'building').'"><p class="muted" style="margin:2px 0 8px">Если у организации нет отдельных корпусов, укажите «1».</p><h4>Контактное лицо</h4><label class="lbl">ФИО контактного лица <span style="color:#d11">*</span></label><input name="contact_name" data-req value="'.ov($old,'contact_name').'"><label class="lbl">Должность <span style="color:#d11">*</span></label><input name="position" data-req value="'.ov($old,'position').'"><label class="lbl">Телефон <span style="color:#d11">*</span></label><input name="contact_phone" data-req value="'.ov($old,'contact_phone').'"><p class="muted" style="margin:2px 0 0">Контакты для согласования даты, времени и деталей визита спикера.</p></div>
+<div class="rf school"><label class="lbl">Тип регистрации</label><select name="school_type" id="school_type" onchange="sctsw()"><option value="owner"'.osel($old,'school_type','owner').'>Регистрирую организацию впервые</option><option value="member"'.osel($old,'school_type','member').'>Я сотрудник уже зарегистрированной организации</option></select><p class="muted" style="margin:2px 0 8px">Если организация уже зарегистрирована в системе (например, вашим коллегой), выберите второй вариант — не нужно создавать дубликат, и вы сразу увидите общие заявки организации.</p>
+<div id="school_owner_fields"><p class="muted" style="margin:0 0 8px">После регистрации заявку проверит профильный департамент образования. Адрес и контакты нужны, чтобы Фонд и департамент могли согласовать визит спикера.</p><h4>Организация</h4><label class="lbl">Наименование организации <span style="color:#d11">*</span></label><input name="org_name" id="reg_org_name" data-req value="'.ov($old,'org_name').'"><label class="lbl">Уровень</label><select name="level" id="level_sel" onchange="lvlSync()"><option value="school"'.osel($old,'level','school').'>Школа</option><option value="spo"'.osel($old,'level','spo').'>Профессиональная образовательная организация</option><option value="vuz"'.osel($old,'level','vuz').'>Высшее учебное заведение</option><option value="other"'.osel($old,'level','other').'>Иное (спортивная школа, детский дом и т.п.)</option></select><label class="lbl">Департамент <span style="color:#d11">*</span></label><select name="school_op_group" id="school_og" data-req><option value="school"'.osel($old,'school_op_group','school').'>Департамент образования Администрации города Тюмени (школы)</option><option value="region"'.osel($old,'school_op_group','region').'>Департамент образования и науки Тюменской области (СПО и вузы)</option></select><p class="muted" style="margin:2px 0 8px">Определяет, какой департамент будет модерировать вашу регистрацию и заявки. Подставляется по уровню организации — при необходимости выберите вручную.</p><label class="lbl">Адрес местонахождения <span style="color:#d11">*</span></label><input name="address" id="reg_address" placeholder="г. Тюмень, ул. ..., д. ..." data-req value="'.ov($old,'address').'"><label class="lbl">№ корпуса <span style="color:#d11">*</span></label><input name="building" id="reg_building" placeholder="напр. 1" data-req value="'.ov($old,'building').'"><p class="muted" style="margin:2px 0 8px">Если у организации нет отдельных корпусов, укажите «1».</p></div>
+<div id="school_member_fields" style="display:none"><label class="lbl">Организация <span style="color:#d11">*</span></label><select name="parent_school_id" id="parent_school_id">'.$schoolOpt.'</select><p class="muted" style="margin:2px 0 8px">Не нашли свою организацию? Значит, никто из коллег ещё не регистрировался — выберите «Регистрирую организацию впервые» выше.</p></div>
+<h4>Контактное лицо</h4><label class="lbl">ФИО контактного лица <span style="color:#d11">*</span></label><input name="contact_name" data-req value="'.ov($old,'contact_name').'"><label class="lbl">Должность <span style="color:#d11">*</span></label><input name="position" data-req value="'.ov($old,'position').'"><label class="lbl">Телефон <span style="color:#d11">*</span></label><input name="contact_phone" data-req value="'.ov($old,'contact_phone').'"><p class="muted" style="margin:2px 0 0">Контакты для согласования даты, времени и деталей визита спикера.</p></div>
 <div class="rf speaker" style="display:none"><p class="muted" style="margin:0 0 8px">Регистрацию подтверждает выбранный Фонд — он же будет направлять вас на уроки и согласовывать состав.</p><label class="lbl">ФИО <span style="color:#d11">*</span></label><input name="display_name" data-req value="'.ov($old,'display_name').'"><label class="lbl">Телефон для связи <span style="color:#d11">*</span></label><input name="phone" data-req value="'.ov($old,'phone').'"><label class="lbl">Фонд <span style="color:#d11">*</span></label><select name="fund_user_id" data-req>'.$fundOpt.'</select><label class="lbl">Возрастные группы <span style="color:#d11">*</span></label><div class="chks" id="groups_wrap">'.$ag.'</div><p class="muted" style="margin:6px 0 0">Определяет, для уроков с какой аудиторией вас будут предлагать заявителям.</p></div>
 <div class="rf fund" style="display:none"><p class="muted" style="margin:0 0 8px">Фонд подбирает и подтверждает состав спикеров для заявок. Структурное подразделение работает под контролем головного фонда.</p><h4>Организация</h4><label class="lbl">Наименование Фонда <span style="color:#d11">*</span></label><input name="fund_display_name" data-req value="'.ov($old,'fund_display_name').'"><label class="lbl">Тип</label><select name="fund_type" id="fund_type" onchange="ftsw()"><option value="head"'.osel($old,'fund_type','head').'>Головной фонд</option><option value="sub"'.osel($old,'fund_type','sub').'>Структурное подразделение</option></select><div id="parentfund" style="display:none"><label class="lbl">Головной фонд <span style="color:#d11">*</span></label><select name="parent_fund_id" id="parent_fund_id">'.$headFundOpt.'</select><p class="muted" style="margin:2px 0 8px">Подразделение получит доступ после подтверждения головным фондом.</p></div><div id="fundcode"><label class="lbl">Код регистрации Фонда <span style="color:#d11">*</span></label><input name="fund_code" id="fund_code" value="'.ov($old,'fund_code').'"><p class="muted" style="margin:2px 0 8px">Код регистрации головного фонда выдаёт администратор платформы — он подтверждает право направлять спикеров. Нет кода? Напишите на <a href="mailto:'.esc(cfg()['support_email']).'">'.esc(cfg()['support_email']).'</a>.</p></div><h4>Контактное лицо</h4><label class="lbl">ФИО контактного лица <span style="color:#d11">*</span></label><input name="contact_name" data-req value="'.ov($old,'contact_name').'"><label class="lbl">Должность <span style="color:#d11">*</span></label><input name="position" data-req value="'.ov($old,'position').'"><label class="lbl">Телефон <span style="color:#d11">*</span></label><input name="contact_phone" data-req value="'.ov($old,'contact_phone').'"></div>
 <div class="rf operator" style="display:none"><p class="muted" style="margin:0 0 8px">Оператор модерирует заявителей и контролирует ход заявок в пределах своего департамента.</p><h4>Организация</h4><label class="lbl">Наименование <span style="color:#d11">*</span></label><input name="op_display_name" data-req value="'.ov($old,'op_display_name').'"><label class="lbl">Департамент</label><select name="op_group"><option value="school"'.osel($old,'op_group','school').'>ДОА г. Тюмени (школы)</option><option value="region"'.osel($old,'op_group','region').'>ДОиН ТО (СПО и вузы)</option></select><p class="muted" style="margin:2px 0 8px">Определяет, заявки каких организаций вы будете видеть и модерировать.</p><label class="lbl">Код регистрации оператора <span style="color:#d11">*</span></label><input name="op_code" data-req value="'.ov($old,'op_code').'"><p class="muted" style="margin:2px 0 8px">Код выдаёт администратор платформы — он подтверждает право модерировать заявки. Нет кода? Напишите на <a href="mailto:'.esc(cfg()['support_email']).'">'.esc(cfg()['support_email']).'</a>.</p><h4>Контактное лицо</h4><label class="lbl">ФИО контактного лица <span style="color:#d11">*</span></label><input name="contact_name" data-req value="'.ov($old,'contact_name').'"><label class="lbl">Должность <span style="color:#d11">*</span></label><input name="position" data-req value="'.ov($old,'position').'"><label class="lbl">Телефон <span style="color:#d11">*</span></label><input name="contact_phone" data-req value="'.ov($old,'contact_phone').'"></div>
@@ -601,6 +620,7 @@ document.getElementById("fund_code").required=false;
 var b=document.querySelector(".rf."+r);
 if(b){ b.style.display="block"; b.querySelectorAll("input,select,textarea").forEach(function(inp){ inp.disabled=false; }); b.querySelectorAll("[data-req]").forEach(function(inp){ inp.required=true; }); }
 if(r==="fund") ftsw();
+if(r==="school") sctsw();
 validateGroups();
 }
 rsw();
@@ -615,6 +635,16 @@ document.getElementById("parentfund").style.display=sub?"block":"none";
 document.getElementById("fundcode").style.display=sub?"none":"block";
 document.getElementById("parent_fund_id").required=sub;
 document.getElementById("fund_code").required=!sub;
+}
+function sctsw(){
+var t=document.getElementById("school_type").value; var isMember=(t==="member");
+document.getElementById("school_owner_fields").style.display=isMember?"none":"block";
+document.getElementById("school_member_fields").style.display=isMember?"block":"none";
+document.getElementById("reg_org_name").required=!isMember;
+document.getElementById("school_og").required=!isMember;
+document.getElementById("reg_address").required=!isMember;
+document.getElementById("reg_building").required=!isMember;
+document.getElementById("parent_school_id").required=isMember;
 }
 function dsw(){
 var w=document.getElementById("district_other_wrap"); var isOther=(document.getElementById("district_sel").value==="__other__");
@@ -633,11 +663,12 @@ layout('Регистрация',$body); exit;
 }
 require_login();
 // ========== УПРАВЛЕНИЕ ПОЛЬЗОВАТЕЛЯМИ ==========
-if($p==='users' && in_array($u['role'],['operator','fund'])){
-$body='<div class="head"><h2>Управление пользователями</h2><a class="btn ghost" href="?p='.$u['role'].'">← в кабинет</a></div>';
+if($p==='users' && in_array($u['role'],['operator','fund','school'])){
+$body='<div class="head"><h2>'.($u['role']==='school'?'Сотрудники организации':'Управление пользователями').'</h2><a class="btn ghost" href="?p='.$u['role'].'">← в кабинет</a></div>';
 $role_filter=$_GET['role']??'';
 $where="WHERE 1=1"; $params=[]; $superAdmin=false; $scopeNote='';
 if($u['role']==='fund'){ $where.=" AND role='speaker' AND fund_user_id=?"; $params[]=$u['id']; $scopeNote='Только ваши спикеры.'; }
+elseif($u['role']==='school'){ $where.=" AND role='school' AND parent_school_id=?"; $params[]=$u['id']; $scopeNote='Сотрудники, зарегистрированные как участники вашей организации.'; }
 else { $og=$u['op_group']??'';
 if($og===''){ $superAdmin=true; if($role_filter){ $where.=" AND role=?"; $params[]=$role_filter; } }
 else { $where.=" AND role='school' AND (op_group=? OR (op_group IS NULL OR op_group='') AND level IN (".implode(',',array_fill(0,count(applicant_group_levels($og)),'?')).'))'; $params[]=$og; $params=array_merge($params,applicant_group_levels($og)); $scopeNote='Только ваши организации.'; }
@@ -672,7 +703,7 @@ $targetType=$_GET['target_type']??''; $targetId=(int)($_GET['target_id']??0);
 if($targetType==='requests' && $targetId){
 $rr=get_request($targetId);
 if(!$rr){ layout('История','<div class="card pad">Заявка не найдена.</div>'); exit; }
-if($u['role']==='school' && (int)$rr['school_user_id']!==(int)$u['id']) exit('Нет доступа.');
+if($u['role']==='school' && !school_owns_request($u,$rr)) exit('Нет доступа.');
 if($u['role']==='speaker' && !is_candidate($targetId,$u['id'])) exit('Нет доступа.');
 $logs=get_audit_log(['target_type'=>'requests','target_id'=>$targetId]);
 $body='<div class="head"><h2>История заявки '.esc($rr['code']).'</h2><a class="btn ghost" href="?p=request&id='.$targetId.'">← К заявке</a></div>';
@@ -1012,17 +1043,20 @@ layout('Кабинет Фонда',$body); exit;
 // ========== КАБИНЕТ ЗАЯВИТЕЛЯ ==========
 if($p==='school'){
 require_role('school'); $tab=$_GET['tab']??'mine';
-if(empty($u['active'])){ layout('Кабинет заявителя','<div class="head"><h2>Ваша учётная запись на проверке</h2></div><div class="card pad"><p>Заявка на регистрацию организации <b>'.esc($u['org_name']).'</b> отправлена на подтверждение в профильный департамент ('.esc(operator_of($u['level'])).').</p><p class="muted">После подтверждения вы сможете подавать заявки.</p></div>'); exit; }
+$eff=school_effective($u);
+if(empty($u['active'])){
+if(!empty($u['parent_school_id'])){ layout('Кабинет заявителя','<div class="head"><h2>Ваша учётная запись на проверке</h2></div><div class="card pad"><p>Ваша заявка на присоединение к организации <b>'.esc($eff['org_name']).'</b> отправлена представителю этой организации.</p><p class="muted">После подтверждения вы сможете подавать заявки.</p></div>'); exit; }
+layout('Кабинет заявителя','<div class="head"><h2>Ваша учётная запись на проверке</h2></div><div class="card pad"><p>Заявка на регистрацию организации <b>'.esc($u['org_name']).'</b> отправлена на подтверждение в профильный департамент ('.esc(operator_of($u['level'])).').</p><p class="muted">После подтверждения вы сможете подавать заявки.</p></div>'); exit; }
 if($tab==='new'){
 $old=pull_old_input();
-$src=null; if(!empty($_GET['copy'])){ $c0=get_request((int)$_GET['copy']); if($c0 && $c0['school_user_id']==$u['id']) $src=$c0; }
+$src=null; if(!empty($_GET['copy'])){ $c0=get_request((int)$_GET['copy']); if($c0 && school_owns_request($u,$c0)) $src=$c0; }
 if($old) $src=array_merge($src?:[],$old);
-$sg=$src['age_group']??''; $opt=''; foreach(level_ages($u['level']) as $g) $opt.='<option value="'.esc($g).'" '.($sg===$g?'selected':'').'>'.esc(ages()[$g]).'</option>';
+$sg=$src['age_group']??''; $opt=''; foreach(level_ages($eff['level']) as $g) $opt.='<option value="'.esc($g).'" '.($sg===$g?'selected':'').'>'.esc(ages()[$g]).'</option>';
 $sn=(int)($src['speakers_needed']??0); $nopt=''; for($i=1;$i<=5;$i++) $nopt.='<option value="'.$i.'" '.($sn===$i?'selected':'').'>'.$i.'</option>';
 $body='<div class="head"><h2>Подать заявку</h2><a class="btn ghost" href="?p=school&tab=mine">Мои заявки</a></div>
 '.($src?'<div class="card pad" style="margin-bottom:10px;border-left:4px solid var(--rf-blue,#0039A6)">Поля заполнены по образцу заявки <b>'.esc($src['code']).'</b>. Проверьте данные и укажите новую дату.</div>':'').'
 <form method="post" class="card pad">'.csrf_field().'<input type="hidden" name="action" value="submit_request">
-<p class="muted">Организация: <b>'.esc($u['org_name']).'</b> · оператор: '.esc(operator_of($u['level'])).'</p>
+<p class="muted">Организация: <b>'.esc($eff['org_name']).'</b> · оператор: '.esc(operator_of($eff['level'])).'</p>
 <p class="muted">После отправки заявка сразу станет доступна всем фондам — они сами подберут и назначат спикера(ов). Вы можете указать желаемого спикера ниже — это пожелание, окончательное решение за фондом.</p>
 <label class="lbl">Возрастная группа <span style="color:#d11">*</span></label><select name="age_group" required>'.$opt.'</select>
 <label class="lbl">Сколько спикеров нужно <span style="color:#d11">*</span></label><select name="speakers_needed" id="speakers_needed_sel" onchange="snHint()">'.$nopt.'</select>
@@ -1053,10 +1087,15 @@ return '<select name="desired_speaker_id">'.$o.'</select><p class="muted" style=
 <script>function snHint(){var n=parseInt(document.getElementById("speakers_needed_sel").value);var h=document.getElementById("sn_hint");if(h)h.style.display=(n>=2)?"block":"none";}snHint();</script>';
 layout('Подать заявку',$body); exit;
 }
-$st=db()->prepare('SELECT * FROM requests WHERE school_user_id=? AND (archived=0 OR archived IS NULL) ORDER BY id DESC'); $st->execute([$u['id']]); $rows=$st->fetchAll();
+$scopeIds=school_scope_ids($u); $scopeIn=implode(',',array_fill(0,count($scopeIds),'?'));
+$st=db()->prepare("SELECT * FROM requests WHERE school_user_id IN ($scopeIn) AND (archived=0 OR archived IS NULL) ORDER BY id DESC"); $st->execute($scopeIds); $rows=$st->fetchAll();
 if(!empty($_GET['sort'])) $rows=sort_requests($rows,$_GET['sort'],$_GET['dir']??'asc');
 $action_req = get_action_required_requests($u);
 $body = '';
+if(empty($u['parent_school_id'])){
+$pendMembers=pending_school_members($u);
+if($pendMembers){ $body.='<div class="action-block"><h4>👥 Сотрудники на подтверждении <span class="action-badge">'.count($pendMembers).'</span></h4>'; foreach($pendMembers as $pm){ $body.='<form method="post" style="margin:6px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap">'.csrf_field().'<input type="hidden" name="action" value="approve_school_member"><input type="hidden" name="uid" value="'.$pm['id'].'"><b>'.esc($pm['contact_name']).'</b> <span class="muted">('.esc($pm['position']).', логин: '.esc($pm['login']).')</span> <button class="btn primary sm">Подтвердить</button></form>'.'<form method="post" style="display:inline" onsubmit="return confirm(\'Отклонить сотрудника?\')">'.csrf_field().'<input type="hidden" name="action" value="reject_school_member"><input type="hidden" name="uid" value="'.$pm['id'].'"><button class="btn ghost sm" style="color:#b23b2c;border-color:#f5c6c0">Отклонить</button></form>'; } $body.='</div>'; }
+}
 if ($action_req) {
 $body .= '<div class="action-block"><h4>⚠️ Требует вашего действия <span class="action-badge">'.count($action_req).'</span></h4><ul class="action-list">';
 foreach ($action_req as $ar) {
@@ -1070,7 +1109,7 @@ $tr=''; foreach($rows as $r){
 $urgent_tr = is_request_urgent($r) ? 'urgent' : '';
 $tr.='<tr class="'.$urgent_tr.'" onclick="location=\'?p=request&id='.$r['id'].'\'"><td class="id"><a href="?p=request&id='.$r['id'].'">'.esc($r['code']).'</a></td><td>'.dt($r).'</td><td>'.esc(ages()[$r['age_group']]??'').'</td><td>'.esc(req_label($r['id'])).'</td><td>'.pill($r['status']).'</td></tr>';
 }
-$body.='<div class="head"><h2>'.esc($u['org_name']).'</h2><div><a class="btn primary" href="?p=school&tab=new">+ Подать заявку</a> <a class="btn ghost" href="?p=calendar">📅 Календарь</a> <a class="btn ghost" href="?p=materials">🗂️ Материалы</a></div></div>';
+$body.='<div class="head"><h2>'.esc($eff['org_name']).'</h2><div><a class="btn primary" href="?p=school&tab=new">+ Подать заявку</a> <a class="btn ghost" href="?p=calendar">📅 Календарь</a> <a class="btn ghost" href="?p=materials">🗂️ Материалы</a>'.(empty($u['parent_school_id'])?' <a class="btn ghost" href="?p=users&role=school">👥 Сотрудники</a>':'').'</div></div>';
 $sch_total=count($rows);
 $sch_waiting=count(array_filter($rows,fn($r)=>$r['status']==='new'));
 $sch_inwork=count(array_filter($rows,fn($r)=>in_array($r['status'],['chosen','confirmed','prep'],true)));
@@ -1140,7 +1179,7 @@ if($p==='request_edit'){
 require_role('school');
 $r=get_request((int)($_GET['id']??0));
 if(!$r){ layout('Заявка','<div class="card pad">Заявка не найдена. <a href="?p=school">Назад</a></div>'); exit; }
-if($r['school_user_id']!=$u['id']){ layout('Заявка','<div class="card pad">Нет доступа. <a href="?p=school">Назад</a></div>'); exit; }
+if(!school_owns_request($u,$r)){ layout('Заявка','<div class="card pad">Нет доступа. <a href="?p=school">Назад</a></div>'); exit; }
 if(!in_array($r['status'],['new','chosen','confirmed'])){ layout('Редактирование заявки','<div class="card pad"><h2>Редактирование недоступно</h2><p class="muted">Редактирование доступно только на этапах «Новая», «Спикеры выбраны» и «Состав подтверждён Фондом».</p><p><a href="?p=request&id='.$r['id'].'">← К заявке</a></p></div>'); exit; }
 $curTopic=$r['topic']??''; $topics=material_topics(); $known=in_array($curTopic,$topics,true);
 $tOpt='<option value="">— выберите тему —</option>';
@@ -1207,7 +1246,7 @@ layout('Редактирование заявки',$body); exit;
 // ========== СТРАНИЦА ЗАЯВКИ ==========
 if($p==='request'){
 $r=get_request((int)($_GET['id']??0)); if(!$r){ layout('Заявка','<div class="card pad">Заявка не найдена. <a href="?p='.$u['role'].'">Назад</a></div>'); exit; }
-if($u['role']==='school' && $r['school_user_id']!=$u['id']) exit('Нет доступа.');
+if($u['role']==='school' && !school_owns_request($u,$r)) exit('Нет доступа.');
 if($u['role']==='speaker' && !is_candidate($r['id'],$u['id'])) exit('Нет доступа.');
 $rows=req_speaker_rows($r['id']); $confN=count_confirmed($r['id']); $need=(int)$r['speakers_needed'];
 $appl=find_user_by_id($r['school_user_id']);
