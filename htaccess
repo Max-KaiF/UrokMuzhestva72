@@ -1,4 +1,14 @@
 # ============================================
+# ПРИНУДИТЕЛЬНЫЙ ПЕРЕХОД НА HTTPS
+# ============================================
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteCond %{HTTPS} !=on
+    RewriteCond %{HTTP:X-Forwarded-Proto} !https
+    RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+</IfModule>
+
+# ============================================
 # НАСТРОЙКИ ЗАГРУЗКИ ФАЙЛОВ (до 1 ГБ)
 # ============================================
 php_value upload_max_filesize 1024M
@@ -42,6 +52,8 @@ php_value max_input_time 3600
     Header set X-Content-Type-Options "nosniff"
     Header set X-Frame-Options "SAMEORIGIN"
     Header set X-XSS-Protection "1; mode=block"
+    Header set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'"
+    Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
 </IfModule>
 
 # Запрет доступа к служебным файлам

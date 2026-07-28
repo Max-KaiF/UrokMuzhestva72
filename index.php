@@ -1,6 +1,17 @@
 <?php
-session_set_cookie_params(['httponly'=>true,'samesite'=>'Lax']); session_start();
+$__https=(!empty($_SERVER['HTTPS'])&&$_SERVER['HTTPS']!=='off')||(($_SERVER['HTTP_X_FORWARDED_PROTO']??'')==='https')||(($_SERVER['SERVER_PORT']??'')=='443');
+session_set_cookie_params(['httponly'=>true,'samesite'=>'Lax','secure'=>$__https]); session_start();
 require __DIR__.'/lib.php';
+set_exception_handler(function($e){
+error_log('Необработанное исключение: '.$e->getMessage().' в '.$e->getFile().':'.$e->getLine());
+if(!headers_sent()) http_response_code(500);
+echo '<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>Техническая ошибка</title></head><body style="font-family:sans-serif;max-width:560px;margin:80px auto;text-align:center;color:#1E2128"><h1>Что-то пошло не так</h1><p>Произошла техническая ошибка на сервере. Мы уже знаем о проблеме — попробуйте обновить страницу или зайти позже.</p></body></html>';
+exit;
+});
+set_error_handler(function($errno,$errstr,$errfile,$errline){
+if(!(error_reporting() & $errno)) return false;
+throw new ErrorException($errstr,0,$errno,$errfile,$errline);
+});
 init_schema();
 $p=$_GET['p']??''; $method=$_SERVER['REQUEST_METHOD'];
 function role_home($u){ return '?p='.$u['role']; }
@@ -8,8 +19,12 @@ function role_home($u){ return '?p='.$u['role']; }
 if($method==='POST'){
 csrf_check(); $a=$_POST['action']??'';
 if($a==='login'){
-[$ok,$res]=verify_credentials(trim($_POST['login']??''),$_POST['pass']??'');
-if(!$ok){ flash_set($res); redirect('?p=login'); }
+$loginTry=trim($_POST['login']??'');
+$lockedUntil=login_lock_until($loginTry);
+if($lockedUntil){ flash_set('Слишком много неудачных попыток входа. Попробуйте снова после '.date('H:i',strtotime($lockedUntil)).'.'); redirect('?p=login'); }
+[$ok,$res]=verify_credentials($loginTry,$_POST['pass']??'');
+if(!$ok){ record_login_failure($loginTry); flash_set($res); redirect('?p=login'); }
+reset_login_failures($loginTry);
 unset($_SESSION['uid']); $_SESSION['pending_uid']=$res['id'];
 $sent=send_login_otp($res);
 flash_set($sent?'Мы отправили код подтверждения на ваш email.':'Не удалось отправить код на email. Попробуйте ещё раз или запросите код повторно.');
@@ -33,7 +48,7 @@ redirect(role_home($pu));
 }
 if($a==='register'){
 $role=$_POST['role']??''; $login=trim($_POST['login']??''); $pass=$_POST['pass']??''; $email=trim($_POST['email']??'');
-if(strlen($login)<3||strlen($pass)<5){ fail_redirect('Логин от 3 и пароль от 5 символов.','?p=register'); }
+if(strlen($login)<3||strlen($pass)<10){ fail_redirect('Логин от 3 символов, пароль от 10 символов.','?p=register'); }
 if(!filter_var($email,FILTER_VALIDATE_EMAIL)){ fail_redirect('Укажите корректный email.','?p=register'); }
 if(empty($_POST['consent'])){ fail_redirect('Необходимо согласие на обработку персональных данных.','?p=register'); }
 $dsel=$_POST['district']??''; $district=($dsel==='__other__')?ensure_district(trim($_POST['district_other']??'')):ensure_district($dsel);
@@ -90,6 +105,8 @@ if($_FILES['photo']['error']!==UPLOAD_ERR_OK){ flash_set('Ошибка загр�
 if($_FILES['photo']['size']>PHOTO_MAX_BYTES){ flash_set('Фото слишком большое (максимум 8 МБ).'); redirect('?p=profile'); }
 $ext=strtolower(pathinfo($_FILES['photo']['name'],PATHINFO_EXTENSION));
 if(!in_array($ext,['jpg','jpeg','png','webp'],true)){ flash_set('Фото должно быть в формате JPG, PNG или WEBP.'); redirect('?p=profile'); }
+$imginfo=@getimagesize($_FILES['photo']['tmp_name']);
+if(!$imginfo||!in_array($imginfo['mime'],['image/jpeg','image/png','image/webp'],true)){ flash_set('Файл повреждён или не является настоящим изображением JPG/PNG/WEBP.'); redirect('?p=profile'); }
 $stored=bin2hex(random_bytes(16)).'.'.$ext;
 $dir=__DIR__.'/uploads/photos'; if(!is_dir($dir)) mkdir($dir,0755,true);
 if(!move_uploaded_file($_FILES['photo']['tmp_name'],$dir.'/'.$stored)){ flash_set('Не удалось сохранить фото.'); redirect('?p=profile'); }
@@ -111,8 +128,8 @@ $set[]='address=?'; $par[]=$addr; $set[]='building=?'; $par[]=$build;
 $schoolOg=$_POST['school_op_group']??''; if(!in_array($schoolOg,['school','region'],true)){ flash_set('Выберите департамент.'); redirect('?p=profile'); }
 $set[]='op_group=?'; $par[]=$schoolOg;
 }
-if(strlen($np)>=5){ $set[]='pass_hash=?'; $par[]=password_hash($np,PASSWORD_DEFAULT); }
-elseif($np!==''){ flash_set('Пароль от 5 символов.'); redirect('?p=profile'); }
+if(strlen($np)>=10){ $set[]='pass_hash=?'; $par[]=password_hash($np,PASSWORD_DEFAULT); }
+elseif($np!==''){ flash_set('Пароль от 10 символов.'); redirect('?p=profile'); }
 $par[]=$u['id'];
 db()->prepare("UPDATE users SET ".implode(',',$set)." WHERE id=?")->execute($par);
 log_action($u['id'],$u['role'],'update_profile','users',$u['id'],'Обновлены данные профиля');
@@ -133,7 +150,7 @@ redirect('?p=login');
 }
 if($a==='reset_password'){
 $token=$_POST['token']??''; $newpass=$_POST['newpass']??''; $newpass2=$_POST['newpass2']??'';
-if(strlen($newpass)<5){ flash_set('Пароль от 5 символов.'); redirect('?p=reset_password&token='.urlencode($token)); }
+if(strlen($newpass)<10){ flash_set('Пароль от 10 символов.'); redirect('?p=reset_password&token='.urlencode($token)); }
 if($newpass!==$newpass2){ flash_set('Пароли не совпадают.'); redirect('?p=reset_password&token='.urlencode($token)); }
 [$ok,$msg]=reset_password($token,$newpass);
 flash_set($msg); redirect('?p=login');
@@ -141,7 +158,7 @@ flash_set($msg); redirect('?p=login');
 if($a==='admin_reset_password'){
 require_login(); $u=current_user();
 $target_id=(int)($_POST['target_id']??0); $newpass=$_POST['newpass']??'';
-if(strlen($newpass)<5){ flash_set('Пароль от 5 символов.'); redirect('?p=users'); }
+if(strlen($newpass)<10){ flash_set('Пароль от 10 символов.'); redirect('?p=users'); }
 [$ok,$msg]=admin_reset_password($u,$target_id,$newpass);
 flash_set($msg); redirect('?p=users');
 }
@@ -448,7 +465,7 @@ if($p==='reset_password'){
 $token=$_GET['token']??'';
 [$ok,$row]=verify_reset_token($token);
 if(!$ok){ layout('Сброс пароля','<div class="auth card pad"><h2>Ссылка недействительна</h2><p class="muted">'.$row.'</p><p><a href="?p=reset_request">Запросить новую ссылку</a></p></div>'); exit; }
-$body='<div class="auth"><h2>Новый пароль</h2><form method="post" class="card pad">'.csrf_field().'<input type="hidden" name="action" value="reset_password"><input type="hidden" name="token" value="'.esc($token).'"><label class="lbl">Новый пароль (от 5 символов)</label><input type="password" name="newpass" required><label class="lbl">Повторите пароль</label><input type="password" name="newpass2" required><button class="btn primary" style="margin-top:12px">Сменить пароль</button></form></div>';
+$body='<div class="auth"><h2>Новый пароль</h2><form method="post" class="card pad">'.csrf_field().'<input type="hidden" name="action" value="reset_password"><input type="hidden" name="token" value="'.esc($token).'"><label class="lbl">Новый пароль (от 10 символов)</label><input type="password" name="newpass" required><label class="lbl">Повторите пароль</label><input type="password" name="newpass2" required><button class="btn primary" style="margin-top:12px">Сменить пароль</button></form></div>';
 layout('Новый пароль',$body); exit;
 }
 if($p==='privacy'){
@@ -587,7 +604,7 @@ $body.='<label class="lbl">ФИО контактного лица <span style="c
 $body.='<label class="lbl">Должность <span style="color:#d11">*</span></label><input name="position" required value="'.esc($u['position']??'').'">';
 $body.='<label class="lbl">Телефон <span style="color:#d11">*</span></label><input name="phone" required value="'.esc($u['phone']??'').'">';
 }
-$body.='<label class="lbl">Новый пароль (необязательно)</label><input type="password" name="newpass" placeholder="от 5 символов">';
+$body.='<label class="lbl">Новый пароль (необязательно)</label><input type="password" name="newpass" placeholder="от 10 символов">';
 $body.='<button class="btn primary" style="margin-top:12px">Сохранить</button></form>';
 if($u['role']==='school' && !$isMember) $body.='<p class="muted" style="max-width:560px">При смене наименования ранее поданные заявки сохранят старое название.</p>';
 $body.='<script>function pdsw(){var w=document.getElementById("pdistrict_wrap");if(w)w.style.display=(document.getElementById("pdistrict_sel").value==="__other__")?"block":"none";}</script>';
@@ -606,7 +623,7 @@ $roleOpt=''; foreach(['school'=>'Образовательная организа
 $body='<div class="auth"><h2>Регистрация</h2><p class="muted" style="max-width:480px">Не уверены, что выбрать? Посмотрите <a href="?p=guide">как устроена работа по каждой роли</a> — от регистрации до завершения урока.</p><form method="post" class="card pad" id="regform">'.csrf_field().'<input type="hidden" name="action" value="register">
 <label class="lbl">Кто вы?</label><select name="role" id="role" onchange="rsw()">'.$roleOpt.'</select><p class="muted" style="margin:2px 0 8px">От выбора роли зависит, какие поля нужно заполнить и что вы сможете делать в личном кабинете.</p>
 <h4 style="margin-top:16px">Учётные данные</h4>
-<label class="lbl">Логин <span style="color:#d11">*</span></label><input name="login" required value="'.ov($old,'login').'"><label class="lbl">Пароль (от 5 символов) <span style="color:#d11">*</span></label><input type="password" name="pass" required>
+<label class="lbl">Логин <span style="color:#d11">*</span></label><input name="login" required value="'.ov($old,'login').'"><label class="lbl">Пароль (от 10 символов) <span style="color:#d11">*</span></label><input type="password" name="pass" required>
 <label class="lbl">Email (для уведомлений) <span style="color:#d11">*</span></label><input type="email" name="email" required value="'.ov($old,'email').'"><p class="muted" style="margin:2px 0 8px">На этот адрес будут приходить уведомления об изменении статуса заявок.</p>
 <label class="lbl">Район Тюменской области <span style="color:#d11">*</span></label><select name="district" id="district_sel" onchange="dsw()" required><option value="">— выберите район —</option>'.$distOpt.'<option value="__other__"'.osel($old,'district','__other__').'>Другой (вписать вручную)</option></select>
 <div id="district_other_wrap" style="display:none"><label class="lbl">Впишите район <span style="color:#d11">*</span></label><input name="district_other" placeholder="название района" id="district_other" value="'.ov($old,'district_other').'"></div>

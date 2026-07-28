@@ -58,6 +58,9 @@ uploaded_by INTEGER, created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 db()->exec("CREATE TABLE IF NOT EXISTS speaker_unavailable (
 id $pk, speaker_user_id INTEGER, date_from VARCHAR(20), date_to VARCHAR(20), reason VARCHAR(120), created_at VARCHAR(40)
 )$tail");
+db()->exec("CREATE TABLE IF NOT EXISTS login_attempts (
+id $pk, login VARCHAR(190) UNIQUE, fail_count INTEGER DEFAULT 0, locked_until VARCHAR(40), last_attempt_at VARCHAR(40)
+)$tail");
 foreach([
 "ALTER TABLE users ADD COLUMN fund_user_id INTEGER",
 "ALTER TABLE users ADD COLUMN email VARCHAR(190)",
@@ -273,6 +276,25 @@ log_action(null,$role,'user_create','users',$newId,"Создан пользов�
 return [true,$newId];
 }
 function verify_credentials($login,$pass){ $u=find_user_by_login($login); if(!$u||!password_verify($pass,$u['pass_hash'])) return [false,'Неверный логин или пароль.']; return [true,$u]; }
+// ---------- защита от подбора пароля ----------
+define('LOGIN_MAX_ATTEMPTS',5);
+define('LOGIN_LOCKOUT_MINUTES',15);
+function login_lock_until($login){
+$st=db()->prepare("SELECT locked_until FROM login_attempts WHERE login=?"); $st->execute([$login]); $row=$st->fetch();
+if($row&&!empty($row['locked_until'])&&strtotime($row['locked_until'])>time()) return $row['locked_until'];
+return null;
+}
+function record_login_failure($login){
+$st=db()->prepare("SELECT id,fail_count FROM login_attempts WHERE login=?"); $st->execute([$login]); $row=$st->fetch();
+if($row){
+$fc=(int)$row['fail_count']+1;
+$locked=$fc>=LOGIN_MAX_ATTEMPTS?date('Y-m-d H:i:s',strtotime('+'.LOGIN_LOCKOUT_MINUTES.' minutes')):null;
+db()->prepare("UPDATE login_attempts SET fail_count=?,locked_until=?,last_attempt_at=? WHERE id=?")->execute([$fc,$locked,now(),$row['id']]);
+} else {
+db()->prepare("INSERT INTO login_attempts(login,fail_count,locked_until,last_attempt_at) VALUES(?,1,NULL,?)")->execute([$login,now()]);
+}
+}
+function reset_login_failures($login){ db()->prepare("DELETE FROM login_attempts WHERE login=?")->execute([$login]); }
 function finalize_login($u){ session_regenerate_id(true); $_SESSION['uid']=$u['id']; log_action($u['id'],$u['role'],'login','users',$u['id'],'Вход в систему'); }
 // ========== ДВУХФАКТОРНАЯ АУТЕНТИФИКАЦИЯ (код на email) ==========
 function generate_otp_code(){ return str_pad((string)random_int(0,999999),6,'0',STR_PAD_LEFT); }
