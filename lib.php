@@ -457,22 +457,51 @@ function school_effective($school){ $root=school_root_row($school); if((int)$roo
 function school_owns_request($school,$r){ return in_array((int)$r['school_user_id'],school_scope_ids($school),true); }
 function head_schools(){ return db()->query("SELECT * FROM users WHERE role='school' AND active=1 AND (parent_school_id IS NULL OR parent_school_id=0) ORDER BY org_name")->fetchAll(); }
 function school_label($s){ $n=($s['org_name']!=='')?$s['org_name']:('Организация №'.$s['id']); return $n.' — '.level_label($s['level']??'').(!empty($s['district'])?', '.$s['district']:''); }
-function pending_school_members($root){ $st=db()->prepare("SELECT * FROM users WHERE role='school' AND parent_school_id=? AND active=0 ORDER BY id DESC"); $st->execute([$root['id']]); return $st->fetchAll(); }
-function school_members($root){ $st=db()->prepare("SELECT * FROM users WHERE role='school' AND parent_school_id=? ORDER BY contact_name"); $st->execute([$root['id']]); return $st->fetchAll(); }
-function approve_school_member($root,$uid){
+function pending_school_members($actor){ $root=school_root_row($actor); $st=db()->prepare("SELECT * FROM users WHERE role='school' AND parent_school_id=? AND active=0 ORDER BY id DESC"); $st->execute([$root['id']]); return $st->fetchAll(); }
+function school_members($actor){ $root=school_root_row($actor); $st=db()->prepare("SELECT * FROM users WHERE role='school' AND parent_school_id=? ORDER BY contact_name"); $st->execute([$root['id']]); return $st->fetchAll(); }
+function approve_school_member($actor,$uid){
+if(empty($actor['active'])) return [false,'Нет доступа.'];
+$root=school_root_row($actor);
 $m=find_user_by_id($uid); if(!$m||$m['role']!=='school') return [false,'Сотрудник не найден.'];
 if((int)($m['parent_school_id']??0)!==(int)$root['id']) return [false,'Этот сотрудник относится к другой организации.'];
 db()->prepare("UPDATE users SET active=1 WHERE id=?")->execute([$uid]);
-log_action($root['id'],'school','approve_school_member','users',$uid,"Сотрудник подтверждён: ".$m['contact_name']);
+log_action($actor['id'],'school','approve_school_member','users',$uid,"Сотрудник подтверждён: ".$m['contact_name']);
 return [true,'Сотрудник подтверждён и получил доступ.'];
 }
-function reject_school_member($root,$uid){
+function reject_school_member($actor,$uid){
+if(empty($actor['active'])) return [false,'Нет доступа.'];
+$root=school_root_row($actor);
 $m=find_user_by_id($uid); if(!$m||$m['role']!=='school') return [false,'Сотрудник не найден.'];
 if((int)($m['parent_school_id']??0)!==(int)$root['id']) return [false,'Этот сотрудник относится к другой организации.'];
 if((int)$m['active']===1) return [false,'Этот сотрудник уже подтверждён.'];
 db()->prepare("DELETE FROM users WHERE id=? AND active=0")->execute([$uid]);
-log_action($root['id'],'school','reject_school_member','users',$uid,"Сотрудник отклонён: ".$m['contact_name']);
+log_action($actor['id'],'school','reject_school_member','users',$uid,"Сотрудник отклонён: ".$m['contact_name']);
 return [true,'Сотрудник отклонён.'];
+}
+function generate_temp_password(){
+$chars='ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+$pass=''; for($i=0;$i<12;$i++) $pass.=$chars[random_int(0,strlen($chars)-1)];
+return $pass;
+}
+function school_add_member($actor,$data){
+if($actor['role']!=='school' || empty($actor['active'])) return [false,'Нет доступа.'];
+$root=school_root_row($actor);
+$login=trim($data['login']??''); $name=trim($data['contact_name']??''); $position=trim($data['position']??'');
+$email=trim($data['email']??''); $phoneRaw=trim($data['phone']??'');
+if(strlen($login)<3) return [false,'Логин от 3 символов.'];
+if($name==='') return [false,'Укажите ФИО сотрудника.'];
+$phone=normalize_phone($phoneRaw); if($phone===null) return [false,'Укажите телефон в формате +7XXXXXXXXXX (10 цифр после +7).'];
+if($email!=='' && !filter_var($email,FILTER_VALIDATE_EMAIL)) return [false,'Некорректный email.'];
+$pass=generate_temp_password();
+[$ok,$res]=create_user('school',$login,$pass,['org_name'=>'','level'=>$root['level'],'display_name'=>$name,'email'=>$email,'district'=>$root['district'],'contact_name'=>$name,'position'=>$position,'phone'=>$phone,'address'=>'','building'=>'','op_group'=>$root['op_group'],'parent_school_id'=>$root['id'],'active'=>1]);
+if(!$ok) return [false,$res];
+log_action($actor['id'],'school','school_add_member','users',$res,"Добавлен сотрудник: $name (логин $login)");
+if($email!==''){
+$site=cfg()['site_title'];
+$body="Здравствуйте, $name!\r\n\r\nВас добавили сотрудником организации «{$root['org_name']}» в системе \"$site\".\r\n\r\nЛогин: $login\r\nВременный пароль: $pass\r\n\r\nВойдите и при желании смените пароль в профиле.\r\n";
+@send_smtp_email($email,$name,"[$site] Доступ к личному кабинету организации «{$root['org_name']}»",$body);
+}
+return [true,"Сотрудник добавлен и сразу получил доступ. Логин: $login, пароль: $pass — сообщите эти данные сотруднику".($email!==''?' (также отправлено на email)':'').'.'];
 }
 function transfer_school_head($actor,$newHeadId){
 if(!empty($actor['parent_school_id'])) return [false,'Передать права головного аккаунта может только текущий головной аккаунт.'];

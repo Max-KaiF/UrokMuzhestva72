@@ -214,6 +214,7 @@ if($a==='reject_applicant'){ require_role('operator'); [$ok,$msg]=reject_applica
 if($a==='approve_school_member'){ require_role('school'); [$ok,$msg]=approve_school_member($u,(int)($_POST['uid']??0)); flash_set($msg); redirect('?p=school'); }
 if($a==='reject_school_member'){ require_role('school'); [$ok,$msg]=reject_school_member($u,(int)($_POST['uid']??0)); flash_set($msg); redirect('?p=school'); }
 if($a==='transfer_school_head'){ require_role('school'); [$ok,$msg]=transfer_school_head($u,(int)($_POST['uid']??0)); flash_set($msg); redirect('?p=users&role=school'); }
+if($a==='school_add_member'){ require_role('school'); [$ok,$msg]=school_add_member($u,$_POST); flash_set($msg); redirect('?p=users&role=school'); }
 if($a==='add_unavailable'){ require_role('speaker'); [$ok,$msg]=add_unavailable_period($u,$_POST['date_from']??'',$_POST['date_to']??'',$_POST['reason']??''); flash_set($msg); redirect('?p=speaker'); }
 if($a==='remove_unavailable'){ require_role('speaker'); [$ok,$msg]=remove_unavailable_period($u,(int)($_POST['uid']??0)); flash_set($msg); redirect('?p=speaker'); }
 if($a==='add_material'){
@@ -694,7 +695,7 @@ $body='<div class="head"><h2>'.($u['role']==='school'?'Сотрудники ор
 $role_filter=$_GET['role']??'';
 $where="WHERE 1=1"; $params=[]; $superAdmin=false; $scopeNote='';
 if($u['role']==='fund'){ $where.=" AND role='speaker' AND fund_user_id=?"; $params[]=$u['id']; $scopeNote='Только ваши спикеры.'; }
-elseif($u['role']==='school'){ $where.=" AND role='school' AND parent_school_id=?"; $params[]=$u['id']; $scopeNote='Сотрудники, зарегистрированные как участники вашей организации.'; }
+elseif($u['role']==='school'){ $schRoot=school_root_row($u); $where.=" AND role='school' AND parent_school_id=?"; $params[]=$schRoot['id']; $scopeNote='Сотрудники вашей организации «'.esc($schRoot['org_name']).'». Любой из них может подтверждать новых сотрудников и добавлять коллег — доступ не зависит от одного человека.'; }
 else { $og=$u['op_group']??'';
 if($og===''){ $superAdmin=true; if($role_filter){ $where.=" AND role=?"; $params[]=$role_filter; } }
 else { $where.=" AND role='school' AND (op_group=? OR (op_group IS NULL OR op_group='') AND level IN (".implode(',',array_fill(0,count(applicant_group_levels($og)),'?')).'))'; $params[]=$og; $params=array_merge($params,applicant_group_levels($og)); $scopeNote='Только ваши организации.'; }
@@ -702,14 +703,20 @@ else { $where.=" AND role='school' AND (op_group=? OR (op_group IS NULL OR op_gr
 $st=db()->prepare("SELECT * FROM users $where ORDER BY role, display_name");
 $st->execute($params); $users=$st->fetchAll();
 if(!empty($_GET['sort'])) $users=sort_users_rows($users,$_GET['sort'],$_GET['dir']??'asc');
+$schoolIsRoot = $u['role']!=='school' || empty($u['parent_school_id']);
 if($superAdmin) $body.='<div class="card pad"><form method="get" style="display:flex;gap:10px;align-items:end;flex-wrap:wrap"><input type="hidden" name="p" value="users"><label class="lbl" style="margin:0">Фильтр по роли</label><select name="role" onchange="this.form.submit()"><option value="">Все</option><option value="school" '.($role_filter==='school'?'selected':'').'>Заявители</option><option value="speaker" '.($role_filter==='speaker'?'selected':'').'>Спикеры</option><option value="fund" '.($role_filter==='fund'?'selected':'').'>Фонд</option><option value="operator" '.($role_filter==='operator'?'selected':'').'>Оператор</option></select></form></div>';
 elseif($scopeNote) $body.='<p class="muted">'.$scopeNote.'</p>';
+if($u['role']==='school' && !empty($u['active'])) $body.='<form method="post" class="card pad" style="margin-bottom:14px;background:#f9fafb"><h4 style="margin:0 0 10px">➕ Добавить сотрудника</h4><p class="muted" style="margin-top:0">Новый сотрудник получит доступ сразу — это удобно на случай отпуска или замены ответственного лица.</p>'.csrf_field().'<input type="hidden" name="action" value="school_add_member"><div style="display:flex;gap:10px;flex-wrap:wrap"><div style="flex:1;min-width:180px"><label class="lbl">ФИО <span style="color:#d11">*</span></label><input name="contact_name" required></div><div style="flex:1;min-width:160px"><label class="lbl">Должность</label><input name="position"></div><div style="flex:1;min-width:160px"><label class="lbl">Телефон <span style="color:#d11">*</span></label><input name="phone" required></div><div style="flex:1;min-width:160px"><label class="lbl">Email (необязательно)</label><input type="email" name="email"></div><div style="flex:1;min-width:160px"><label class="lbl">Логин <span style="color:#d11">*</span></label><input name="login" required></div></div><button class="btn primary sm" style="margin-top:10px">Добавить и открыть доступ</button></form>';
 $body.='<div class="table-scroll"><table class="card-view resizable"><thead><tr><th>Логин</th>'.sort_th('ФИО/Орг','name').sort_th('Роль','role').sort_th('Email','email').sort_th('ФИО контактного лица','contact_name').sort_th('Должность','position').sort_th('Телефон','phone').sort_th('Адрес местонахождения','address').sort_th('№ корпуса','building').sort_th('Статус','status').'<th>Действия</th></tr></thead><tbody>';
 foreach($users as $x){
 $status=$x['active']?'<span class="pill green">активен</span>':'<span class="pill gray">ожидает</span>';
-$actions='<form method="post" style="display:inline">'.csrf_field().'<input type="hidden" name="action" value="admin_reset_password"><input type="hidden" name="target_id" value="'.$x['id'].'"><input type="password" name="newpass" placeholder="Новый пароль" required style="width:140px"><button class="btn ghost sm">Сбросить пароль</button></form>';
+$actions='';
+if($schoolIsRoot){
+$actions.='<form method="post" style="display:inline">'.csrf_field().'<input type="hidden" name="action" value="admin_reset_password"><input type="hidden" name="target_id" value="'.$x['id'].'"><input type="password" name="newpass" placeholder="Новый пароль" required style="width:140px"><button class="btn ghost sm">Сбросить пароль</button></form>';
 $actions.=' <form method="post" style="display:inline" onsubmit="return confirm(\'Удалить?\')">'.csrf_field().'<input type="hidden" name="action" value="delete_user"><input type="hidden" name="target_id" value="'.$x['id'].'"><button class="btn ghost sm" style="color:#b23b2c;border-color:#f5c6c0">Удалить</button></form>';
-if($u['role']==='school' && $x['active']){ $actions.=' <form method="post" style="display:inline" onsubmit="return confirm(\'Передать права головного аккаунта организации сотруднику «'.esc($x['contact_name']).'»? Вы станете обычным сотрудником, а он сможет подтверждать новых сотрудников и редактировать данные организации.\')">'.csrf_field().'<input type="hidden" name="action" value="transfer_school_head"><input type="hidden" name="uid" value="'.$x['id'].'"><button class="btn ghost sm">Сделать головным</button></form>'; }
+}
+if($u['role']==='school' && $schoolIsRoot && $x['active']){ $actions.=' <form method="post" style="display:inline" onsubmit="return confirm(\'Передать права головного аккаунта организации сотруднику «'.esc($x['contact_name']).'»? Вы станете обычным сотрудником, а он сможет подтверждать новых сотрудников и редактировать данные организации.\')">'.csrf_field().'<input type="hidden" name="action" value="transfer_school_head"><input type="hidden" name="uid" value="'.$x['id'].'"><button class="btn ghost sm">Сделать головным</button></form>'; }
+if($actions==='') $actions='<span class="muted">—</span>';
 $body.='<tr><td class="id">'.esc($x['login']).'</td><td data-label="ФИО/Орг">'.esc($x['display_name']?:$x['org_name']).'</td><td data-label="Роль">'.esc($x['role']).'</td><td data-label="Email">'.esc($x['email']??'—').'</td><td data-label="ФИО контактного лица" class="muted">'.esc($x['contact_name']?:'—').'</td><td data-label="Должность" class="muted">'.esc($x['position']?:'—').'</td><td data-label="Телефон" class="muted">'.esc($x['phone']?:'—').'</td><td data-label="Адрес местонахождения" class="muted">'.esc($x['address']?:'—').'</td><td data-label="№ корпуса" class="muted">'.esc($x['building']?:'—').'</td><td data-label="Статус">'.$status.'</td><td data-label="Действия">'.$actions.'</td></tr>';
 }
 $body.='</tbody></table></div>';
@@ -1122,7 +1129,6 @@ $st=db()->prepare("SELECT * FROM requests WHERE school_user_id IN ($scopeIn) AND
 if(!empty($_GET['sort'])) $rows=sort_requests($rows,$_GET['sort'],$_GET['dir']??'asc');
 $action_req = get_action_required_requests($u);
 $body = '';
-if(empty($u['parent_school_id'])){
 $pendMembers=pending_school_members($u);
 if($pendMembers){ $body.='<div class="action-block"><h4>👥 Сотрудники на подтверждении <span class="action-badge">'.count($pendMembers).'</span></h4>';
 foreach($pendMembers as $pm){
@@ -1140,7 +1146,6 @@ $body.='<div class="card pad" style="margin-bottom:10px;background:#fff">'
 .'</div></div>';
 }
 $body.='</div>'; }
-}
 if ($action_req) {
 $body .= '<div class="action-block"><h4>⚠️ Требует вашего действия <span class="action-badge">'.count($action_req).'</span></h4><ul class="action-list">';
 foreach ($action_req as $ar) {
@@ -1154,7 +1159,7 @@ $tr=''; foreach($rows as $r){
 $urgent_tr = is_request_urgent($r) ? 'urgent' : '';
 $tr.='<tr class="'.$urgent_tr.'" onclick="location=\'?p=request&id='.$r['id'].'\'"><td class="id"><a href="?p=request&id='.$r['id'].'">'.esc($r['code']).'</a></td><td>'.dt($r).'</td><td>'.esc(ages()[$r['age_group']]??'').'</td><td>'.esc(req_label($r['id'])).'</td><td>'.pill($r['status']).'</td></tr>';
 }
-$body.='<div class="head"><h2>'.esc($eff['org_name']).'</h2><div><a class="btn primary" href="?p=school&tab=new">+ Подать заявку</a> <a class="btn ghost" href="?p=calendar">📅 Календарь</a> <a class="btn ghost" href="?p=materials">🗂️ Материалы</a>'.(empty($u['parent_school_id'])?' <a class="btn ghost" href="?p=users&role=school">👥 Сотрудники</a>':'').'</div></div>';
+$body.='<div class="head"><h2>'.esc($eff['org_name']).'</h2><div><a class="btn primary" href="?p=school&tab=new">+ Подать заявку</a> <a class="btn ghost" href="?p=calendar">📅 Календарь</a> <a class="btn ghost" href="?p=materials">🗂️ Материалы</a> <a class="btn ghost" href="?p=users&role=school">👥 Сотрудники</a></div></div>';
 $sch_total=count($rows);
 $sch_waiting=count(array_filter($rows,fn($r)=>$r['status']==='new'));
 $sch_inwork=count(array_filter($rows,fn($r)=>in_array($r['status'],['chosen','confirmed','prep'],true)));
