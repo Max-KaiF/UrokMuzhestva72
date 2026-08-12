@@ -728,6 +728,18 @@ db()->prepare("UPDATE requests SET claimed_fund_id=NULL, claimed_at=NULL WHERE i
 log_action($fund['id'],'fund','release_request','requests',$r['id'],'Фонд вернул заявку в обработку (без назначения спикера)');
 return [true,'Заявка возвращена в общий список — её могут взять другие фонды.'];
 }
+function fund_returnable_status($r){ return in_array($r['status'],['chosen','confirmed','prep','done'],true); }
+function fund_return_to_processing($fund,$r,$reason=''){
+$scope=fund_scope_ids($fund);
+if(empty($r['claimed_fund_id']) || !in_array((int)$r['claimed_fund_id'],$scope,true)) return [false,'Эта заявка не в вашей обработке.'];
+if(!fund_returnable_status($r)) return [false,'Вернуть в обработку можно на этапах «Спикеры выбраны», «Состав подтверждён Фондом», «Готовность подтверждена» или «Проведён».'];
+notify_event('returned_to_processing',$r,['reason'=>trim((string)$reason)]);
+db()->prepare("DELETE FROM request_speakers WHERE request_id=?")->execute([$r['id']]);
+upd($r['id'],['status'=>'new','claimed_fund_id'=>null,'claimed_at'=>null,'fund_confirmed_at'=>null,'briefing_done'=>0,'briefing_date'=>null,'needs_replacement'=>0,'prep_confirmed_at'=>null]);
+$full='Заявка возвращена в общую обработку, этап сброшен на «Новая»'.($reason!==''?': '.trim((string)$reason):'');
+log_action($fund['id'],'fund','fund_return_to_processing','requests',$r['id'],$full);
+return [true,'Заявка возвращена на этап «Новая». Теперь любой фонд может взять её в обработку.'];
+}
 function delete_request($r,$actor){
 if($actor['role']!=='school'||!school_owns_request($actor,$r)) return [false,'Нет доступа.'];
 if($r['status']!=='new') return [false,'Удалить можно только заявку на этапе «Новая».'];
@@ -966,6 +978,15 @@ foreach($speakerContacts as $sp) @send_smtp_email($sp['email'],$sp['name'],$subj
 $ops=db()->query("SELECT email, display_name FROM users WHERE role='operator' AND email<>'' AND active=1")->fetchAll();
 foreach($ops as $op) @send_smtp_email($op['email'],$op['display_name']?:'оператор',$subject,$body);
 break;
+case 'returned_to_processing':
+$reason=$extra['reason']??'';
+$subject="[$site] Заявка {$r['code']} возвращена в обработку";
+$body="Здравствуйте!\r\n\r\nЗаявка {$r['code']} от «{$schoolName}» возвращена в общую обработку и снова доступна всем фондам.\r\nДата урока: {$r['udate']} {$r['utime']}\r\n";
+if($reason!=='') $body.="Причина: $reason\r\n";
+$body.="\r\nПодробнее: $reqUrl\r\n\r\nЭто автоматическое уведомление.\r\n";
+if($schoolEmail) @send_smtp_email($schoolEmail,$schoolName,$subject,$body);
+foreach($speakerContacts as $sp) @send_smtp_email($sp['email'],$sp['name'],$subject,$body);
+break;
 }
 }catch(Throwable $e){ /* не ломаем основной поток */ }
 }
@@ -1173,6 +1194,40 @@ $html='<div class="card pad" style="margin:14px 0"><div style="display:flex;alig
 .'<div><div class="n" id="'.$domId.'_kids" style="font-size:22px;color:var(--green)">0</div><div class="l muted">Охвачено детей</div></div>'
 .'</div></div>'
 .'<script>var '.$domId.'_data='.json_encode($by).';function '.$domId.'_upd(){var v=document.getElementById("'.$domId.'_sel").value;var d='.$domId.'_data[v]||{done:0,cancelled:0,kids:0};document.getElementById("'.$domId.'_done").textContent=d.done;document.getElementById("'.$domId.'_cancel").textContent=d.cancelled;document.getElementById("'.$domId.'_kids").textContent=d.kids;}'.$domId.'_upd();</script>';
+return $html;
+}
+function school_month_report($rows,$domId){
+$by=[];
+foreach($rows as $r){
+$ym=substr((string)($r['udate']??''),0,7); if($ym==='') continue;
+if(!isset($by[$ym])) $by[$ym]=[];
+$by[$ym][]=$r;
+}
+$cur=date('Y-m'); if(!isset($by[$cur])) $by[$cur]=[];
+krsort($by);
+$opts=''; foreach(array_keys($by) as $ym) $opts.='<option value="'.esc($ym).'"'.($ym===$cur?' selected':'').'>'.esc(month_label($ym)).'</option>';
+$panels='';
+foreach($by as $ym=>$list){
+usort($list,fn($a,$b)=>strcmp(($a['udate']??'').($a['utime']??''),($b['udate']??'').($b['utime']??'')));
+$done=array_values(array_filter($list,fn($r)=>in_array($r['status'],['done','closed'],true)));
+$cancelled=count(array_filter($list,fn($r)=>$r['status']==='cancelled'));
+$kids=array_sum(array_map(fn($r)=>(int)($r['participants']??0),$done));
+$rowsHtml='';
+foreach($done as $r){
+$t=$r['utime']?(' '.esc($r['utime']).(!empty($r['utime_end'])?('–'.esc($r['utime_end'])):'')):'';
+$m=st_meta($r['status']);
+$rowsHtml.='<tr><td data-label="Дата">'.esc($r['udate']).$t.'</td><td data-label="Тема">'.esc($r['topic']?:'—').'</td><td data-label="Кто проводил">'.esc(req_label($r['id'])).'</td><td data-label="Детей">'.esc($r['participants']?:'0').'</td><td data-label="Статус"><span class="pill '.esc($m['color']).'">'.esc($m['label']).'</span></td></tr>';
+}
+$table=$done?'<table class="card-view" style="margin-top:10px"><thead><tr><th>Дата</th><th>Тема</th><th>Кто проводил</th><th>Детей</th><th>Статус</th></tr></thead><tbody>'.$rowsHtml.'</tbody></table>':'<p class="muted" style="margin-top:8px">В этом месяце проведённых уроков пока нет.</p>';
+$panels.='<div class="month-panel" data-ym="'.esc($ym).'" style="display:'.($ym===$cur?'block':'none').'">'
+.'<div style="display:flex;gap:28px;margin:10px 0;flex-wrap:wrap">'
+.'<div><div class="n" style="font-size:22px;color:var(--navy)">'.count($done).'</div><div class="l muted">Проведено и закрыто</div></div>'
+.'<div><div class="n" style="font-size:22px;color:var(--navy)">'.$cancelled.'</div><div class="l muted">Не состоялось</div></div>'
+.'<div><div class="n" style="font-size:22px;color:var(--green)">'.$kids.'</div><div class="l muted">Охвачено детей</div></div>'
+.'</div>'.$table.'</div>';
+}
+$html='<div class="card pad" style="margin:14px 0" id="'.$domId.'_wrap"><div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><h4 style="margin:0">📅 Уроки за месяц</h4><select id="'.$domId.'_sel" onchange="'.$domId.'_upd()">'.$opts.'</select></div>'.$panels.'</div>'
+.'<script>function '.$domId.'_upd(){var v=document.getElementById("'.$domId.'_sel").value;document.querySelectorAll("#'.$domId.'_wrap .month-panel").forEach(function(el){el.style.display=(el.getAttribute("data-ym")===v)?"block":"none";});}</script>';
 return $html;
 }
 function kpis($opGroup=null){

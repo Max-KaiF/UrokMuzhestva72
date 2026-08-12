@@ -279,6 +279,7 @@ elseif($a==='fund_assign_speaker'){ require_role('fund'); [$ok,$msg]=fund_assign
 elseif($a==='fund_finalize'){ require_role('fund'); [$ok,$msg]=fund_finalize($u,$r); }
 elseif($a==='claim_request'){ require_role('fund'); [$ok,$msg]=claim_request($u,$r); }
 elseif($a==='release_request'){ require_role('fund'); [$ok,$msg]=release_request($u,$r); }
+elseif($a==='fund_return_to_processing'){ require_role('fund'); [$ok,$msg]=fund_return_to_processing($u,$r,$_POST['reason']??''); }
 elseif($a==='confirm_prep'){ require_role('school'); if(!school_owns_request($u,$r)) exit('Нет доступа.'); [$ok,$msg]=school_set_prep($r,isset($_POST['parents'])?1:0,isset($_POST['venue'])?1:0,isset($_POST['escort'])?1:0); }
 elseif($a==='fund_recommend'){ require_role('fund'); [$ok,$msg]=fund_recommend($u,$r,(int)($_POST['sid']??0)); }
 elseif($a==='fund_confirm_speaker'){ require_role('fund'); [$ok,$msg]=fund_confirm_speaker($u,$r,(int)($_POST['sid']??0)); }
@@ -1159,6 +1160,7 @@ $sch_waiting=count(array_filter($rows,fn($r)=>$r['status']==='new'));
 $sch_inwork=count(array_filter($rows,fn($r)=>in_array($r['status'],['chosen','confirmed','prep'],true)));
 $sch_done=count(array_filter($rows,fn($r)=>in_array($r['status'],['done','closed'],true)));
 $body.='<div class="kpis"><div class="kpi"><div class="n">'.$sch_total.'</div><div class="l">Всего заявок</div></div><div class="kpi"><div class="n">'.$sch_waiting.'</div><div class="l">Ожидают фонда</div></div><div class="kpi"><div class="n">'.$sch_inwork.'</div><div class="l">В работе</div></div><div class="kpi"><div class="n">'.$sch_done.'</div><div class="l">Проведено</div></div></div>';
+$body.=school_month_report($rows,'schMonth');
 $body.= $rows ? '<table class="card-view"><thead><tr>'.sort_th('Код','code').sort_th('Дата и время','date').'<th>Аудитория</th><th>Спикеры</th>'.sort_th('Статус','status').'</tr></thead><tbody>'.$tr.'</tbody></table>' : '<div class="empty-state"><div class="empty-icon">📋</div><h3>Заявок пока нет</h3><p class="muted">Нажмите «Подать заявку», чтобы отправить первую заявку на Урок Мужества.</p></div>';
 layout('Кабинет заявителя',$body); exit;
 }
@@ -1346,6 +1348,7 @@ $body.='<div class="hint-warn"><b>Заявка в обработке друго�
 $body.='<div class="block" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span class="pill green">В обработке вашего фонда</span>';
 if($r['status']==='new' && !$rows) $body.='<form method="post" onsubmit="return confirm(\'Вернуть заявку в общий список? Другие фонды смогут её взять.\')">'.csrf_field().'<input type="hidden" name="action" value="release_request"><input type="hidden" name="id" value="'.$r['id'].'"><button class="btn ghost sm">↩️ Вернуть в обработку</button></form>';
 $body.='</div>';
+if(fund_returnable_status($r)) $body.='<div class="block" style="border-top:1px solid #eee;padding-top:12px"><form method="post" onsubmit="return confirm(\'Вернуть заявку в общую обработку? Этап сбросится на «Новая», назначенные спикеры будут сняты, и любой фонд сможет взять заявку заново. Продолжить?\')">'.csrf_field().'<input type="hidden" name="action" value="fund_return_to_processing"><input type="hidden" name="id" value="'.$r['id'].'"><label class="lbl">Вернуть в обработку — причина (необязательно)</label><input name="reason" placeholder="например: не удалось подобрать спикера"><button class="btn ghost sm" style="margin-top:8px;color:#b23b2c;border-color:#f5c6c0">↩️ Вернуть в обработку (сброс на этап «Новая»)</button></form></div>';
 } elseif($r['status']==='new'){
 $body.='<div class="block"><form method="post">'.csrf_field().'<input type="hidden" name="action" value="claim_request"><input type="hidden" name="id" value="'.$r['id'].'"><button class="btn primary sm">📥 Взять в обработку</button></form><p class="muted" style="margin-top:6px">Заявка закрепится за вашим фондом, и вы сможете назначить спикера.</p></div>';
 }
