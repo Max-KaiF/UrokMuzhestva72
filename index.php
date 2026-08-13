@@ -438,7 +438,45 @@ $panels.='<div class="guide-panel" data-role="'.$rk.'" style="display:'.($rk===$
 .'</div>';
 }
 $body='<div class="head"><h2>Как это работает</h2><a class="btn ghost" href="?p=login">← ко входу</a></div>';
-$body.='<p class="muted" style="max-width:680px">Платформа связывает четыре роли: образовательные организации подают заявки, Фонды направляют спикеров-ветеранов, департаменты образования модерируют и контролируют процесс. Выберите роль, чтобы увидеть путь от регистрации до завершения урока.</p>';
+$body.='<p class="muted" style="max-width:680px">Платформа связывает четыре роли: образовательные организации подают заявки, Фонды направляют спикеров-ветеранов, департаменты образования модерируют и контролируют процесс. Ниже — интерактивный путь одной заявки от подачи до закрытия с указанием, чья сейчас очередь действовать. Регистрация и подтверждение всех участников (заявителя — департаментом, спикера — Фондом) считаются уже пройденными.</p>';
+// ---- интерактивная презентация: путь заявки от подачи до закрытия ----
+$jroles=journey_roles(); $journey=guide_journey(); $jtotal=count($journey);
+$legend=''; foreach($jroles as $rv){ $legend.='<span><i style="background:'.esc($rv['color']).'"></i>'.esc($rv['label']).'</span>'; }
+$jdots=''; $jpanels='';
+foreach($journey as $i=>$st){
+$col=$jroles[$st['role']]['color'];
+$jdots.='<button type="button" class="journey-dot'.($i===0?' active':'').'" data-i="'.$i.'" data-color="'.esc($col).'" onclick="jgo('.$i.')"><span class="jd-mk"'.($i===0?' style="background:'.esc($col).';border-color:'.esc($col).'"':'').'>'.($i+1).'</span><span class="jd-lbl">'.esc($st['short']??$st['t']).'</span></button>';
+$roleBadge='<span class="journey-role" style="background:'.esc($col).'">'.esc($jroles[$st['role']]['label']).'</span>';
+if(!empty($st['role2'])){ $col2=$jroles[$st['role2']]['color']; $roleBadge.='<span class="journey-role j-role2" style="background:'.esc($col2).'">'.esc($jroles[$st['role2']]['label']).'</span>'; }
+$note=!empty($st['note'])?'<div class="journey-note">💡 '.esc($st['note']).'</div>':'';
+$jpanels.='<div class="journey-panel" data-i="'.$i.'" style="display:'.($i===0?'block':'none').'"><div class="journey-card">'.$roleBadge
+.'<p class="journey-status">Статус заявки: <b>'.esc($st['status']).'</b></p>'
+.'<h3>'.$st['emoji'].' '.esc($st['t']).'</h3><p>'.esc($st['d']).'</p>'.$note.'</div></div>';
+}
+$body.='<div class="journey"><div class="journey-legend">'.$legend.'</div><div class="journey-track">'.$jdots.'</div>'.$jpanels
+.'<div class="journey-nav"><button type="button" class="btn ghost sm" id="journeyPrev" onclick="jprev()" disabled>← Назад</button><span class="journey-progress" id="journeyProgress">1 из '.$jtotal.'</span><button type="button" class="btn primary sm" id="journeyNext" onclick="jnext()">Далее →</button></div></div>';
+$body.='<script>
+var JOURNEY_TOTAL='.$jtotal.'; window.__jidx=0;
+function jgo(i){
+document.querySelectorAll(".journey-panel").forEach(function(p){ p.style.display=(+p.dataset.i===i)?"block":"none"; });
+document.querySelectorAll(".journey-dot").forEach(function(d){
+var active=(+d.dataset.i===i); d.classList.toggle("active",active);
+var mk=d.querySelector(".jd-mk");
+if(active){ mk.style.background=d.dataset.color; mk.style.borderColor=d.dataset.color; } else { mk.style.background=""; mk.style.borderColor=""; }
+});
+document.getElementById("journeyProgress").textContent=(i+1)+" из "+JOURNEY_TOTAL;
+document.getElementById("journeyPrev").disabled=(i===0);
+document.getElementById("journeyNext").disabled=(i===JOURNEY_TOTAL-1);
+window.__jidx=i;
+var ad=document.querySelector(".journey-dot.active"); if(ad&&ad.scrollIntoView) ad.scrollIntoView({inline:"center",block:"nearest",behavior:"smooth"});
+}
+function jnext(){ if(window.__jidx<JOURNEY_TOTAL-1) jgo(window.__jidx+1); }
+function jprev(){ if(window.__jidx>0) jgo(window.__jidx-1); }
+document.addEventListener("keydown",function(e){
+if(!document.querySelector(".journey")) return;
+if(e.key==="ArrowRight") jnext(); else if(e.key==="ArrowLeft") jprev();
+});
+</script>';
 $body.='<div class="guide-tabs">'.$tabs.'</div>'.$panels;
 $body.='<script>function gsw(r){document.querySelectorAll(".guide-tab").forEach(function(b){b.classList.toggle("active",b.dataset.role===r);});document.querySelectorAll(".guide-panel").forEach(function(p){p.style.display=(p.dataset.role===r)?"block":"none";});if(history.replaceState) history.replaceState(null,"","?p=guide&role="+r);}</script>';
 layout('Как это работает',$body); exit;
