@@ -307,7 +307,7 @@ redirect('?p=login');
 $u=current_user();
 if(!$u && $p==='login') unset($_SESSION['pending_uid']);
 if(!$u && !empty($_SESSION['pending_uid']) && !in_array($p,['login','verify_otp'])) redirect('?p=verify_otp');
-if(!$u && !in_array($p,['login','register','reset_password','reset_request','privacy','guide','verify_otp'])) $p='login';
+if(!$u && !in_array($p,['login','register','reset_password','reset_request','privacy','guide','verify_otp','demo'])) $p='login';
 if($u && ($p===''||$p==='login'||$p==='register')) $p=$u['role'];
 if($p==='export' && $u && $u['role']==='operator'){
 require_login();
@@ -439,6 +439,7 @@ $panels.='<div class="guide-panel" data-role="'.$rk.'" style="display:'.($rk===$
 }
 $body='<div class="head"><h2>Как это работает</h2><a class="btn ghost" href="?p=login">← ко входу</a></div>';
 $body.='<p class="muted" style="max-width:680px">Платформа связывает четыре роли: образовательные организации подают заявки, Фонды направляют спикеров-ветеранов, департаменты образования модерируют и контролируют процесс. Ниже — интерактивный путь одной заявки от подачи до закрытия с указанием, чья сейчас очередь действовать. Регистрация и подтверждение всех участников (заявителя — департаментом, спикера — Фондом) считаются уже пройденными.</p>';
+$body.='<p style="margin:4px 0 18px"><a class="btn ghost sm" href="?p=demo">🖱️ Или пройдите то же самое настоящими экранами сайта, шаг за шагом →</a></p>';
 // ---- интерактивная презентация: путь заявки от подачи до закрытия ----
 $jroles=journey_roles(); $journey=guide_journey(); $jtotal=count($journey);
 $legend=''; foreach($jroles as $rv){ $legend.='<span><i style="background:'.esc($rv['color']).'"></i>'.esc($rv['label']).'</span>'; }
@@ -481,9 +482,130 @@ $body.='<div class="guide-tabs">'.$tabs.'</div>'.$panels;
 $body.='<script>function gsw(r){document.querySelectorAll(".guide-tab").forEach(function(b){b.classList.toggle("active",b.dataset.role===r);});document.querySelectorAll(".guide-panel").forEach(function(p){p.style.display=(p.dataset.role===r)?"block":"none";});if(history.replaceState) history.replaceState(null,"","?p=guide&role="+r);}</script>';
 layout('Как это работает',$body); exit;
 }
+// ========== ДЕМО-РЕЖИМ (интерактивный аналог сайта на выдуманных данных) ==========
+if($p==='demo'){
+$dp=demo_profile(); $total=demo_total_steps();
+$step=(int)($_GET['step']??0);
+$peek=$_GET['peek']??'';
+$fakeR=['udate'=>$dp['udate'],'utime'=>$dp['utime'],'utime_end'=>$dp['utime_end']];
+
+if($step<1||$step>8){
+$jr=journey_roles(); $legend='';
+foreach($jr as $rv) $legend.='<span class="demo-role-chip" style="background:'.esc($rv['color']).'">'.esc($rv['label']).'</span> ';
+$body='<div class="head"><h2>Демо-режим</h2><a class="btn ghost" href="?p=guide">← к «Как это работает»</a></div>';
+$body.='<div class="card pad" style="max-width:720px"><p>Это интерактивный аналог сайта на выдуманных данных — организация, спикер, фонд и заявка ниже не настоящие, ничего не сохраняется. Вы пройдёте путь одной заявки от подачи до закрытия теми же экранами, что видят настоящие пользователи, — по очереди оказываясь на месте каждой роли.</p>'
+.'<p style="margin-top:14px">'.$legend.'</p>'
+.'<a class="btn primary" href="?p=demo&step=1" style="margin-top:16px;display:inline-block">Начать демо →</a></div>';
+layout('Демо-режим',$body); exit;
+}
+
+if($step===2 && $peek==='school'){
+$body=demo_banner('school',2,$total);
+$body.='<div class="head"><h2>'.esc($dp['org']).'</h2></div>';
+$body.='<div class="kpis"><div class="kpi"><div class="n">1</div><div class="l">Всего заявок</div></div><div class="kpi"><div class="n">1</div><div class="l">Ожидают фонда</div></div><div class="kpi"><div class="n">0</div><div class="l">В работе</div></div><div class="kpi"><div class="n">0</div><div class="l">Проведено</div></div></div>';
+$body.='<table class="card-view"><thead><tr><th>Код</th><th>Дата и время</th><th>Аудитория</th><th>Спикеры</th><th>Статус</th></tr></thead><tbody>';
+$body.='<tr><td class="id">'.esc($dp['code']).'</td><td>'.dt($fakeR).'</td><td>'.esc($dp['age_group']).'</td><td>не выбран</td><td>'.pill('new').'</td></tr>';
+$body.='</tbody></table>';
+$body.='<div class="block" style="margin-top:14px"><p class="muted">Заявка передана всем фондам — заявитель просто ждёт, пока один из них назначит спикера. Искать и выбирать спикера вручную не нужно.</p></div>';
+$body.='<a class="btn ghost sm" href="?p=demo&step=2">← Вернуться к сценарию (Фонд)</a>';
+layout('Демо-режим',$body); exit;
+}
+
+switch($step){
+case 1:
+$body=demo_banner('school',1,$total);
+$body.='<div class="head"><h2>Подать заявку</h2></div>';
+$body.='<p class="muted">Организация: <b>'.esc($dp['org']).'</b> · оператор: '.esc($dp['operator']).'</p>';
+$body.='<p class="muted">После отправки заявка сразу станет доступна всем фондам — они сами подберут и назначат спикера.</p>';
+$body.='<form class="card pad" onsubmit="return false">'
+.'<label class="lbl">Возрастная группа</label><select><option selected>'.esc($dp['age_group']).'</option></select>'
+.'<label class="lbl">Сколько спикеров нужно</label><select><option selected>1</option></select>'
+.'<label class="lbl">Контактное лицо</label><input value="'.esc($dp['contact_name']).'">'
+.'<label class="lbl">Телефон</label><input value="'.esc($dp['contact_phone']).'">'
+.'<label class="lbl">Желаемая дата</label><input type="date" value="'.esc($dp['udate']).'">'
+.'<label class="lbl">Время начала</label><select><option selected>'.esc($dp['utime']).'</option></select>'
+.'<label class="lbl">Время окончания</label><select><option selected>'.esc($dp['utime_end']).'</option></select>'
+.'<label class="lbl">Число участников</label><input value="'.esc((string)$dp['participants']).'">'
+.'<label class="lbl">Тема занятия</label><select><option selected>'.esc($dp['topic']).'</option></select>'
+.'<label class="chk" style="margin-top:8px"><input type="checkbox" checked disabled> Согласие на обработку ПДн</label>'
+.'<a class="btn primary" style="margin-top:12px;display:inline-block" href="?p=demo&step=2">Отправить заявку →</a>'
+.'</form>';
+break;
+case 2:
+$body=demo_banner('fund',2,$total);
+$body.='<div class="head"><h2>'.esc($dp['fund']).'</h2></div>';
+$body.='<div class="kpis"><div class="kpi"><div class="n">1</div><div class="l">Новых заявок</div></div><div class="kpi"><div class="n">0</div><div class="l">В работе</div></div><div class="kpi"><div class="n">37</div><div class="l">Проведено (демо)</div></div></div>';
+$body.='<table class="card-view"><thead><tr><th>Код</th><th>Организация</th><th>Дата и время</th><th>Статус</th></tr></thead><tbody>';
+$body.='<tr><td class="id">'.esc($dp['code']).'</td><td>'.esc($dp['org']).'</td><td>'.dt($fakeR).'</td><td>'.pill('new').'</td></tr>';
+$body.='</tbody></table>';
+$body.='<div class="block" style="margin-top:16px"><h4>Заявка '.esc($dp['code']).'</h4>'.stepper('new')
+.'<p style="margin-top:10px"><span class="pill green">В обработке вашего фонда</span></p>'
+.'<div style="margin-top:12px;border-top:1px solid #eee;padding-top:12px"><h4>Назначить спикера</h4><select><option selected>'.esc($dp['speaker']).' ('.esc($dp['speaker_rank']).')</option></select> <a class="btn primary sm" href="?p=demo&step=3" style="margin-left:6px">Назначить спикера</a></div>'
+.'</div>';
+$body.='<p class="muted" style="margin-top:14px">👀 Тем временем <a href="?p=demo&step=2&peek=school">заявитель видит заявку в статусе «Новая» →</a></p>';
+break;
+case 3:
+$body=demo_banner('fund',3,$total);
+$body.='<div class="head"><h2>Заявка '.esc($dp['code']).' '.pill('chosen').'</h2></div>';
+$body.='<div class="card pad">'.stepper('chosen')
+.'<div class="block"><h4>Согласование спикеров (0 из 1 подтверждено)</h4>'
+.'<div class="row2" style="margin-bottom:6px"><span><b>'.esc($dp['speaker']).'</b> <span class="muted">(Тюмень, тел.: +7900...)</span></span><span class="pill gray">кандидат</span></div>'
+.'<a class="btn primary sm" href="?p=demo&step=4">Подтвердить окончательно →</a>'
+.'<p class="muted" style="margin-top:10px">Заявка не может перейти дальше, пока не подтверждён хотя бы один спикер — это встроенное ограничение.</p>'
+.'</div></div>';
+break;
+case 4:
+$body=demo_banner('school',4,$total);
+$body.='<div class="head"><h2>Заявка '.esc($dp['code']).' '.pill('confirmed').'</h2></div>';
+$body.='<div class="card pad">'.stepper('confirmed')
+.'<div class="block"><h4>Состав (1 из 1)</h4><div class="fbsum"><b>'.esc($dp['speaker']).'</b> <span class="muted">— '.esc($dp['speaker_rank']).'</span></div></div>'
+.'<div class="block"><h4>Готовность к проведению</h4><p class="muted">Отметьте все пункты — готовность зафиксируется автоматически.</p>'
+.'<label class="chk"><input type="checkbox" checked disabled> площадка готова</label> <label class="chk"><input type="checkbox" checked disabled> сопровождение назначено</label>'
+.'<p style="margin-top:10px"><span class="pill green">✓ Готовность подтверждена</span></p>'
+.'<a class="btn primary sm" style="margin-top:10px;display:inline-block" href="?p=demo&step=5">Далее →</a></div></div>';
+break;
+case 5:
+$body=demo_banner('school',5,$total);
+$body.='<div class="head"><h2>Заявка '.esc($dp['code']).' '.pill('prep').'</h2></div>';
+$body.='<div class="card pad">'.stepper('prep')
+.'<div class="block"><h4>После урока</h4><p class="muted">Урок «'.esc($dp['topic']).'» состоялся '.esc($dp['udate']).' в '.esc($dp['utime']).'. Отметьте, как он прошёл.</p>'
+.'<a class="btn primary sm" href="?p=demo&step=6">Урок проведён</a> '
+.'<button class="btn ghost sm" disabled title="В демо доступен только успешный сценарий">Урок не состоялся</button>'
+.'</div></div>';
+break;
+case 6:
+$tab=($_GET['as']??'school')==='speaker'?'speaker':'school';
+$tabs='<div class="guide-tabs" style="margin:16px 0"><button type="button" class="guide-tab'.($tab==='school'?' active':'').'" onclick="location=\'?p=demo&step=6&as=school\'">Заявитель</button><button type="button" class="guide-tab'.($tab==='speaker'?' active':'').'" onclick="location=\'?p=demo&step=6&as=speaker\'">Спикер</button></div>';
+$body=demo_banner($tab,6,$total);
+$body.='<div class="head"><h2>Заявка '.esc($dp['code']).' '.pill('done').'</h2></div>';
+$body.=$tabs;
+if($tab==='school') $body.='<div class="card pad"><h4>Ваш отзыв</h4><textarea readonly>Спикер отлично провёл занятие, дети слушали с большим интересом, спасибо!</textarea><a class="btn primary sm" style="margin-top:10px;display:inline-block" href="?p=demo&step=6&as=speaker">Далее — отзыв спикера →</a></div>';
+else $body.='<div class="card pad"><h4>Ваш отзыв о занятии</h4><textarea readonly>Организация всё подготовила заранее, ребята — большие молодцы, задавали много вопросов.</textarea><a class="btn primary sm" style="margin-top:10px;display:inline-block" href="?p=demo&step=7">Далее →</a></div>';
+break;
+case 7:
+$body=demo_banner('operator',7,$total);
+$body.='<div class="head"><h2>Заявка '.esc($dp['code']).' '.pill('done').'</h2></div>';
+$body.='<div class="card pad">'.stepper('done')
+.'<div class="block"><h4>Состав (1 из 1)</h4><div class="fbsum"><b>'.esc($dp['speaker']).'</b></div><p class="muted">Подтверждение Фондом: <b>есть</b> · Инструктаж: <b>проведён</b></p></div>'
+.'<div class="block"><h4>Обратная связь</h4>'.fbline('Заявитель','Спикер отлично провёл занятие, дети слушали с большим интересом, спасибо!').fbline('Спикер: '.$dp['speaker'],'Организация всё подготовила заранее, ребята — большие молодцы, задавали много вопросов.').'</div>'
+.'<div class="block"><a class="btn primary sm" href="?p=demo&step=8">Закрыть заявку →</a></div></div>';
+break;
+case 8:
+$body='<div class="head"><h2>Демо завершено 🎉</h2></div>';
+$body.='<div class="card pad" style="max-width:720px">'.stepper('closed')
+.'<p style="margin-top:14px">Заявка '.esc($dp['code']).' прошла весь путь: от подачи заявителем до закрытия оператором, с участием фонда и спикера — теми же экранами, что видят настоящие пользователи.</p>'
+.'<div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap">'
+.'<a class="btn primary" href="?p=demo&step=1">↻ Пройти демо заново</a>'
+.'<a class="btn ghost" href="?p=guide">📋 Текстовая версия «Как это работает»</a>'
+.'<a class="btn ghost" href="?p=register">Зарегистрироваться →</a>'
+.'</div></div>';
+break;
+}
+layout('Демо-режим',$body); exit;
+}
 // ========== СТРАНИЦА ВХОДА ==========
 if($p==='login'){
-$body='<div class="auth"><h2>Вход</h2><form method="post" class="card pad">'.csrf_field().'<input type="hidden" name="action" value="login"><label class="lbl">Логин</label><input name="login" required><label class="lbl">Пароль</label><input type="password" name="pass" required><button class="btn primary" style="margin-top:12px">Войти</button></form><p class="muted"><a href="?p=reset_request">Забыли пароль?</a> · <a href="?p=register">Зарегистрироваться</a> · <a href="?p=guide">Как это работает?</a></p><p class="muted" style="font-size:12.5px">Не приходит код подтверждения или не получается войти? Напишите на <a href="mailto:'.esc(cfg()['support_email']).'">'.esc(cfg()['support_email']).'</a>.</p></div>';
+$body='<div class="auth"><h2>Вход</h2><form method="post" class="card pad">'.csrf_field().'<input type="hidden" name="action" value="login"><label class="lbl">Логин</label><input name="login" required><label class="lbl">Пароль</label><input type="password" name="pass" required><button class="btn primary" style="margin-top:12px">Войти</button></form><p class="muted"><a href="?p=reset_request">Забыли пароль?</a> · <a href="?p=register">Зарегистрироваться</a> · <a href="?p=guide">Как это работает?</a> · <a href="?p=demo">Демо-режим →</a></p><p class="muted" style="font-size:12.5px">Не приходит код подтверждения или не получается войти? Напишите на <a href="mailto:'.esc(cfg()['support_email']).'">'.esc(cfg()['support_email']).'</a>.</p></div>';
 layout('Вход',$body); exit;
 }
 if($p==='verify_otp'){
@@ -674,7 +796,7 @@ $body='<div class="auth"><h2>Регистрация</h2><p class="muted" style="
 <div class="rf fund" style="display:none"><p class="muted" style="margin:0 0 8px">Фонд подбирает и подтверждает состав спикеров для заявок. Структурное подразделение работает под контролем головного фонда.</p><h4>Организация</h4><label class="lbl">Наименование Фонда <span style="color:#d11">*</span></label><input name="fund_display_name" data-req value="'.ov($old,'fund_display_name').'"><label class="lbl">Тип</label><select name="fund_type" id="fund_type" onchange="ftsw()"><option value="head"'.osel($old,'fund_type','head').'>Головной фонд</option><option value="sub"'.osel($old,'fund_type','sub').'>Структурное подразделение</option></select><div id="parentfund" style="display:none"><label class="lbl">Головной фонд <span style="color:#d11">*</span></label><select name="parent_fund_id" id="parent_fund_id">'.$headFundOpt.'</select><p class="muted" style="margin:2px 0 8px">Подразделение получит доступ после подтверждения головным фондом.</p></div><div id="fundcode"><label class="lbl">Код регистрации Фонда <span style="color:#d11">*</span></label><input name="fund_code" id="fund_code" value="'.ov($old,'fund_code').'"><p class="muted" style="margin:2px 0 8px">Код регистрации головного фонда выдаёт администратор платформы — он подтверждает право направлять спикеров. Нет кода? Напишите на <a href="mailto:'.esc(cfg()['support_email']).'">'.esc(cfg()['support_email']).'</a>.</p></div><h4>Контактное лицо</h4><label class="lbl">ФИО контактного лица <span style="color:#d11">*</span></label><input name="contact_name" data-req value="'.ov($old,'contact_name').'"><label class="lbl">Должность <span style="color:#d11">*</span></label><input name="position" data-req value="'.ov($old,'position').'"><label class="lbl">Телефон <span style="color:#d11">*</span></label><input name="contact_phone" data-req value="'.ov($old,'contact_phone').'"></div>
 <div class="rf operator" style="display:none"><p class="muted" style="margin:0 0 8px">Оператор модерирует заявителей и контролирует ход заявок в пределах своего департамента.</p><h4>Организация</h4><label class="lbl">Наименование <span style="color:#d11">*</span></label><input name="op_display_name" data-req value="'.ov($old,'op_display_name').'"><label class="lbl">Департамент</label><select name="op_group"><option value="school"'.osel($old,'op_group','school').'>ДОА г. Тюмени (школы)</option><option value="region"'.osel($old,'op_group','region').'>ДОиН ТО (СПО и вузы)</option></select><p class="muted" style="margin:2px 0 8px">Определяет, заявки каких организаций вы будете видеть и модерировать.</p><label class="lbl">Код регистрации оператора <span style="color:#d11">*</span></label><input name="op_code" data-req value="'.ov($old,'op_code').'"><p class="muted" style="margin:2px 0 8px">Код выдаёт администратор платформы — он подтверждает право модерировать заявки. Нет кода? Напишите на <a href="mailto:'.esc(cfg()['support_email']).'">'.esc(cfg()['support_email']).'</a>.</p><h4>Контактное лицо</h4><label class="lbl">ФИО контактного лица <span style="color:#d11">*</span></label><input name="contact_name" data-req value="'.ov($old,'contact_name').'"><label class="lbl">Должность <span style="color:#d11">*</span></label><input name="position" data-req value="'.ov($old,'position').'"><label class="lbl">Телефон <span style="color:#d11">*</span></label><input name="contact_phone" data-req value="'.ov($old,'contact_phone').'"></div>
 <label class="chk" style="margin-top:10px"><input type="checkbox" name="consent" required> Согласие на обработку ПДн <span style="color:#d11">*</span> (<a href="?p=privacy" target="_blank">политика</a>)</label>
-<button class="btn primary" style="margin-top:12px">Зарегистрироваться</button></form><p class="muted"><a href="?p=login">← ко входу</a> · <a href="?p=guide">Как это работает?</a></p></div>
+<button class="btn primary" style="margin-top:12px">Зарегистрироваться</button></form><p class="muted"><a href="?p=login">← ко входу</a> · <a href="?p=guide">Как это работает?</a> · <a href="?p=demo">Демо-режим →</a></p></div>
 <script>
 function rsw(){
 var r=document.getElementById("role").value;

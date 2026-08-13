@@ -228,6 +228,33 @@ function guide_journey(){ return [
 ['role'=>'school','emoji'=>'💬','status'=>'Проведён','short'=>'Отзывы','t'=>'Отзывы','d'=>'Заявитель и спикер оставляют короткие отзывы о том, как прошёл урок — это последний шаг перед закрытием заявки.','role2'=>'speaker'],
 ['role'=>'operator','emoji'=>'🔒','status'=>'Закрыта','short'=>'Закрытие заявки','t'=>'Оператор закрывает заявку','d'=>'После отзыва заявителя оператор закрывает заявку. Полную историю всех действий по заявке в любой момент можно посмотреть кнопкой «История». Закрытые заявки старше 30 дней автоматически переносятся в архив.'],
 ]; }
+// ========== ДЕМО-РЕЖИМ (?p=demo) — интерактивный аналог сайта на выдуманных данных ==========
+function demo_profile(){ return [
+'code'=>'ДЕМО-0001',
+'org'=>'МАОУ СОШ №1 г. Тюмени',
+'operator'=>'Департамент образования Администрации города Тюмени',
+'fund'=>'Благотворительный фонд «Пример»',
+'speaker'=>'Иванов Иван Иванович',
+'speaker_rank'=>'полковник запаса, ВДВ',
+'contact_name'=>'Иванова Мария Петровна',
+'contact_pos'=>'Заместитель директора по ВР',
+'contact_phone'=>'+79001234567',
+'age_group'=>'5–9 классы',
+'participants'=>24,
+'topic'=>'Герои нашего времени',
+'udate'=>date('Y-m-d',strtotime('+15 days')),
+'utime'=>'10:00',
+'utime_end'=>'10:40',
+]; }
+function demo_status_for_step($step){ return [1=>'new',2=>'chosen',3=>'confirmed',4=>'prep',5=>'done',6=>'done',7=>'closed',8=>'closed'][$step]??'new'; }
+function demo_total_steps(){ return 7; }
+function demo_banner($roleKey,$step,$total){
+$jr=journey_roles(); $col=$jr[$roleKey]['color']; $label=$jr[$roleKey]['label'];
+$h='<div class="demo-banner" style="border-left-color:'.esc($col).'"><div><b>🔎 Демо-режим.</b> Вы смотрите интерфейс глазами роли <span class="demo-role-chip" style="background:'.esc($col).'">'.esc($label).'</span>';
+if($step>0) $h.=' <span class="muted">· шаг '.$step.' из '.$total.'</span>';
+$h.='</div><a class="demo-exit" href="?p=demo">Начать заново ✕</a></div>';
+return $h;
+}
 // ========== ТИПОВЫЕ ПРИЧИНЫ ==========
 function cancel_reasons(){ return ['Спикер не приехал','Отменила организация-заявитель','Технические причины','Другое']; }
 function reject_reasons(){ return [
