@@ -516,6 +516,24 @@ function school_scope_ids($school){ $root=school_root_row($school); $ids=[(int)$
 function school_effective($school){ $root=school_root_row($school); if((int)$root['id']===(int)$school['id']) return $school; $eff=$school; foreach(['org_name','level','district','address','building','op_group'] as $k) $eff[$k]=$root[$k]; return $eff; }
 function school_owns_request($school,$r){ return in_array((int)$r['school_user_id'],school_scope_ids($school),true); }
 function head_schools(){ return db()->query("SELECT * FROM users WHERE role='school' AND active=1 AND (parent_school_id IS NULL OR parent_school_id=0) ORDER BY org_name")->fetchAll(); }
+function normalize_org_name($s){
+$s=mb_strtolower(trim((string)$s),'UTF-8');
+$s=preg_replace('/[^a-zа-яё0-9 ]+/iu',' ',$s);
+$s=preg_replace('/\s+/',' ',$s);
+return trim($s);
+}
+function find_similar_school_org($name,$threshold=72){
+$norm=normalize_org_name($name);
+if($norm==='') return null;
+foreach(head_schools() as $s){
+$n2=normalize_org_name($s['org_name']);
+if($n2==='') continue;
+if($n2===$norm) return $s;
+similar_text($norm,$n2,$pct);
+if($pct>=$threshold) return $s;
+}
+return null;
+}
 function school_label($s){ $n=($s['org_name']!=='')?$s['org_name']:('Организация №'.$s['id']); return $n.' — '.level_label($s['level']??'').(!empty($s['district'])?', '.$s['district']:''); }
 function pending_school_members($actor){ $root=school_root_row($actor); $st=db()->prepare("SELECT * FROM users WHERE role='school' AND parent_school_id=? AND active=0 ORDER BY id DESC"); $st->execute([$root['id']]); return $st->fetchAll(); }
 function school_members($actor){ $root=school_root_row($actor); $st=db()->prepare("SELECT * FROM users WHERE role='school' AND parent_school_id=? ORDER BY contact_name"); $st->execute([$root['id']]); return $st->fetchAll(); }
@@ -739,9 +757,45 @@ function prep_complete($r){ return $r['prep_venue'] && $r['prep_escort']; }
 function req_speaker_rows($rid){ $st=db()->prepare("SELECT rs.*, u.display_name FROM request_speakers rs JOIN users u ON u.id=rs.speaker_user_id WHERE rs.request_id=? ORDER BY rs.confirmed DESC, rs.id"); $st->execute([$rid]); return $st->fetchAll(); }
 function req_confirmed_rows($rid){ return array_values(array_filter(req_speaker_rows($rid),fn($x)=>$x['confirmed'])); }
 function count_confirmed($rid){ $st=db()->prepare("SELECT COUNT(*) c FROM request_speakers WHERE request_id=? AND confirmed=1"); $st->execute([$rid]); return (int)$st->fetch()['c']; }
+function count_confirmed_bulk($requestIds){
+$requestIds=array_values(array_unique(array_map('intval',$requestIds)));
+if(!$requestIds) return [];
+$in=implode(',',array_fill(0,count($requestIds),'?'));
+$st=db()->prepare("SELECT request_id, COUNT(*) c FROM request_speakers WHERE request_id IN ($in) AND confirmed=1 GROUP BY request_id");
+$st->execute($requestIds);
+$out=[]; foreach($st->fetchAll() as $row) $out[(int)$row['request_id']]=(int)$row['c'];
+return $out;
+}
 function is_candidate($rid,$sid){ $st=db()->prepare("SELECT id FROM request_speakers WHERE request_id=? AND speaker_user_id=?"); $st->execute([$rid,$sid]); return (bool)$st->fetch(); }
 function get_rs_row($rid,$sid){ $st=db()->prepare("SELECT * FROM request_speakers WHERE request_id=? AND speaker_user_id=?"); $st->execute([$rid,$sid]); return $st->fetch()?:null; }
 function req_label($rid){ $rows=req_speaker_rows($rid); $conf=array_filter($rows,fn($x)=>$x['confirmed']); if($conf) return implode(', ',array_map(function($x){ $org=speaker_org_name($x['speaker_user_id']); return $x['display_name'].($org!==''?' ('.$org.')':''); },$conf)); if($rows) return 'кандидатов: '.count($rows); return 'не выбран'; }
+// Пакетная версия req_label() для таблиц из многих строк — один запрос вместо одного на строку.
+function req_labels_bulk($requestIds){
+$requestIds=array_values(array_unique(array_map('intval',$requestIds)));
+if(!$requestIds) return [];
+$in=implode(',',array_fill(0,count($requestIds),'?'));
+$st=db()->prepare("SELECT rs.request_id, rs.confirmed, u.id AS speaker_id, u.display_name FROM request_speakers rs JOIN users u ON u.id=rs.speaker_user_id WHERE rs.request_id IN ($in) ORDER BY rs.confirmed DESC, rs.id");
+$st->execute($requestIds);
+$byReq=[];
+foreach($st->fetchAll() as $row){ $byReq[(int)$row['request_id']][]=$row; }
+$fundCache=[]; $labels=[];
+foreach($requestIds as $rid){
+$rows=$byReq[$rid]??[];
+$conf=array_filter($rows,fn($x)=>$x['confirmed']);
+if($conf){
+$parts=[];
+foreach($conf as $x){
+$sid=(int)$x['speaker_id'];
+if(!array_key_exists($sid,$fundCache)) $fundCache[$sid]=speaker_org_name($sid);
+$org=$fundCache[$sid];
+$parts[]=$x['display_name'].($org!==''?' ('.$org.')':'');
+}
+$labels[$rid]=implode(', ',$parts);
+} elseif($rows){ $labels[$rid]='кандидатов: '.count($rows); }
+else { $labels[$rid]='не выбран'; }
+}
+return $labels;
+}
 function tmin($s){ if(!$s||strpos($s,':')===false) return null; $p=explode(':',$s); return ((int)$p[0])*60+((int)$p[1]); }
 function valid_slot($s){ $m=tmin($s); if($m===null) return false; if($m%10!==0) return false; return $m>=8*60 && $m<=18*60; }
 function time_options($sel){ $o=''; for($m=8*60;$m<=18*60;$m+=10){ $v=sprintf('%02d:%02d',intdiv($m,60),$m%60); $o.='<option value="'.$v.'"'.($sel===$v?' selected':'').'>'.$v.'</option>'; } return $o; }

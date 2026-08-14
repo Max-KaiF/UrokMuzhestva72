@@ -71,7 +71,17 @@ $c_addr=trim($_POST['address']??''); $c_build=trim($_POST['building']??'');
 if(empty($_POST['org_name'])||empty($_POST['level'])){ fail_redirect('Заполните наименование организации и уровень.','?p=register'); }
 if($c_addr===''||$c_build===''){ fail_redirect('Укажите адрес местонахождения и номер корпуса.','?p=register'); }
 $schoolOg=$_POST['school_op_group']??''; if(!in_array($schoolOg,['school','region'],true)){ fail_redirect('Выберите департамент, к которому относится организация.','?p=register'); }
-[$ok,$res]=create_user('school',$login,$pass,['org_name'=>trim($_POST['org_name']),'level'=>$_POST['level'],'display_name'=>trim($_POST['org_name']),'email'=>$email,'district'=>$district,'contact_name'=>$c_name,'position'=>$c_pos,'phone'=>$c_phone,'address'=>$c_addr,'building'=>$c_build,'op_group'=>$schoolOg]);
+$orgNameIn=trim($_POST['org_name']);
+$similar=find_similar_school_org($orgNameIn);
+if($similar){
+$ackKey='org_warn_'.normalize_org_name($orgNameIn);
+if(empty($_SESSION[$ackKey])){
+$_SESSION[$ackKey]=1;
+fail_redirect('Похоже, организация «'.$similar['org_name'].'» уже зарегистрирована на сайте. Если это ваша организация — вернитесь назад и выберите «сотрудник существующей организации», её сотрудник подтвердит вам доступ. Если это другая, отдельная организация — просто нажмите «Зарегистрироваться» ещё раз.','?p=register');
+}
+unset($_SESSION[$ackKey]);
+}
+[$ok,$res]=create_user('school',$login,$pass,['org_name'=>$orgNameIn,'level'=>$_POST['level'],'display_name'=>$orgNameIn,'email'=>$email,'district'=>$district,'contact_name'=>$c_name,'position'=>$c_pos,'phone'=>$c_phone,'address'=>$c_addr,'building'=>$c_build,'op_group'=>$schoolOg]);
 }
 }
 elseif($role==='speaker'){ if(empty($_POST['display_name'])){ fail_redirect('Укажите ФИО.','?p=register'); } $phone=normalize_phone($_POST['phone']??''); if($phone===null){ fail_redirect('Укажите телефон в формате +7XXXXXXXXXX (10 цифр после +7).','?p=register'); } $fid=(int)($_POST['fund_user_id']??0); if(!$fid || !find_user_by_id($fid) || find_user_by_id($fid)['role']!=='fund'){ fail_redirect('Выберите фонд.','?p=register'); } $groups=implode(',',array_keys($_POST['groups']??[])); if($groups===''){ fail_redirect('Выберите хотя бы одну возрастную группу.','?p=register'); } [$ok,$res]=create_user('speaker',$login,$pass,['display_name'=>trim($_POST['display_name']),'groups'=>$groups,'email'=>$email,'district'=>$district,'phone'=>$phone,'fund_user_id'=>$fid]); }
@@ -1013,7 +1023,8 @@ $body.='<form method="get" class="card pad" style="margin-bottom:14px;display:fl
 .'<label class="lbl" style="margin:0">С</label><input type="date" name="from_date" value="'.esc($_GET['from_date']??'').'">'
 .'<label class="lbl" style="margin:0">По</label><input type="date" name="to_date" value="'.esc($_GET['to_date']??'').'">'
 .'<button class="btn primary sm">Фильтр</button> <a class="btn ghost sm" href="?p=operator&tab=archive">Сбросить</a></form>';
-$tr=''; foreach($rows as $r){ $tr.='<tr onclick="location=\'?p=request&id='.$r['id'].'\'"><td class="id"><a href="?p=request&id='.$r['id'].'">'.esc($r['code']).'</a></td><td>'.esc($r['org']).'</td><td>'.dt($r).'</td><td>'.esc(req_label($r['id'])).'</td><td>'.pill($r['status']).'</td><td class="muted">'.esc($r['archived_at']??'').'</td></tr>'; }
+$labels=req_labels_bulk(array_column($rows,'id'));
+$tr=''; foreach($rows as $r){ $tr.='<tr onclick="location=\'?p=request&id='.$r['id'].'\'"><td class="id"><a href="?p=request&id='.$r['id'].'">'.esc($r['code']).'</a></td><td>'.esc($r['org']).'</td><td>'.dt($r).'</td><td>'.esc($labels[$r['id']]??'не выбран').'</td><td>'.pill($r['status']).'</td><td class="muted">'.esc($r['archived_at']??'').'</td></tr>'; }
 $hasFilter=!empty($_GET['org'])||!empty($_GET['from_date'])||!empty($_GET['to_date']);
 $body.= $rows ? '<table class="card-view"><thead><tr>'.sort_th('Код','code').sort_th('Организация','org').sort_th('Дата','date').'<th>Спикеры</th>'.sort_th('Статус','status').'<th>Архивировано</th></tr></thead><tbody>'.$tr.'</tbody></table>' : '<div class="card pad muted">'.($hasFilter?'По заданным фильтрам ничего не найдено.':'Архив пуст.').'</div>';
 layout('Архив заявок',$body); exit;
@@ -1079,9 +1090,10 @@ $body.='</select><label class="lbl" style="margin:0">Организация</lab
 <label class="lbl" style="margin:0">По</label><input type="date" name="to_date" value="'.esc($_GET['to_date']??'').'">
 <button class="btn primary sm">Фильтр</button> <a class="btn ghost sm" href="?p=operator">Сбросить</a></form></div></details>';
 $body.='<div style="margin-bottom:14px"><a class="btn ghost" href="?p=operator_tools">🛠️ Инструменты'.($pendN?' <span class="pill" style="background:#fdecea;color:#b23b2c">'.$pendN.'</span>':'').'</a></div>';
+$labels=req_labels_bulk(array_column($rows,'id'));
 $tr=''; foreach($rows as $r){
 $urgent_tr = is_request_urgent($r) ? 'urgent' : '';
-$tr.='<tr class="'.$urgent_tr.'" onclick="location=\'?p=request&id='.$r['id'].'\'"><td class="id"><a href="?p=request&id='.$r['id'].'">'.esc($r['code']).'</a></td><td>'.esc($r['org']).'</td><td>'.dt($r).'</td><td>'.esc(req_label($r['id'])).'</td><td>'.pill($r['status']).'</td></tr>';
+$tr.='<tr class="'.$urgent_tr.'" onclick="location=\'?p=request&id='.$r['id'].'\'"><td class="id"><a href="?p=request&id='.$r['id'].'">'.esc($r['code']).'</a></td><td>'.esc($r['org']).'</td><td>'.dt($r).'</td><td>'.esc($labels[$r['id']]??'не выбран').'</td><td>'.pill($r['status']).'</td></tr>';
 }
 $body.='<div class="head"><h2>Реестр заявок ('.count($rows).')</h2></div><div class="kpis">'.$kp.'</div>';
 $body.=month_stats_widget(operator_scope_requests($locked?'school':($deptFilter?:null)),'opStatMonth');
@@ -1247,12 +1259,14 @@ $body .= '<li><span>'.esc($ar['code']).' — '.esc($ar['org']).' <span class="mu
 }
 $body .= '</ul></div>';
 }
+$labels=req_labels_bulk(array_column($rows,'id'));
+$confirmedCounts=count_confirmed_bulk(array_column($rows,'id'));
 $tr=''; foreach($rows as $r){
 $mine=!empty($r['claimed_fund_id']) && in_array((int)$r['claimed_fund_id'],$myScope,true);
-$rowCls=is_request_urgent($r)?'urgent':($mine?(count_confirmed($r['id'])>=1?'claim-confirmed':'claim-light'):'');
+$rowCls=is_request_urgent($r)?'urgent':($mine?(($confirmedCounts[$r['id']]??0)>=1?'claim-confirmed':'claim-light'):'');
 $need=in_array($r['status'],['chosen','confirmed'])?' <span class="pill amber">нужно действие</span>':'';
 $fundName=$r['claimed_fund_id']?esc(fund_name_by_id($r['claimed_fund_id'])):'<span class="muted">свободна</span>';
-$tr.='<tr class="'.$rowCls.'" onclick="location=\'?p=request&id='.$r['id'].'\'"><td class="id"><a href="?p=request&id='.$r['id'].'">'.esc($r['code']).'</a></td><td>'.esc($r['org']).'</td><td>'.dt($r).'</td><td>'.$fundName.'</td><td>'.esc(req_label($r['id'])).'</td><td>'.pill($r['status']).$need.'</td></tr>';
+$tr.='<tr class="'.$rowCls.'" onclick="location=\'?p=request&id='.$r['id'].'\'"><td class="id"><a href="?p=request&id='.$r['id'].'">'.esc($r['code']).'</a></td><td>'.esc($r['org']).'</td><td>'.dt($r).'</td><td>'.$fundName.'</td><td>'.esc($labels[$r['id']]??'не выбран').'</td><td>'.pill($r['status']).$need.'</td></tr>';
 }
 $body.='<div class="head"><h2>Реестр заявок</h2><div><a class="btn ghost" href="?p=fund&tab=speakers">Спикеры Фонда</a> <a class="btn ghost" href="?p=calendar">📅 Календарь</a> <a class="btn ghost" href="?p=materials">🗂️ Материалы</a> <a class="btn ghost" href="?p=export">⬇ Экспорт в CSV</a></div></div>';
 $body.='<p class="muted">Новые заявки без спикера доступны всем фондам. <span class="pill" style="background:#eafaf0;color:#1a7f37">Светло-зелёным</span> отмечены заявки, взятые вашим фондом в обработку; <span class="pill" style="background:#c8f0d6;color:#1a7f37">зелёным</span> — с уже подтверждённым вашим спикером.</p>';
@@ -1339,9 +1353,10 @@ $body .= '<li><span>'.esc($ar['code']).' — '.esc($ar['org']).' <span class="mu
 }
 $body .= '</ul></div>';
 }
+$labels=req_labels_bulk(array_column($rows,'id'));
 $tr=''; foreach($rows as $r){
 $urgent_tr = is_request_urgent($r) ? 'urgent' : '';
-$tr.='<tr class="'.$urgent_tr.'" onclick="location=\'?p=request&id='.$r['id'].'\'"><td class="id"><a href="?p=request&id='.$r['id'].'">'.esc($r['code']).'</a></td><td>'.dt($r).'</td><td>'.esc(ages()[$r['age_group']]??'').'</td><td>'.esc(req_label($r['id'])).'</td><td>'.pill($r['status']).'</td></tr>';
+$tr.='<tr class="'.$urgent_tr.'" onclick="location=\'?p=request&id='.$r['id'].'\'"><td class="id"><a href="?p=request&id='.$r['id'].'">'.esc($r['code']).'</a></td><td>'.dt($r).'</td><td>'.esc(ages()[$r['age_group']]??'').'</td><td>'.esc($labels[$r['id']]??'не выбран').'</td><td>'.pill($r['status']).'</td></tr>';
 }
 $body.='<div class="head"><h2>'.esc($eff['org_name']).'</h2><div><a class="btn primary" href="?p=school&tab=new">+ Подать заявку</a> <a class="btn ghost" href="?p=calendar">📅 Календарь</a> <a class="btn ghost" href="?p=materials">🗂️ Материалы</a> <a class="btn ghost" href="?p=users&role=school">👥 Сотрудники</a> <a class="btn ghost" href="?p=export">⬇ Экспорт в CSV</a></div></div>';
 $sch_total=count($rows);
