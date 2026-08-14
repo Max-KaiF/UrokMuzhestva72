@@ -33,6 +33,7 @@ redirect('?p=verify_otp');
 if($a==='resend_otp'){
 $pid=(int)($_SESSION['pending_uid']??0); $pu=$pid?find_user_by_id($pid):null;
 if(!$pu){ unset($_SESSION['pending_uid']); flash_set('Сессия входа истекла. Войдите заново.'); redirect('?p=login'); }
+if(!otp_resend_allowed($pu['id'])){ flash_set('Код уже отправлялся недавно. Подождите немного перед повторной отправкой.'); redirect('?p=verify_otp'); }
 $sent=send_login_otp($pu);
 flash_set($sent?'Код отправлен повторно.':'Не удалось отправить код. Попробуйте позже.');
 redirect('?p=verify_otp');
@@ -309,6 +310,17 @@ if(!$u && $p==='login') unset($_SESSION['pending_uid']);
 if(!$u && !empty($_SESSION['pending_uid']) && !in_array($p,['login','verify_otp'])) redirect('?p=verify_otp');
 if(!$u && !in_array($p,['login','register','reset_password','reset_request','privacy','guide','verify_otp','demo'])) $p='login';
 if($u && ($p===''||$p==='login'||$p==='register')) $p=$u['role'];
+if($p==='export' && $u && in_array($u['role'],['fund','school'])){
+require_login();
+$rows = ($u['role']==='fund') ? fund_dashboard_requests($u) : (function() use($u){
+$ids=school_scope_ids($u); $in=implode(',',array_fill(0,count($ids),'?'));
+$st=db()->prepare("SELECT * FROM requests WHERE school_user_id IN ($in) AND (archived=0 OR archived IS NULL) ORDER BY id DESC"); $st->execute($ids); return $st->fetchAll();
+})();
+$csv=export_requests_csv($rows);
+header('Content-Type: text/csv; charset=utf-8');
+header('Content-Disposition: attachment; filename="requests_'.date('Y-m-d').'.csv"');
+echo $csv; exit;
+}
 if($p==='export' && $u && $u['role']==='operator'){
 require_login();
 $type=$_GET['type']??'requests';
@@ -1242,7 +1254,7 @@ $need=in_array($r['status'],['chosen','confirmed'])?' <span class="pill amber">�
 $fundName=$r['claimed_fund_id']?esc(fund_name_by_id($r['claimed_fund_id'])):'<span class="muted">свободна</span>';
 $tr.='<tr class="'.$rowCls.'" onclick="location=\'?p=request&id='.$r['id'].'\'"><td class="id"><a href="?p=request&id='.$r['id'].'">'.esc($r['code']).'</a></td><td>'.esc($r['org']).'</td><td>'.dt($r).'</td><td>'.$fundName.'</td><td>'.esc(req_label($r['id'])).'</td><td>'.pill($r['status']).$need.'</td></tr>';
 }
-$body.='<div class="head"><h2>Реестр заявок</h2><div><a class="btn ghost" href="?p=fund&tab=speakers">Спикеры Фонда</a> <a class="btn ghost" href="?p=calendar">📅 Календарь</a> <a class="btn ghost" href="?p=materials">🗂️ Материалы</a></div></div>';
+$body.='<div class="head"><h2>Реестр заявок</h2><div><a class="btn ghost" href="?p=fund&tab=speakers">Спикеры Фонда</a> <a class="btn ghost" href="?p=calendar">📅 Календарь</a> <a class="btn ghost" href="?p=materials">🗂️ Материалы</a> <a class="btn ghost" href="?p=export">⬇ Экспорт в CSV</a></div></div>';
 $body.='<p class="muted">Новые заявки без спикера доступны всем фондам. <span class="pill" style="background:#eafaf0;color:#1a7f37">Светло-зелёным</span> отмечены заявки, взятые вашим фондом в обработку; <span class="pill" style="background:#c8f0d6;color:#1a7f37">зелёным</span> — с уже подтверждённым вашим спикером.</p>';
 $body.= $rows ? '<table class="card-view"><thead><tr>'.sort_th('Код','code').sort_th('Организация','org').sort_th('Дата и время','date').sort_th('Фонд','fund').sort_th('Спикеры','speakers').sort_th('Статус','status').'</tr></thead><tbody>'.$tr.'</tbody></table>' : '<div class="card pad muted">Заявок пока нет.</div>';
 layout('Кабинет Фонда',$body); exit;
@@ -1331,7 +1343,7 @@ $tr=''; foreach($rows as $r){
 $urgent_tr = is_request_urgent($r) ? 'urgent' : '';
 $tr.='<tr class="'.$urgent_tr.'" onclick="location=\'?p=request&id='.$r['id'].'\'"><td class="id"><a href="?p=request&id='.$r['id'].'">'.esc($r['code']).'</a></td><td>'.dt($r).'</td><td>'.esc(ages()[$r['age_group']]??'').'</td><td>'.esc(req_label($r['id'])).'</td><td>'.pill($r['status']).'</td></tr>';
 }
-$body.='<div class="head"><h2>'.esc($eff['org_name']).'</h2><div><a class="btn primary" href="?p=school&tab=new">+ Подать заявку</a> <a class="btn ghost" href="?p=calendar">📅 Календарь</a> <a class="btn ghost" href="?p=materials">🗂️ Материалы</a> <a class="btn ghost" href="?p=users&role=school">👥 Сотрудники</a></div></div>';
+$body.='<div class="head"><h2>'.esc($eff['org_name']).'</h2><div><a class="btn primary" href="?p=school&tab=new">+ Подать заявку</a> <a class="btn ghost" href="?p=calendar">📅 Календарь</a> <a class="btn ghost" href="?p=materials">🗂️ Материалы</a> <a class="btn ghost" href="?p=users&role=school">👥 Сотрудники</a> <a class="btn ghost" href="?p=export">⬇ Экспорт в CSV</a></div></div>';
 $sch_total=count($rows);
 $sch_waiting=count(array_filter($rows,fn($r)=>$r['status']==='new'));
 $sch_inwork=count(array_filter($rows,fn($r)=>in_array($r['status'],['chosen','confirmed','prep'],true)));

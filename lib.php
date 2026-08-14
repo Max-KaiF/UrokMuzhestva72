@@ -352,6 +352,12 @@ function reset_login_failures($login){ db()->prepare("DELETE FROM login_attempts
 function finalize_login($u){ session_regenerate_id(true); $_SESSION['uid']=$u['id']; log_action($u['id'],$u['role'],'login','users',$u['id'],'Вход в систему'); }
 // ========== ДВУХФАКТОРНАЯ АУТЕНТИФИКАЦИЯ (код на email) ==========
 function generate_otp_code(){ return str_pad((string)random_int(0,999999),6,'0',STR_PAD_LEFT); }
+function otp_resend_allowed($userId,$cooldownSeconds=60){
+$st=db()->prepare("SELECT created_at FROM login_otp WHERE user_id=? ORDER BY id DESC LIMIT 1");
+$st->execute([$userId]); $row=$st->fetch();
+if(!$row) return true;
+return (time()-strtotime($row['created_at']))>=$cooldownSeconds;
+}
 function create_login_otp($userId){
 $code=generate_otp_code();
 $expires=date('Y-m-d H:i:s',strtotime('+10 minutes'));
@@ -1402,6 +1408,31 @@ $lesson_date = strtotime($r['udate']);
 $today = strtotime(date('Y-m-d'));
 $diff = ($lesson_date - $today) / (60 * 60 * 24);
 return ($diff >= 0 && $diff <= 3);
+}
+// ========== НАПОМИНАНИЯ О ЗАВТРАШНИХ УРОКАХ ==========
+function requests_tomorrow(){
+$tomorrow=date('Y-m-d',strtotime('+1 day'));
+$st=db()->prepare("SELECT * FROM requests WHERE udate=? AND status NOT IN ('done','closed','cancelled')");
+$st->execute([$tomorrow]); return $st->fetchAll();
+}
+function send_lesson_reminders(){
+$site=cfg()['site_title']; $url='https://урокмужества72.рф'; $n=0;
+foreach(requests_tomorrow() as $r){
+try{
+$school=find_user_by_id((int)($r['school_user_id']??0));
+$schoolEmail=$school['email']??''; $schoolName=$school['display_name']?:($school['org_name']??'заявитель');
+$reqUrl=$url.'?p=request&id='.$r['id'];
+$subject="[$site] Напоминание: урок по заявке {$r['code']} завтра";
+$time=$r['utime'].(!empty($r['utime_end'])?"–{$r['utime_end']}":'');
+$body="Здравствуйте!\r\n\r\nНапоминаем: урок по заявке {$r['code']} («{$schoolName}») запланирован на завтра, {$r['udate']} в {$time}.\r\nТема: ".($r['topic']?:'не указана')."\r\n\r\nПодробнее: $reqUrl\r\n\r\nЭто автоматическое напоминание.\r\n";
+if($schoolEmail){ @send_smtp_email($schoolEmail,$schoolName,$subject,$body); $n++; }
+foreach(req_confirmed_rows($r['id']) as $row){
+$sp=find_user_by_id((int)$row['speaker_user_id']);
+if($sp && !empty($sp['email'])){ @send_smtp_email($sp['email'],$sp['display_name']?:'спикер',$subject,$body); $n++; }
+}
+}catch(Throwable $e){}
+}
+return $n;
 }
 // ========== СЛОЙ 2: EMAIL-УВЕДОМЛЕНИЯ ==========
 function get_users_with_pending_actions() {
