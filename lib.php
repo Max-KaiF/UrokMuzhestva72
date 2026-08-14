@@ -100,6 +100,17 @@ foreach([
 "ALTER TABLE requests ADD COLUMN claimed_fund_id INTEGER",
 "ALTER TABLE requests ADD COLUMN claimed_at VARCHAR(40)",
 "ALTER TABLE requests ADD COLUMN desired_speaker_id INTEGER",
+"CREATE INDEX idx_requests_status ON requests(status)",
+"CREATE INDEX idx_requests_school ON requests(school_user_id)",
+"CREATE INDEX idx_requests_fund ON requests(claimed_fund_id)",
+"CREATE INDEX idx_requests_archived ON requests(archived)",
+"CREATE INDEX idx_requests_opgroup ON requests(op_group)",
+"CREATE INDEX idx_requests_udate ON requests(udate)",
+"CREATE INDEX idx_users_role ON users(role)",
+"CREATE INDEX idx_users_parent_school ON users(parent_school_id)",
+"CREATE INDEX idx_users_fund ON users(fund_user_id)",
+"CREATE INDEX idx_rs_request ON request_speakers(request_id)",
+"CREATE INDEX idx_rs_speaker ON request_speakers(speaker_user_id)",
 ] as $sql){ try{ db()->exec($sql); }catch(Throwable $e){} }
 try{ db()->exec("UPDATE requests SET speakers_needed=1 WHERE speakers_needed IS NULL"); }catch(Throwable $e){}
 try{ db()->exec("UPDATE requests SET lessons_per_speaker=1 WHERE lessons_per_speaker IS NULL OR lessons_per_speaker<1"); }catch(Throwable $e){}
@@ -1079,6 +1090,8 @@ case 'phone': $cmp=strcasecmp($a['phone']??'',$b['phone']??''); break;
 case 'address': $cmp=strcasecmp($a['address']??'',$b['address']??''); break;
 case 'building': $cmp=strnatcasecmp($a['building']??'',$b['building']??''); break;
 case 'status': $cmp=(int)($a['active']??0)<=>(int)($b['active']??0); break;
+case 'district': $cmp=strcasecmp($a['district']??'',$b['district']??''); break;
+case 'fund_name': $fa=$a['fund_user_id']?find_user_by_id((int)$a['fund_user_id']):null; $fb=$b['fund_user_id']?find_user_by_id((int)$b['fund_user_id']):null; $cmp=strcasecmp($fa['display_name']??'',$fb['display_name']??''); break;
 default: $cmp=0;
 }
 return $cmp*$mul;

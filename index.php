@@ -859,12 +859,14 @@ else { $og=$u['op_group']??'';
 if($og===''){ $superAdmin=true; if($role_filter){ $where.=" AND role=?"; $params[]=$role_filter; } }
 else { $where.=" AND role='school' AND (op_group=? OR (op_group IS NULL OR op_group='') AND level IN (".implode(',',array_fill(0,count(applicant_group_levels($og)),'?')).'))'; $params[]=$og; $params=array_merge($params,applicant_group_levels($og)); $scopeNote='Только ваши организации.'; }
 }
+$q=trim($_GET['q']??'');
+if($q!==''){ $where.=" AND (login LIKE ? OR display_name LIKE ? OR org_name LIKE ? OR email LIKE ?)"; $qq='%'.$q.'%'; $params=array_merge($params,[$qq,$qq,$qq,$qq]); }
 $st=db()->prepare("SELECT * FROM users $where ORDER BY role, display_name");
 $st->execute($params); $users=$st->fetchAll();
 if(!empty($_GET['sort'])) $users=sort_users_rows($users,$_GET['sort'],$_GET['dir']??'asc');
 $schoolIsRoot = $u['role']!=='school' || empty($u['parent_school_id']);
-if($superAdmin) $body.='<div class="card pad"><form method="get" style="display:flex;gap:10px;align-items:end;flex-wrap:wrap"><input type="hidden" name="p" value="users"><label class="lbl" style="margin:0">Фильтр по роли</label><select name="role" onchange="this.form.submit()"><option value="">Все</option><option value="school" '.($role_filter==='school'?'selected':'').'>Заявители</option><option value="speaker" '.($role_filter==='speaker'?'selected':'').'>Спикеры</option><option value="fund" '.($role_filter==='fund'?'selected':'').'>Фонд</option><option value="operator" '.($role_filter==='operator'?'selected':'').'>Оператор</option></select></form></div>';
-elseif($scopeNote) $body.='<p class="muted">'.$scopeNote.'</p>';
+if($superAdmin) $body.='<div class="card pad"><form method="get" style="display:flex;gap:10px;align-items:end;flex-wrap:wrap"><input type="hidden" name="p" value="users"><label class="lbl" style="margin:0">Фильтр по роли</label><select name="role" onchange="this.form.submit()"><option value="">Все</option><option value="school" '.($role_filter==='school'?'selected':'').'>Заявители</option><option value="speaker" '.($role_filter==='speaker'?'selected':'').'>Спикеры</option><option value="fund" '.($role_filter==='fund'?'selected':'').'>Фонд</option><option value="operator" '.($role_filter==='operator'?'selected':'').'>Оператор</option></select><label class="lbl" style="margin:0">Поиск</label><input type="search" name="q" value="'.esc($q).'" placeholder="Логин, ФИО, организация, email"><button class="btn primary sm">Найти</button>'.($q!==''?' <a class="btn ghost sm" href="?p=users'.($role_filter?'&role='.esc($role_filter):'').'">Сбросить</a>':'').'</form></div>';
+else { if($scopeNote) $body.='<p class="muted">'.$scopeNote.'</p>'; $body.='<form method="get" class="card pad" style="margin-bottom:14px;display:flex;gap:10px;align-items:end;flex-wrap:wrap"><input type="hidden" name="p" value="users"><label class="lbl" style="margin:0">Поиск</label><input type="search" name="q" value="'.esc($q).'" placeholder="Логин, ФИО, организация, email"><button class="btn primary sm">Найти</button>'.($q!==''?' <a class="btn ghost sm" href="?p=users">Сбросить</a>':'').'</form>'; }
 $body.='<div class="table-scroll"><table class="card-view resizable"><thead><tr><th>Логин</th>'.sort_th('ФИО/Орг','name').sort_th('Роль','role').sort_th('Email','email').sort_th('ФИО контактного лица','contact_name').sort_th('Должность','position').sort_th('Телефон','phone').sort_th('Адрес местонахождения','address').sort_th('№ корпуса','building').sort_th('Статус','status').'<th>Действия</th></tr></thead><tbody>';
 foreach($users as $x){
 $status=$x['active']?'<span class="pill green">активен</span>':'<span class="pill gray">ожидает</span>';
@@ -978,20 +980,30 @@ require_role('operator'); $tab=$_GET['tab']??'list';
 if($tab==='speakers'){
 $body='<div class="head"><h2>Реестр спикеров</h2><a class="btn ghost" href="?p=operator">← в кабинет</a></div>';
 $allsp=db()->query("SELECT * FROM users WHERE role='speaker' ORDER BY display_name")->fetchAll();
-$body.='<table class="card-view"><thead><tr><th>Спикер</th><th>Организация</th><th>Район</th><th>Возрастные группы</th><th>Телефон</th><th>Статус</th></tr></thead><tbody>';
+if(!empty($_GET['sort'])) $allsp=sort_users_rows($allsp,$_GET['sort'],$_GET['dir']??'asc');
+$body.='<div class="table-scroll"><table class="card-view resizable"><thead><tr>'.sort_th('Спикер','name').sort_th('Организация','fund_name').sort_th('Район','district').'<th>Возрастные группы</th>'.sort_th('Телефон','phone').sort_th('Статус','status').'</tr></thead><tbody>';
 foreach($allsp as $s){ $g=array_map(fn($k)=>ages()[$k]??$k,array_filter(explode(',',$s['age_groups']))); $f=$s['fund_user_id']?find_user_by_id((int)$s['fund_user_id']):null; $fname=($f && $f['display_name']!=='')?esc($f['display_name']):'<span class="muted">не указана</span>'; $stp=$s['active']?'<span class="pill green">активен</span>':'<span class="pill gray">на подтверждении</span>'; $body.='<tr onclick="location=\'?p=speaker_view&id='.$s['id'].'\'"><td class="id" data-label="Спикер"><a href="?p=speaker_view&id='.$s['id'].'">'.esc($s['display_name']).'</a></td><td data-label="Организация">'.$fname.'</td><td data-label="Район" class="muted">'.esc($s['district']?:'—').'</td><td data-label="Группы" class="muted">'.esc(implode(', ',$g)).'</td><td data-label="Телефон" class="muted">'.esc($s['phone']?:'—').'</td><td data-label="Статус">'.$stp.'</td></tr>'; }
-if(!$allsp) $body.='<tr><td colspan="6" class="muted">Спикеров пока нет.</td></tr>'; $body.='</tbody></table>';
+if(!$allsp) $body.='<tr><td colspan="6" class="muted">Спикеров пока нет.</td></tr>'; $body.='</tbody></table></div>';
 $pend=pending_speakers(); if($pend) $body.='<p class="muted" style="margin-top:12px">Ожидают подтверждения Фондом: '.count($pend).'.</p>';
 layout('Реестр спикеров',$body); exit;
 }
 if($tab==='archive'){
 $afil=['archived'=>1]; if(($u['op_group']??'')==='school') $afil['op_group']='school';
+if(!empty($_GET['org'])) $afil['org']=$_GET['org'];
+if(!empty($_GET['from_date'])) $afil['from_date']=$_GET['from_date'];
+if(!empty($_GET['to_date'])) $afil['to_date']=$_GET['to_date'];
 $rows=get_requests_list($afil);
 if(!empty($_GET['sort'])) $rows=sort_requests($rows,$_GET['sort'],$_GET['dir']??'asc');
 $body='<div class="head"><h2>Архив заявок</h2><a class="btn ghost" href="?p=operator">← в кабинет</a></div>';
 $body.='<p class="muted">Закрытые заявки старше 30 дней автоматически переносятся в архив.</p>';
+$body.='<form method="get" class="card pad" style="margin-bottom:14px;display:flex;gap:10px;flex-wrap:wrap;align-items:end"><input type="hidden" name="p" value="operator"><input type="hidden" name="tab" value="archive">'
+.'<label class="lbl" style="margin:0">Организация</label><input name="org" value="'.esc($_GET['org']??'').'" placeholder="Поиск">'
+.'<label class="lbl" style="margin:0">С</label><input type="date" name="from_date" value="'.esc($_GET['from_date']??'').'">'
+.'<label class="lbl" style="margin:0">По</label><input type="date" name="to_date" value="'.esc($_GET['to_date']??'').'">'
+.'<button class="btn primary sm">Фильтр</button> <a class="btn ghost sm" href="?p=operator&tab=archive">Сбросить</a></form>';
 $tr=''; foreach($rows as $r){ $tr.='<tr onclick="location=\'?p=request&id='.$r['id'].'\'"><td class="id"><a href="?p=request&id='.$r['id'].'">'.esc($r['code']).'</a></td><td>'.esc($r['org']).'</td><td>'.dt($r).'</td><td>'.esc(req_label($r['id'])).'</td><td>'.pill($r['status']).'</td><td class="muted">'.esc($r['archived_at']??'').'</td></tr>'; }
-$body.= $rows ? '<table class="card-view"><thead><tr>'.sort_th('Код','code').sort_th('Организация','org').sort_th('Дата','date').'<th>Спикеры</th>'.sort_th('Статус','status').'<th>Архивировано</th></tr></thead><tbody>'.$tr.'</tbody></table>' : '<div class="card pad muted">Архив пуст.</div>';
+$hasFilter=!empty($_GET['org'])||!empty($_GET['from_date'])||!empty($_GET['to_date']);
+$body.= $rows ? '<table class="card-view"><thead><tr>'.sort_th('Код','code').sort_th('Организация','org').sort_th('Дата','date').'<th>Спикеры</th>'.sort_th('Статус','status').'<th>Архивировано</th></tr></thead><tbody>'.$tr.'</tbody></table>' : '<div class="card pad muted">'.($hasFilter?'По заданным фильтрам ничего не найдено.':'Архив пуст.').'</div>';
 layout('Архив заявок',$body); exit;
 }
 if($tab==='moderation'){
