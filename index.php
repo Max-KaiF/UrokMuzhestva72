@@ -374,7 +374,7 @@ redirect('?p=operator&tab=archive');
 function layout($title,$body){
 $u=current_user(); $c=cfg(); $sess='';
 $fullLabel='';
-if($u){ $nm=($u['role']==='school')?(school_effective($u)['org_name']?:$u['display_name']):$u['display_name']; $roleWord=['operator'=>'Департамент','school'=>'Заявитель','speaker'=>'Спикер','fund'=>'Фонд'][$u['role']]??''; $label=$roleWord.(trim((string)$nm)!==''?': '.$nm:''); $fullLabel=$label;
+if($u){ $nm=($u['role']==='school')?(school_effective($u)['org_name']?:$u['display_name']):$u['display_name']; $fullLabel=trim((string)$nm);
 $sess='<a class="rolebadge" href="?p=profile" style="text-decoration:none">Профиль</a> <form method="post" style="display:inline"><input type="hidden" name="action" value="logout">'.csrf_field().'<button class="logout">Выйти</button></form>'; }
 $f=flash_get();
 $missing=profile_missing_fields($u);
