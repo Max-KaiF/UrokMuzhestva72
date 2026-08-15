@@ -1,6 +1,11 @@
 <?php
 $__https=(!empty($_SERVER['HTTPS'])&&$_SERVER['HTTPS']!=='off')||(($_SERVER['HTTP_X_FORWARDED_PROTO']??'')==='https')||(($_SERVER['SERVER_PORT']??'')=='443');
-session_set_cookie_params(['httponly'=>true,'samesite'=>'Lax','secure'=>$__https]); session_start();
+// Долгий срок жизни сессии — иначе установленное PWA разлогинивает при сворачивании
+// и переключении между приложениями (браузер/ОС может закрыть процесс и потерять
+// сессионную куку без явного Max-Age, а сервер — удалить данные сессии по gc_maxlifetime).
+$__sess_lifetime=60*60*24*30; // 30 дней
+ini_set('session.gc_maxlifetime',(string)$__sess_lifetime);
+session_set_cookie_params(['lifetime'=>$__sess_lifetime,'httponly'=>true,'samesite'=>'Lax','secure'=>$__https]); session_start();
 require __DIR__.'/lib.php';
 set_exception_handler(function($e){
 error_log('Необработанное исключение: '.$e->getMessage().' в '.$e->getFile().':'.$e->getLine());
@@ -378,7 +383,7 @@ if($u){ $nm=($u['role']==='school')?(school_effective($u)['org_name']?:$u['displ
 $sess=($fullLabel!==''?'<span class="rolebadge" title="'.esc($fullLabel).'">'.esc($fullLabel).'</span> ':'').'<a class="rolebadge" href="?p=profile" style="text-decoration:none">Профиль</a> <form method="post" style="display:inline"><input type="hidden" name="action" value="logout">'.csrf_field().'<button class="logout">Выйти</button></form>'; }
 $f=flash_get();
 $missing=profile_missing_fields($u);
-echo '<!DOCTYPE html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'.esc($title).'</title><link rel="icon" href="favicon.ico"><link rel="icon" type="image/png" href="favicon.png"><link rel="apple-touch-icon" href="icon-192.png"><link rel="manifest" href="manifest.json"><meta name="theme-color" content="#0039A6"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="УМ 72"><link rel="stylesheet" href="style.css?v='.(file_exists(__DIR__.'/style.css')?filemtime(__DIR__.'/style.css'):time()).'"></head><body>';
+echo '<!DOCTYPE html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>'.esc($title).'</title><link rel="icon" href="favicon.ico"><link rel="icon" type="image/png" href="favicon.png"><link rel="apple-touch-icon" href="icon-192.png"><link rel="manifest" href="manifest.json"><meta name="theme-color" content="#0039A6"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="УМ 72"><link rel="stylesheet" href="style.css?v='.(file_exists(__DIR__.'/style.css')?filemtime(__DIR__.'/style.css'):time()).'"></head><body>';
 echo '<script>if("serviceWorker" in navigator){window.addEventListener("load",function(){navigator.serviceWorker.register("sw.js").catch(function(){});});}</script>';
 echo '<header class="top"><div class="topbar"><div class="mark"><img src="favicon.png" alt="" style="width:100%;height:100%;object-fit:contain"></div><div class="brand"><h1>Урок Мужества</h1><p class="brand-full">Проект разработан в рамках региональной программы «Боевой кадровый резерв Тюменской области»</p><p class="brand-short">В рамках региональной программы «БКР ТО»</p></div><div class="session">'.$sess.'</div></div>'.($fullLabel!==''?'<div class="rolebadge-full-mobile">'.esc($fullLabel).'</div>':'').'</header>';
 echo '<main class="wrap">'; if($f) echo '<div class="flash">'.esc($f).'</div>';
