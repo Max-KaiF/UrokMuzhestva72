@@ -84,16 +84,3 @@ php_value max_input_time 3600
     ExpiresByType application/pdf "access plus 1 month"
     ExpiresByType font/woff2 "access plus 1 year"
 </IfModule>
-
-# ============================================
-# СЕРВИС-ВОРКЕР PWA — НЕ КЭШИРОВАТЬ ДОЛГО
-# (иначе обновлённая логика sw.js долго не подхватится на телефонах)
-# ============================================
-<FilesMatch "^sw\.js$">
-    <IfModule mod_expires.c>
-        ExpiresActive Off
-    </IfModule>
-    <IfModule mod_headers.c>
-        Header set Cache-Control "no-cache, must-revalidate"
-    </IfModule>
-</FilesMatch>
