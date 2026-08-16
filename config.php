@@ -38,5 +38,12 @@ return [
 'pass' => $get('UM_SMTP_PASS', ''),
 'secure' => $get('UM_SMTP_SECURE', ''),
 ],
+// Push-уведомления (Web Push). Пока ключи не заданы — функция просто выключена,
+// на остальную работу сайта никак не влияет.
+'vapid' => [
+'public'  => $get('UM_VAPID_PUBLIC', ''),
+'private' => $get('UM_VAPID_PRIVATE', ''),
+'subject' => $get('UM_VAPID_SUBJECT', 'mailto:'.$get('UM_SUPPORT_EMAIL', 'task@урокмужества72.рф')),
+],
 'site_title' => 'Уроки мужества 72',
 ];

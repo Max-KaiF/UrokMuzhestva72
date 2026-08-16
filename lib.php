@@ -64,6 +64,9 @@ id $pk, login VARCHAR(190) UNIQUE, fail_count INTEGER DEFAULT 0, locked_until VA
 db()->exec("CREATE TABLE IF NOT EXISTS password_reset_throttle (
 id $pk, email VARCHAR(190) UNIQUE, requested_at VARCHAR(40)
 )$tail");
+db()->exec("CREATE TABLE IF NOT EXISTS push_subscriptions (
+id $pk, user_id INTEGER, endpoint VARCHAR(500) UNIQUE, p256dh VARCHAR(255), auth VARCHAR(100), created_at VARCHAR(40)
+)$tail");
 foreach([
 "ALTER TABLE users ADD COLUMN fund_user_id INTEGER",
 "ALTER TABLE users ADD COLUMN email VARCHAR(190)",
@@ -385,6 +388,23 @@ return [false,'Неверный код.'];
 }
 db()->prepare("UPDATE login_otp SET used=1 WHERE id=?")->execute([$row['id']]);
 return [true,null];
+}
+// ========== PUSH-УВЕДОМЛЕНИЯ (Web Push) ==========
+// Пока в конфиге нет пары VAPID-ключей — функция выключена, ничего не делает.
+function vapid_public_key(){ return cfg()['vapid']['public'] ?? ''; }
+function push_enabled(){ $v=cfg()['vapid']??[]; return !empty($v['public']) && !empty($v['private']); }
+function save_push_subscription($userId,$endpoint,$p256dh,$auth){
+db()->prepare("DELETE FROM push_subscriptions WHERE endpoint=?")->execute([$endpoint]);
+db()->prepare("INSERT INTO push_subscriptions(user_id,endpoint,p256dh,auth,created_at) VALUES(?,?,?,?,?)")->execute([$userId,$endpoint,$p256dh,$auth,now()]);
+}
+function remove_push_subscription($endpoint){
+db()->prepare("DELETE FROM push_subscriptions WHERE endpoint=?")->execute([$endpoint]);
+}
+function push_subscriptions_for_user($userId){
+$st=db()->prepare("SELECT * FROM push_subscriptions WHERE user_id=?"); $st->execute([$userId]); return $st->fetchAll();
+}
+function has_push_subscription($userId){
+$st=db()->prepare("SELECT COUNT(*) c FROM push_subscriptions WHERE user_id=?"); $st->execute([$userId]); return (int)$st->fetch()['c']>0;
 }
 // ========== СБРОС ПАРОЛЯ ==========
 // Ограничение частоты — по email, а не по пользователю: чужой аккаунт можно
