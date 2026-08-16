@@ -151,6 +151,18 @@ db()->prepare("UPDATE users SET ".implode(',',$set)." WHERE id=?")->execute($par
 log_action($u['id'],$u['role'],'update_profile','users',$u['id'],'Обновлены данные профиля');
 flash_set('Данные сохранены.'.(strlen($np)>=5?' Пароль изменён.':'')); redirect('?p=profile');
 }
+if($a==='push_subscribe'){
+require_login(); $u=current_user();
+$endpoint=trim($_POST['endpoint']??''); $p256dh=trim($_POST['p256dh']??''); $auth=trim($_POST['auth']??'');
+if($endpoint!=='' && $p256dh!=='' && $auth!==''){ save_push_subscription($u['id'],$endpoint,$p256dh,$auth); }
+redirect('?p=profile');
+}
+if($a==='push_unsubscribe'){
+require_login();
+$endpoint=trim($_POST['endpoint']??'');
+if($endpoint!=='') remove_push_subscription($endpoint);
+redirect('?p=profile');
+}
 if($a==='request_reset'){
 $email=trim($_POST['email']??'');
 // Ответ одинаковый независимо от того, найден email или нет, и был ли запрос
@@ -804,6 +816,60 @@ $body.='<label class="lbl">Новый пароль (необязательно)<
 $body.='<button class="btn primary" style="margin-top:12px">Сохранить</button></form>';
 if($u['role']==='school' && !$isMember) $body.='<p class="muted" style="max-width:560px">При смене наименования ранее поданные заявки сохранят старое название.</p>';
 $body.='<script>function pdsw(){var w=document.getElementById("pdistrict_wrap");if(w)w.style.display=(document.getElementById("pdistrict_sel").value==="__other__")?"block":"none";}</script>';
+if(push_enabled()){
+$body.='<div class="card pad" style="max-width:560px;margin-top:16px"><h4>Push-уведомления</h4><p class="muted" id="pushStatus">Проверка…</p><button type="button" class="btn ghost" id="pushBtn" style="display:none"></button></div>';
+$body.='<script>(function(){
+var VAPID_KEY="'.esc(vapid_public_key()).'";
+function urlBase64ToUint8Array(base64String){
+var padding="=".repeat((4-base64String.length%4)%4);
+var base64=(base64String+padding).replace(/-/g,"+").replace(/_/g,"/");
+var raw=atob(base64),out=new Uint8Array(raw.length);
+for(var i=0;i<raw.length;i++) out[i]=raw.charCodeAt(i);
+return out;
+}
+var statusEl=document.getElementById("pushStatus"),btn=document.getElementById("pushBtn");
+if(!btn) return;
+if(!("serviceWorker" in navigator) || !("PushManager" in window)){ statusEl.textContent="Ваш браузер не поддерживает push-уведомления."; return; }
+function refresh(){
+navigator.serviceWorker.ready.then(function(reg){
+reg.pushManager.getSubscription().then(function(sub){
+if(sub){ statusEl.textContent="Уведомления включены на этом устройстве."; btn.textContent="Отключить уведомления"; btn.dataset.mode="off"; }
+else { statusEl.textContent="Получайте уведомления о новых заявках и назначениях прямо на телефон."; btn.textContent="Разрешить уведомления"; btn.dataset.mode="on"; }
+btn.style.display="inline-block";
+});
+});
+}
+refresh();
+function postCsrf(action,extra){
+var f=document.createElement("form"); f.method="post"; f.style.display="none";
+var csrf=document.querySelector(\'input[name="csrf"]\').value;
+var fields=Object.assign({action:action,csrf:csrf},extra||{});
+for(var k in fields){ var inp=document.createElement("input"); inp.name=k; inp.value=fields[k]; f.appendChild(inp); }
+document.body.appendChild(f); f.submit();
+}
+btn.addEventListener("click",function(){
+if(btn.dataset.mode==="off"){
+navigator.serviceWorker.ready.then(function(reg){
+reg.pushManager.getSubscription().then(function(sub){
+if(!sub) return;
+var endpoint=sub.endpoint;
+sub.unsubscribe().then(function(){ postCsrf("push_unsubscribe",{endpoint:endpoint}); });
+});
+});
+return;
+}
+Notification.requestPermission().then(function(perm){
+if(perm!=="granted"){ statusEl.textContent="Уведомления не разрешены в браузере."; return; }
+navigator.serviceWorker.ready.then(function(reg){
+reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:urlBase64ToUint8Array(VAPID_KEY)}).then(function(sub){
+var j=sub.toJSON();
+postCsrf("push_subscribe",{endpoint:j.endpoint,p256dh:j.keys.p256dh,auth:j.keys.auth});
+}).catch(function(err){ statusEl.textContent="Не удалось подписаться: "+err; });
+});
+});
+});
+})();</script>';
+}
 layout('Профиль',$body); exit;
 }
 // ========== РЕГИСТРАЦИЯ ==========

@@ -406,6 +406,132 @@ $st=db()->prepare("SELECT * FROM push_subscriptions WHERE user_id=?"); $st->exec
 function has_push_subscription($userId){
 $st=db()->prepare("SELECT COUNT(*) c FROM push_subscriptions WHERE user_id=?"); $st->execute([$userId]); return (int)$st->fetch()['c']>0;
 }
+// ---- Реализация протокола Web Push (RFC 8291 шифрование + RFC 8292 VAPID) без внешних библиотек ----
+function b64url_encode($bin){ return rtrim(strtr(base64_encode($bin),'+/','-_'),'='); }
+function b64url_decode($str){ $pad=strlen((string)$str)%4; if($pad) $str.=str_repeat('=',4-$pad); return base64_decode(strtr((string)$str,'-_','+/')); }
+function hkdf_extract($salt,$ikm){ return hash_hmac('sha256',$ikm,$salt,true); }
+function hkdf_expand($prk,$info,$len){ return substr(hash_hmac('sha256',$info."\x01",$prk,true),0,$len); }
+// Подпись ECDSA от openssl_sign приходит в DER — JOSE/ES256 ждёт «сырые» r||s по 32 байта.
+function ecdsa_der_to_raw($der){
+$off=1; // пропустить тег SEQUENCE (0x30)
+$off++; // пропустить байт длины (для P-256 подписи всегда короткая форма)
+$off++; // тег INTEGER (0x02) для r
+$rlen=ord($der[$off]); $off++;
+$r=substr($der,$off,$rlen); $off+=$rlen;
+$off++; // тег INTEGER (0x02) для s
+$slen=ord($der[$off]); $off++;
+$s=substr($der,$off,$slen); $off+=$slen;
+$norm=function($b){ while(strlen($b)>32 && ord($b[0])===0) $b=substr($b,1); return str_pad($b,32,"\x00",STR_PAD_LEFT); };
+return $norm($r).$norm($s);
+}
+function der_to_pem($der,$label){ return "-----BEGIN $label-----\n".chunk_split(base64_encode($der),64,"\n")."-----END $label-----\n"; }
+// Собрать PEM приватного EC-ключа (P-256) из «сырых» d и публичной точки — так как ключи
+// хранятся в конфиге в компактном base64url-виде, а не как готовый PEM-файл.
+function vapid_private_pem(){
+$cfg=cfg()['vapid'];
+$d=b64url_decode($cfg['private']);
+$pub=b64url_decode($cfg['public']); // 65 байт: 0x04 || X(32) || Y(32)
+$version="\x02\x01\x01";
+$privKey="\x04\x20".$d;
+$oidTlv="\x06\x08".hex2bin('2a8648ce3d030107'); // OID prime256v1
+$params="\xa0".chr(strlen($oidTlv)).$oidTlv;
+$pubBit="\x00".$pub;
+$pubTlv="\x03".chr(strlen($pubBit)).$pubBit;
+$pubField="\xa1".chr(strlen($pubTlv)).$pubTlv;
+$body=$version.$privKey.$params.$pubField;
+$der="\x30".chr(strlen($body)).$body;
+return der_to_pem($der,'EC PRIVATE KEY');
+}
+function vapid_public_pem_for($pubBin){
+// Публичный ключ подписчика (p256dh) в виде PEM — нужен для ECDH через openssl_pkey_derive.
+$oidTlv="\x06\x08".hex2bin('2a8648ce3d030107');
+$algId="\x30".chr(strlen("\x06\x07".hex2bin('2a8648ce3d0201').$oidTlv))."\x06\x07".hex2bin('2a8648ce3d0201').$oidTlv; // ecPublicKey + prime256v1
+$bit="\x00".$pubBin;
+$bitTlv="\x03".chr(strlen($bit)).$bit;
+$body=$algId.$bitTlv;
+$der="\x30".chr(strlen($body)).$body;
+return der_to_pem($der,'PUBLIC KEY');
+}
+function vapid_jwt($audience){
+$cfg=cfg()['vapid'];
+$header=b64url_encode(json_encode(['typ'=>'JWT','alg'=>'ES256']));
+$claims=b64url_encode(json_encode(['aud'=>$audience,'exp'=>time()+12*3600,'sub'=>$cfg['subject']]));
+$signInput=$header.'.'.$claims;
+$pk=openssl_pkey_get_private(vapid_private_pem());
+if(!$pk) return false;
+if(!openssl_sign($signInput,$derSig,$pk,OPENSSL_ALGO_SHA256)) return false;
+return $signInput.'.'.b64url_encode(ecdsa_der_to_raw($derSig));
+}
+// Шифрование тела сообщения по RFC 8291 (aes128gcm) под ключи конкретной подписки браузера.
+function webpush_encrypt($payload,$p256dhB64,$authB64){
+if(!function_exists('openssl_pkey_derive')) return false; // старый PHP без ECDH — пуш просто не отправится
+$uaPublic=b64url_decode($p256dhB64);
+$authSecret=b64url_decode($authB64);
+if(strlen($uaPublic)!==65 || strlen($authSecret)<1) return false;
+// Разовая (эфемерная) пара ключей нашего сервера для этого конкретного сообщения.
+$eph=openssl_pkey_new(['curve_name'=>'prime256v1','private_key_type'=>OPENSSL_KEYTYPE_EC]);
+if(!$eph) return false;
+$ephDetails=openssl_pkey_get_details($eph);
+$asPublic="\x04".$ephDetails['ec']['x'].$ephDetails['ec']['y'];
+$uaPem=vapid_public_pem_for($uaPublic);
+$uaPub=openssl_pkey_get_public($uaPem);
+if(!$uaPub) return false;
+$sharedSecret=openssl_pkey_derive($uaPub,$eph,32);
+if($sharedSecret===false) return false;
+$keyInfo="WebPush: info\x00".$uaPublic.$asPublic;
+$prkCombine=hkdf_extract($authSecret,$sharedSecret);
+$ikm=hkdf_expand($prkCombine,$keyInfo,32);
+$salt=random_bytes(16);
+$prk=hkdf_extract($salt,$ikm);
+$cek=hkdf_expand($prk,"Content-Encoding: aes128gcm\x00",16);
+$nonce=hkdf_expand($prk,"Content-Encoding: nonce\x00",12);
+$plain=$payload."\x02"; // делимитер конца записи (единственная запись, без паддинга)
+$tag='';
+$cipher=openssl_encrypt($plain,'aes-128-gcm',$cek,OPENSSL_RAW_DATA,$nonce,$tag);
+if($cipher===false) return false;
+$recordSize=pack('N',4096);
+$header=$salt.$recordSize.chr(strlen($asPublic)).$asPublic;
+return $header.$cipher.$tag;
+}
+// Отправить одно push-сообщение одной подписке. Никогда не бросает исключение наружу —
+// сбой пуша не должен ронять действие пользователя (назначение спикера, подтверждение и т.п.).
+function send_web_push($sub,$title,$body,$url=''){
+if(!push_enabled()) return false;
+try{
+$endpoint=$sub['endpoint'];
+$encrypted=webpush_encrypt(json_encode(['title'=>$title,'body'=>$body,'url'=>$url]),$sub['p256dh'],$sub['auth']);
+if($encrypted===false) return false;
+$origin=parse_url($endpoint,PHP_URL_SCHEME).'://'.parse_url($endpoint,PHP_URL_HOST);
+$jwt=vapid_jwt($origin);
+if($jwt===false) return false;
+$ch=curl_init($endpoint);
+curl_setopt_array($ch,[
+CURLOPT_POST=>true,
+CURLOPT_POSTFIELDS=>$encrypted,
+CURLOPT_HTTPHEADER=>[
+'Content-Type: application/octet-stream',
+'Content-Encoding: aes128gcm',
+'TTL: 86400',
+'Authorization: vapid t='.$jwt.', k='.cfg()['vapid']['public'],
+],
+CURLOPT_RETURNTRANSFER=>true,
+CURLOPT_TIMEOUT=>8,
+]);
+curl_exec($ch);
+$code=curl_getinfo($ch,CURLINFO_HTTP_CODE);
+curl_close($ch);
+if($code===404 || $code===410){ remove_push_subscription($endpoint); }
+return $code>=200 && $code<300;
+}catch(Throwable $e){
+error_log('Push-уведомление не отправлено: '.$e->getMessage());
+return false;
+}
+}
+// Отправить пуш всем устройствам пользователя, на которых он разрешил уведомления.
+function notify_push($userId,$title,$body,$url=''){
+if(!push_enabled()) return;
+foreach(push_subscriptions_for_user($userId) as $sub) send_web_push($sub,$title,$body,$url);
+}
 // ========== СБРОС ПАРОЛЯ ==========
 // Ограничение частоты — по email, а не по пользователю: чужой аккаунт можно
 // заваливать письмами о сбросе, даже не имея своего логина.
@@ -1113,8 +1239,9 @@ $confirmed=req_confirmed_rows($r['id']);
 $speakerContacts=[];
 foreach($confirmed as $row){
 $sp=find_user_by_id((int)$row['speaker_user_id']);
-if($sp&&!empty($sp['email'])) $speakerContacts[]=['email'=>$sp['email'],'name'=>$sp['display_name']?:'спикер'];
+if($sp) $speakerContacts[]=['id'=>$sp['id'],'email'=>$sp['email']??'','name'=>$sp['display_name']?:'спикер'];
 }
+$pushUrl='?p=request&id='.$r['id'];
 $subject=''; $body='';
 switch($type){
 case 'confirmed':
@@ -1123,7 +1250,9 @@ $body="Здравствуйте!\r\n\r\nПо заявке {$r['code']} от «{$
 foreach($confirmed as $row) $body.="  • {$row['display_name']}\r\n";
 $body.="\r\nПодробнее: $reqUrl\r\n\r\nЭто автоматическое уведомление.\r\n";
 if($schoolEmail) @send_smtp_email($schoolEmail,$schoolName,$subject,$body);
-foreach($speakerContacts as $sp) @send_smtp_email($sp['email'],$sp['name'],$subject,$body);
+foreach($speakerContacts as $sp) if($sp['email']) @send_smtp_email($sp['email'],$sp['name'],$subject,$body);
+if($school) notify_push($school['id'],'Состав подтверждён',"Заявка {$r['code']}: спикеры на урок подтверждены.",$pushUrl);
+foreach($speakerContacts as $sp) notify_push($sp['id'],'Вы подтверждены на урок',"Заявка {$r['code']}, {$r['udate']} {$r['utime']}.",$pushUrl);
 break;
 case 'replaced':
 $oldName=$extra['old_name']??''; $newName=$extra['new_name']??''; $reason=$extra['reason']??'';
@@ -1133,16 +1262,21 @@ if($reason!=='') $body.="Причина: $reason\r\n";
 $body.="\r\nПодробнее: $reqUrl\r\n\r\nЭто автоматическое уведомление.\r\n";
 if($schoolEmail) @send_smtp_email($schoolEmail,$schoolName,$subject,$body);
 $newSid=(int)($extra['new_sid']??0);
-if($newSid){ $newSp=find_user_by_id($newSid); if($newSp&&!empty($newSp['email'])) @send_smtp_email($newSp['email'],$newSp['display_name']?:'спикер',$subject,$body); }
+$newSp=$newSid?find_user_by_id($newSid):null;
+if($newSp&&!empty($newSp['email'])) @send_smtp_email($newSp['email'],$newSp['display_name']?:'спикер',$subject,$body);
+if($school) notify_push($school['id'],'Замена спикера',"Заявка {$r['code']}: $oldName → $newName.",$pushUrl);
+if($newSp) notify_push($newSp['id'],'Вы назначены на урок',"Заявка {$r['code']}, {$r['udate']} {$r['utime']} (замена).",$pushUrl);
 break;
 case 'not_held':
 $reason=$extra['reason']??'не указана';
 $subject="[$site] Урок по заявке {$r['code']} не состоялся";
 $body="Здравствуйте!\r\n\r\nУрок по заявке {$r['code']} от «{$schoolName}» не состоялся.\r\nДата: {$r['udate']} {$r['utime']}\r\nПричина: $reason\r\n";
 $body.="\r\nПодробнее: $reqUrl\r\n\r\nЭто автоматическое уведомление.\r\n";
-foreach($speakerContacts as $sp) @send_smtp_email($sp['email'],$sp['name'],$subject,$body);
-$ops=db()->query("SELECT email, display_name FROM users WHERE role='operator' AND email<>'' AND active=1")->fetchAll();
+foreach($speakerContacts as $sp) if($sp['email']) @send_smtp_email($sp['email'],$sp['name'],$subject,$body);
+$ops=db()->query("SELECT id, email, display_name FROM users WHERE role='operator' AND email<>'' AND active=1")->fetchAll();
 foreach($ops as $op) @send_smtp_email($op['email'],$op['display_name']?:'оператор',$subject,$body);
+foreach($speakerContacts as $sp) notify_push($sp['id'],'Урок не состоялся',"Заявка {$r['code']}: $reason",$pushUrl);
+foreach($ops as $op) notify_push($op['id'],'Урок не состоялся',"Заявка {$r['code']} от «{$schoolName}».",$pushUrl);
 break;
 case 'returned_to_processing':
 $reason=$extra['reason']??'';
@@ -1151,7 +1285,9 @@ $body="Здравствуйте!\r\n\r\nЗаявка {$r['code']} от «{$schoo
 if($reason!=='') $body.="Причина: $reason\r\n";
 $body.="\r\nПодробнее: $reqUrl\r\n\r\nЭто автоматическое уведомление.\r\n";
 if($schoolEmail) @send_smtp_email($schoolEmail,$schoolName,$subject,$body);
-foreach($speakerContacts as $sp) @send_smtp_email($sp['email'],$sp['name'],$subject,$body);
+foreach($speakerContacts as $sp) if($sp['email']) @send_smtp_email($sp['email'],$sp['name'],$subject,$body);
+if($school) notify_push($school['id'],'Заявка возвращена в обработку',"Заявка {$r['code']} снова доступна фондам.",$pushUrl);
+foreach($speakerContacts as $sp) notify_push($sp['id'],'Заявка возвращена в обработку',"Заявка {$r['code']}.",$pushUrl);
 break;
 }
 }catch(Throwable $e){ /* не ломаем основной поток */ }
@@ -1520,10 +1656,13 @@ $reqUrl=$url.'?p=request&id='.$r['id'];
 $subject="[$site] Напоминание: урок по заявке {$r['code']} завтра";
 $time=$r['utime'].(!empty($r['utime_end'])?"–{$r['utime_end']}":'');
 $body="Здравствуйте!\r\n\r\nНапоминаем: урок по заявке {$r['code']} («{$schoolName}») запланирован на завтра, {$r['udate']} в {$time}.\r\nТема: ".($r['topic']?:'не указана')."\r\n\r\nПодробнее: $reqUrl\r\n\r\nЭто автоматическое напоминание.\r\n";
+$pushUrl='?p=request&id='.$r['id'];
 if($schoolEmail){ @send_smtp_email($schoolEmail,$schoolName,$subject,$body); $n++; }
+if($school) notify_push($school['id'],'Урок завтра',"Заявка {$r['code']}, завтра в $time.",$pushUrl);
 foreach(req_confirmed_rows($r['id']) as $row){
 $sp=find_user_by_id((int)$row['speaker_user_id']);
 if($sp && !empty($sp['email'])){ @send_smtp_email($sp['email'],$sp['display_name']?:'спикер',$subject,$body); $n++; }
+if($sp) notify_push($sp['id'],'Урок завтра',"Заявка {$r['code']}, завтра в $time.",$pushUrl);
 }
 }catch(Throwable $e){}
 }
