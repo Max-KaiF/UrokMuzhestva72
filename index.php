@@ -153,6 +153,10 @@ flash_set('Данные сохранены.'.(strlen($np)>=5?' Пароль из
 }
 if($a==='request_reset'){
 $email=trim($_POST['email']??'');
+// Ответ одинаковый независимо от того, найден email или нет, и был ли запрос
+// отклонён лимитом частоты — иначе по разнице сообщений можно перебором
+// узнать, какие email зарегистрированы в системе.
+if($email!=='' && reset_request_allowed($email)){
 [$ok,$data]=create_reset_token($email);
 if($ok){
 $u=$data['user']; $token=$data['token'];
@@ -160,8 +164,9 @@ $site=cfg()['site_title'];
 $resetUrl="https://урокмужества72.рф?p=reset_password&token=$token";
 $body="Здравствуйте, {$u['display_name']}!\r\n\r\nВы запросили сброс пароля в системе \"$site\".\r\n\r\nПерейдите по ссылке (действует 1 час):\r\n$resetUrl\r\n\r\nЕсли вы не запрашивали сброс — проигнорируйте это письмо.\r\n";
 send_smtp_email($u['email'],$u['display_name'],"[$site] Сброс пароля",$body);
-flash_set('Инструкция по сбросу пароля отправлена на email.');
-} else { flash_set($data); }
+}
+}
+flash_set('Если такой email зарегистрирован в системе, письмо с инструкцией по сбросу пароля отправлено.');
 redirect('?p=login');
 }
 if($a==='reset_password'){
@@ -243,7 +248,8 @@ if(!empty($_FILES['file']['name'])){
 if($_FILES['file']['error']!==UPLOAD_ERR_OK){ flash_set('Ошибка загрузки файла (возможно, превышен допустимый размер).'); redirect('?p=materials'); }
 if($_FILES['file']['size']>MATERIAL_MAX_BYTES){ flash_set('Файл слишком большой (максимум 100 МБ). Оставьте ссылку на файл вместо загрузки.'); redirect('?p=materials'); }
 $ext=strtolower(pathinfo($_FILES['file']['name'],PATHINFO_EXTENSION));
-$stored=bin2hex(random_bytes(16)).($ext?".$ext":'');
+if(!in_array($ext,material_allowed_extensions(),true)){ flash_set('Недопустимый тип файла. Разрешены: '.implode(', ',material_allowed_extensions()).'. Для другого типа — оставьте ссылку.'); redirect('?p=materials'); }
+$stored=bin2hex(random_bytes(16)).".$ext";
 $dir=__DIR__.'/uploads/materials'; if(!is_dir($dir)) mkdir($dir,0755,true);
 if(!move_uploaded_file($_FILES['file']['tmp_name'],$dir.'/'.$stored)){ flash_set('Не удалось сохранить файл.'); redirect('?p=materials'); }
 $filePath=$stored; $fileName=$_FILES['file']['name']; $fileSize=$_FILES['file']['size'];
@@ -265,7 +271,8 @@ if(!empty($_FILES['file']['name'])){
 if($_FILES['file']['error']!==UPLOAD_ERR_OK){ flash_set('Ошибка загрузки файла.'); redirect('?p=material_edit&id='.$mid); }
 if($_FILES['file']['size']>MATERIAL_MAX_BYTES){ flash_set('Файл слишком большой (максимум 100 МБ). Оставьте ссылку на файл вместо загрузки.'); redirect('?p=material_edit&id='.$mid); }
 $ext=strtolower(pathinfo($_FILES['file']['name'],PATHINFO_EXTENSION));
-$stored=bin2hex(random_bytes(16)).($ext?".$ext":'');
+if(!in_array($ext,material_allowed_extensions(),true)){ flash_set('Недопустимый тип файла. Разрешены: '.implode(', ',material_allowed_extensions()).'. Для другого типа — оставьте ссылку.'); redirect('?p=material_edit&id='.$mid); }
+$stored=bin2hex(random_bytes(16)).".$ext";
 $dir=__DIR__.'/uploads/materials'; if(!is_dir($dir)) mkdir($dir,0755,true);
 if(!move_uploaded_file($_FILES['file']['tmp_name'],$dir.'/'.$stored)){ flash_set('Не удалось сохранить файл.'); redirect('?p=material_edit&id='.$mid); }
 if(!empty($m['file_path'])){ $old=__DIR__.'/uploads/materials/'.$m['file_path']; if(is_file($old)) @unlink($old); }

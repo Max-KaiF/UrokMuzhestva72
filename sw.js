@@ -2,7 +2,7 @@
 // Все страницы index.php (личные кабинеты, формы с CSRF-токеном, разные роли)
 // намеренно НЕ кэшируются — идут напрямую в сеть, чтобы не показывать
 // устаревшие данные и не ломать отправку форм просроченным токеном.
-const CACHE_NAME = 'um72-static-v1';
+const CACHE_NAME = 'um72-static-v2';
 const STATIC_ASSETS = [
   '/style.css',
   '/favicon.ico',
@@ -10,7 +10,8 @@ const STATIC_ASSETS = [
   '/icon-192.png',
   '/icon-512.png',
   '/icon-maskable-512.png',
-  '/manifest.json'
+  '/manifest.json',
+  '/offline.html'
 ];
 
 self.addEventListener('install', (event) => {
@@ -35,6 +36,16 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
+
+  // Переходы по страницам (личный кабинет, формы) в сеть всегда идут напрямую —
+  // но если сети совсем нет, показываем свою заглушку вместо ошибки браузера.
+  if (req.mode === 'navigate') {
+    event.respondWith(
+      fetch(req).catch(() => caches.match('/offline.html'))
+    );
+    return;
+  }
+
   const isStaticAsset = STATIC_ASSETS.some((path) => url.pathname === path || url.pathname.endsWith(path));
   if (!isStaticAsset) return;
 

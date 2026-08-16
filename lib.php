@@ -61,6 +61,9 @@ id $pk, speaker_user_id INTEGER, date_from VARCHAR(20), date_to VARCHAR(20), rea
 db()->exec("CREATE TABLE IF NOT EXISTS login_attempts (
 id $pk, login VARCHAR(190) UNIQUE, fail_count INTEGER DEFAULT 0, locked_until VARCHAR(40), last_attempt_at VARCHAR(40)
 )$tail");
+db()->exec("CREATE TABLE IF NOT EXISTS password_reset_throttle (
+id $pk, email VARCHAR(190) UNIQUE, requested_at VARCHAR(40)
+)$tail");
 foreach([
 "ALTER TABLE users ADD COLUMN fund_user_id INTEGER",
 "ALTER TABLE users ADD COLUMN email VARCHAR(190)",
@@ -384,6 +387,20 @@ db()->prepare("UPDATE login_otp SET used=1 WHERE id=?")->execute([$row['id']]);
 return [true,null];
 }
 // ========== СБРОС ПАРОЛЯ ==========
+// Ограничение частоты — по email, а не по пользователю: чужой аккаунт можно
+// заваливать письмами о сбросе, даже не имея своего логина.
+function reset_request_allowed($email,$cooldownSeconds=60){
+$email=strtolower(trim($email));
+if($email==='') return true;
+$st=db()->prepare("SELECT requested_at FROM password_reset_throttle WHERE email=?");
+$st->execute([$email]); $row=$st->fetch();
+$allowed=!$row || (time()-strtotime($row['requested_at']))>=$cooldownSeconds;
+if($allowed){
+if($row) db()->prepare("UPDATE password_reset_throttle SET requested_at=? WHERE email=?")->execute([now(),$email]);
+else db()->prepare("INSERT INTO password_reset_throttle(email,requested_at) VALUES(?,?)")->execute([$email,now()]);
+}
+return $allowed;
+}
 function create_reset_token($email){
 $u=find_user_by_email($email);
 if(!$u) return [false,'Пользователь с таким email не найден.'];
@@ -1025,6 +1042,10 @@ function set_vet_feedback($rid,$sid,$comment){ db()->prepare("UPDATE request_spe
 // ========== МАТЕРИАЛЫ ==========
 const MATERIAL_MAX_BYTES = 104857600; // 100 МБ
 const PHOTO_MAX_BYTES = 8388608; // 8 МБ
+// Белый список расширений — тот же, что уже разрешён к раздаче в uploads/ (см. .htaccess).
+// Всё остальное (.html, .svg, .js и т.п.) сервер отдал бы напрямую по прямой ссылке,
+// поэтому такие файлы не принимаем ещё на этапе загрузки.
+function material_allowed_extensions(){ return ['pdf','doc','docx','ppt','pptx','xls','xlsx','mp4','avi','mov','mkv','zip','rar','7z','jpg','jpeg','png','txt','webm','flv','wmv']; }
 function material_topics(){ return db()->query("SELECT DISTINCT topic FROM materials WHERE type='tech_map' AND topic IS NOT NULL AND topic<>'' ORDER BY topic")->fetchAll(PDO::FETCH_COLUMN); }
 function add_material($title,$desc,$type,$topic,$link,$filePath,$fileName,$fileSize,$uploadedBy){
 db()->prepare("INSERT INTO materials(title,description,type,topic,link,file_path,file_name,file_size,uploaded_by,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)")
