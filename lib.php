@@ -355,6 +355,35 @@ db()->prepare("INSERT INTO login_attempts(login,fail_count,locked_until,last_att
 }
 }
 function reset_login_failures($login){ db()->prepare("DELETE FROM login_attempts WHERE login=?")->execute([$login]); }
+// ========== СУТОЧНЫЕ ЛИМИТЫ НА ПОДАЧУ (защита от флуда) ==========
+function today_bounds(){ $d=date('Y-m-d'); return [$d.' 00:00:00', $d.' 23:59:59']; }
+// Заявитель (вся организация — головной аккаунт + сотрудники) — не более 4 заявок на урок в сутки.
+function school_requests_today_count($school){
+[$from,$to]=today_bounds();
+$scope=school_scope_ids($school);
+if(!$scope) return 0;
+$in=implode(',',array_fill(0,count($scope),'?'));
+$st=db()->prepare("SELECT COUNT(*) c FROM requests WHERE school_user_id IN ($in) AND created_at BETWEEN ? AND ?");
+$st->execute(array_merge($scope,[$from,$to]));
+return (int)$st->fetch()['c'];
+}
+function school_daily_limit_reached($school,$limit=4){ return school_requests_today_count($school)>=$limit; }
+// Фонд — не более 4 новых регистраций спикеров в сутки (чтобы очередь на подтверждение не заваливало).
+function fund_speaker_registrations_today_count($fundUserId){
+[$from,$to]=today_bounds();
+$st=db()->prepare("SELECT COUNT(*) c FROM users WHERE role='speaker' AND fund_user_id=? AND created_at BETWEEN ? AND ?");
+$st->execute([$fundUserId,$from,$to]);
+return (int)$st->fetch()['c'];
+}
+function fund_speaker_reg_limit_reached($fundUserId,$limit=4){ return $fundUserId && fund_speaker_registrations_today_count($fundUserId)>=$limit; }
+// Департамент — не более 5 новых заявок на регистрацию организаций в сутки (на модерацию).
+function dept_school_registrations_today_count($opGroup){
+[$from,$to]=today_bounds();
+$st=db()->prepare("SELECT COUNT(*) c FROM users WHERE role='school' AND op_group=? AND (parent_school_id IS NULL) AND created_at BETWEEN ? AND ?");
+$st->execute([$opGroup,$from,$to]);
+return (int)$st->fetch()['c'];
+}
+function dept_school_reg_limit_reached($opGroup,$limit=5){ return dept_school_registrations_today_count($opGroup)>=$limit; }
 function finalize_login($u){ session_regenerate_id(true); $_SESSION['uid']=$u['id']; log_action($u['id'],$u['role'],'login','users',$u['id'],'Вход в систему'); }
 // ========== ДВУХФАКТОРНАЯ АУТЕНТИФИКАЦИЯ (код на email) ==========
 function generate_otp_code(){ return str_pad((string)random_int(0,999999),6,'0',STR_PAD_LEFT); }
