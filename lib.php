@@ -367,7 +367,7 @@ $st=db()->prepare("SELECT COUNT(*) c FROM requests WHERE school_user_id IN ($in)
 $st->execute(array_merge($scope,[$from,$to]));
 return (int)$st->fetch()['c'];
 }
-function school_daily_limit_reached($school,$limit=4){ return school_requests_today_count($school)>=$limit; }
+function school_daily_limit_reached($school,$limit=6){ return school_requests_today_count($school)>=$limit; }
 // Фонд — не более 4 новых регистраций спикеров в сутки (чтобы очередь на подтверждение не заваливало).
 function fund_speaker_registrations_today_count($fundUserId){
 [$from,$to]=today_bounds();

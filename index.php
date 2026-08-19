@@ -216,7 +216,7 @@ if($f['phone']===null){ fail_redirect('Укажите телефон в форм
 if($f['udate']<min_create_date()){ fail_redirect('Дату урока можно выбрать не ранее чем через 10 дней.','?p=school&tab=new'); }
 if(!valid_slot($f['utime'])||!valid_slot($f['utime_end'])){ fail_redirect('Время — с 8:00 до 18:00, минуты кратны 10.','?p=school&tab=new'); }
 if(tmin($f['utime_end'])<=tmin($f['utime'])){ fail_redirect('Время окончания должно быть позже времени начала.','?p=school&tab=new'); }
-if(school_daily_limit_reached($u)){ fail_redirect('Ваша организация уже подала максимум заявок на сегодня (4). Попробуйте завтра.','?p=school&tab=new'); }
+if(school_daily_limit_reached($u)){ fail_redirect('Ваша организация уже подала максимум заявок на сегодня (6). Попробуйте завтра.','?p=school&tab=new'); }
 $dsid=(int)($_POST['desired_speaker_id']??0);
 if($dsid){ $dsp=find_user_by_id($dsid); if(!$dsp||$dsp['role']!=='speaker'||!$dsp['active']) $dsid=0; }
 $f['desired_speaker_id']=$dsid;
