@@ -738,6 +738,72 @@ function delete_test_question($id,$actorId){
 db()->prepare("DELETE FROM speaker_test_questions WHERE id=?")->execute([$id]);
 log_action($actorId,'operator','test_question_delete','speaker_test_questions',$id,"Удалён вопрос теста #$id");
 }
+// ---- прохождение теста спикером ----
+function test_pass_threshold($total){ return (int)ceil($total*0.8); }
+function speaker_certified_groups($speaker){ return array_values(array_filter(explode(',',(string)($speaker['certified_age_groups']??'')))); }
+function speaker_is_certified($speaker,$ageGroup){ return in_array($ageGroup,speaker_certified_groups($speaker),true); }
+function speaker_last_attempt($speakerId,$ageGroup){
+$st=db()->prepare("SELECT * FROM speaker_test_attempts WHERE speaker_user_id=? AND age_group=? ORDER BY id DESC LIMIT 1");
+$st->execute([$speakerId,$ageGroup]); return $st->fetch()?:null;
+}
+function test_attempt_allowed($speakerId,$ageGroup,$cooldownSeconds=86400){
+$last=speaker_last_attempt($speakerId,$ageGroup);
+if(!$last) return true;
+return (time()-strtotime($last['created_at']))>=$cooldownSeconds;
+}
+// Сводка допуска спикера по всем возрастным группам — для его личного кабинета.
+function speaker_test_overview($speaker){
+$counts=test_question_counts(); $out=[];
+foreach(ages() as $k=>$label){
+$total=$counts[$k]??0;
+$last=speaker_last_attempt($speaker['id'],$k);
+$out[$k]=[
+'label'=>$label,
+'total_questions'=>$total,
+'ready'=>$total>=3,
+'certified'=>speaker_is_certified($speaker,$k),
+'last'=>$last,
+'can_retake'=>test_attempt_allowed($speaker['id'],$k),
+];
+}
+return $out;
+}
+// Вопросы для прохождения — без правильного ответа, в случайном порядке.
+function test_questions_for_attempt($ageGroup){
+$rows=list_test_questions($ageGroup);
+$rows=array_filter($rows,fn($q)=>!empty($q['active']));
+$rows=array_values($rows);
+shuffle($rows);
+return array_map(fn($q)=>['id'=>$q['id'],'question'=>$q['question'],'options'=>['a'=>$q['option_a'],'b'=>$q['option_b'],'c'=>$q['option_c'],'d'=>$q['option_d']]],$rows);
+}
+// $answers: [question_id => 'a'|'b'|'c'|'d']
+function submit_speaker_test($speaker,$ageGroup,$answers){
+if(!array_key_exists($ageGroup,ages())) return [false,'Некорректная возрастная группа.'];
+if(!test_attempt_allowed($speaker['id'],$ageGroup)) return [false,'Следующая попытка будет доступна через сутки после предыдущей.'];
+$questions=list_test_questions($ageGroup);
+$questions=array_values(array_filter($questions,fn($q)=>!empty($q['active'])));
+if(count($questions)<3) return [false,'По этой группе пока недостаточно вопросов для теста.'];
+$score=0; $total=count($questions); $detail=[];
+foreach($questions as $q){
+$given=$answers[$q['id']]??null;
+$ok=$given===$q['correct_option'];
+if($ok) $score++;
+$detail[]=['question_id'=>(int)$q['id'],'question'=>$q['question'],'given'=>$given,'correct'=>$q['correct_option'],'ok'=>$ok];
+}
+$passed=$score>=test_pass_threshold($total);
+db()->prepare("INSERT INTO speaker_test_attempts(speaker_user_id,age_group,score,total,passed,answers,created_at) VALUES(?,?,?,?,?,?,?)")
+->execute([$speaker['id'],$ageGroup,$score,$total,$passed?1:0,json_encode($detail,JSON_UNESCAPED_UNICODE),now()]);
+if($passed){
+$cur=speaker_certified_groups($speaker);
+if(!in_array($ageGroup,$cur,true)){ $cur[]=$ageGroup; db()->prepare("UPDATE users SET certified_age_groups=? WHERE id=?")->execute([implode(',',$cur),$speaker['id']]); }
+}
+log_action($speaker['id'],'speaker','speaker_test_attempt','users',$speaker['id'],"Тест «".ages()[$ageGroup]."»: $score из $total".($passed?' — пройден':' — не пройден'));
+return [true,['score'=>$score,'total'=>$total,'passed'=>$passed]];
+}
+function speaker_test_attempts_history($speakerId,$ageGroup=null){
+if($ageGroup){ $st=db()->prepare("SELECT * FROM speaker_test_attempts WHERE speaker_user_id=? AND age_group=? ORDER BY id DESC"); $st->execute([$speakerId,$ageGroup]); return $st->fetchAll(); }
+$st=db()->prepare("SELECT * FROM speaker_test_attempts WHERE speaker_user_id=? ORDER BY id DESC"); $st->execute([$speakerId]); return $st->fetchAll();
+}
 function child_subfunds($head){ $st=db()->prepare("SELECT * FROM users WHERE role='fund' AND parent_fund_id=? ORDER BY display_name"); $st->execute([$head['id']]); return $st->fetchAll(); }
 function fund_label($f){ $n=($f['display_name']!=='')?$f['display_name']:('Организация №'.$f['id']); if(!empty($f['parent_fund_id'])) $n='— '.$n.' (подразделение'.(!empty($f['district'])?', '.$f['district']:'').')'; elseif(!empty($f['district'])) $n.=' ('.$f['district'].')'; return $n; }
 function active_speakers($fund=null){ if($fund){ $st=db()->prepare("SELECT * FROM users WHERE role='speaker' AND active=1 AND fund_user_id=? ORDER BY display_name"); $st->execute([$fund['id']]); return $st->fetchAll(); } return db()->query("SELECT * FROM users WHERE role='speaker' AND active=1 ORDER BY display_name")->fetchAll(); }

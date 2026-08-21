@@ -251,6 +251,16 @@ if($a==='reject_school_member'){ require_role('school'); [$ok,$msg]=reject_schoo
 if($a==='transfer_school_head'){ require_role('school'); [$ok,$msg]=transfer_school_head($u,(int)($_POST['uid']??0)); flash_set($msg); redirect('?p=users&role=school'); }
 if($a==='add_unavailable'){ require_role('speaker'); [$ok,$msg]=add_unavailable_period($u,$_POST['date_from']??'',$_POST['date_to']??'',$_POST['reason']??''); flash_set($msg); redirect('?p=speaker'); }
 if($a==='remove_unavailable'){ require_role('speaker'); [$ok,$msg]=remove_unavailable_period($u,(int)($_POST['uid']??0)); flash_set($msg); redirect('?p=speaker'); }
+if($a==='submit_speaker_test'){
+require_role('speaker');
+$ageGroup=$_POST['age_group']??'';
+[$ok,$res]=submit_speaker_test($u,$ageGroup,$_POST['answers']??[]);
+if(!$ok){ flash_set($res); redirect('?p=speaker'); }
+flash_set($res['passed']
+? 'Тест пройден: '.$res['score'].' из '.$res['total'].'. Группа «'.esc(ages()[$ageGroup]??$ageGroup).'» допущена.'
+: 'Тест не пройден: '.$res['score'].' из '.$res['total'].'. Следующая попытка — через сутки.');
+redirect('?p=speaker');
+}
 if($a==='add_material'){
 require_role('operator');
 $title=trim($_POST['title']??''); $desc=trim($_POST['description']??''); $type=$_POST['type']??''; $topic=trim($_POST['topic']??''); $link=trim($_POST['link']??'');
@@ -1530,6 +1540,21 @@ $tr=''; foreach($rows as $r){ $mark=$r['cfd']?'<span class="pill green">в со�
 $body='<div class="head"><h2>Мои уроки</h2><div><a class="btn ghost" href="?p=calendar">📅 Календарь</a> <a class="btn ghost" href="?p=materials">🗂️ Материалы</a></div></div>';
 $body.='<div class="kpis"><div class="kpi"><div class="n">'.$daily.' / 2</div><div class="l">Загрузка сегодня</div></div><div class="kpi"><div class="n">'.$weekly.' / 7</div><div class="l">Загрузка на неделе</div></div><div class="kpi"><div class="n">'.count($rows).'</div><div class="l">Всего назначено</div></div></div>';
 $body.='<p class="muted" style="margin-top:-8px;font-size:12.5px">Загрузка — активные уроки в пределах лимита (2 в день / 7 в неделю). Сколько уроков уже проведено — смотрите ниже.</p>';
+// ========== ДОПУСК К ВОЗРАСТНЫМ ГРУППАМ ==========
+$body.='<div class="block" style="margin-top:20px"><h4>🎓 Допуск к возрастным группам</h4><p class="muted">На заявки этой группы вас предложат фонду, только если группа допущена. Пройти тест можно в любой момент — сдавать все сразу не обязательно.</p>';
+$overview=speaker_test_overview($u);
+$body.='<div class="materials-grid">';
+foreach($overview as $gk=>$ov){
+$body.='<div class="material-card"><div class="material-header"><div class="material-info"><div class="material-title">'.esc($ov['label']).'</div></div></div><div class="material-body">';
+if($ov['certified']) $body.='<span class="pill green">✓ Допущен</span>';
+elseif(!$ov['ready']) $body.='<span class="pill gray">Тест ещё не готов</span>';
+elseif($ov['last'] && !$ov['can_retake']) $body.='<span class="pill gray">Не пройден</span><p class="muted" style="margin:6px 0 0;font-size:12.5px">Следующая попытка — через сутки после предыдущей.</p>';
+else $body.='<span class="pill gray">Не пройден</span>';
+if($ov['last']) $body.='<p class="muted" style="margin:8px 0 0;font-size:12.5px">Последняя попытка: '.(int)$ov['last']['score'].' из '.(int)$ov['last']['total'].' ('.esc(substr((string)$ov['last']['created_at'],0,10)).')</p>';
+if($ov['ready'] && !$ov['certified'] && $ov['can_retake']) $body.='<div style="margin-top:10px"><a class="btn primary sm" href="?p=speaker_test&group='.esc($gk).'">Пройти тест</a></div>';
+$body.='</div></div>';
+}
+$body.='</div></div>';
 $stats=speaker_stats($u['id']);
 $statCard=function($period,$lessons,$kids){
 return '<div class="stat-card"><div class="stat-period">'.esc($period).'</div><div class="stat-row"><span class="n">'.$lessons.'</span><span class="l">'.($lessons==1?'урок':($lessons>=2&&$lessons<=4?'урока':'уроков')).'</span></div><div class="stat-row"><span class="n">'.$kids.'</span><span class="l">детей</span></div></div>';
@@ -1573,6 +1598,29 @@ $body.='<p class="muted" style="margin-top:10px">У вас пока нет за�
 }
 $body.='</div>';
 layout('Кабинет спикера',$body); exit;
+}
+// ========== ТЕСТ ДЛЯ ДОПУСКА К ВОЗРАСТНОЙ ГРУППЕ ==========
+if($p==='speaker_test'){
+require_role('speaker');
+if(!$u['active']){ redirect('?p=speaker'); }
+$ageGroup=$_GET['group']??'';
+if(!array_key_exists($ageGroup,ages())){ layout('Тест','<div class="card pad">Возрастная группа не найдена. <a href="?p=speaker">Назад</a></div>'); exit; }
+if(speaker_is_certified($u,$ageGroup)){ layout('Тест','<div class="card pad"><p>Вы уже допущены к группе «'.esc(ages()[$ageGroup]).'».</p><p><a href="?p=speaker">← в кабинет</a></p></div>'); exit; }
+if(!test_attempt_allowed($u['id'],$ageGroup)){ layout('Тест','<div class="card pad"><p>Следующая попытка по этой группе будет доступна через сутки после предыдущей.</p><p><a href="?p=speaker">← в кабинет</a></p></div>'); exit; }
+$questions=test_questions_for_attempt($ageGroup);
+if(count($questions)<3){ layout('Тест','<div class="card pad"><p>По группе «'.esc(ages()[$ageGroup]).'» пока недостаточно вопросов — попробуйте позже.</p><p><a href="?p=speaker">← в кабинет</a></p></div>'); exit; }
+$body='<div class="head"><h2>Тест: «'.esc(ages()[$ageGroup]).'»</h2><a class="btn ghost" href="?p=speaker">← в кабинет</a></div>';
+$body.='<p class="muted">Вопросов: '.count($questions).'. Для допуска нужно набрать не менее '.test_pass_threshold(count($questions)).' правильных ответов.</p>';
+$body.='<form method="post" class="card pad">'.csrf_field().'<input type="hidden" name="action" value="submit_speaker_test"><input type="hidden" name="age_group" value="'.esc($ageGroup).'">';
+foreach($questions as $i=>$q){
+$body.='<div style="margin-bottom:18px'.($i>0?';padding-top:16px;border-top:1px solid var(--line)':'').'"><p style="font-weight:600;margin:0 0 8px">'.($i+1).'. '.esc($q['question']).'</p>';
+foreach(['a'=>'А','b'=>'Б','c'=>'В','d'=>'Г'] as $ok=>$ol){
+$body.='<label class="chk" style="display:block;margin:4px 0"><input type="radio" name="answers['.$q['id'].']" value="'.$ok.'" required> '.$ol.') '.esc($q['options'][$ok]).'</label>';
+}
+$body.='</div>';
+}
+$body.='<button class="btn primary" style="margin-top:8px">Завершить тест</button></form>';
+layout('Тест',$body); exit;
 }
 // ========== РЕДАКТИРОВАНИЕ ЗАЯВКИ (страница) ==========
 if($p==='request_edit'){
