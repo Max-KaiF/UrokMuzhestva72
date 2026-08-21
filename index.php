@@ -261,6 +261,15 @@ flash_set($res['passed']
 : 'Тест не пройден: '.$res['score'].' из '.$res['total'].'. Следующая попытка — через сутки.');
 redirect('?p=speaker');
 }
+if($a==='submit_readiness'){
+require_role('speaker');
+$blockKey=$_POST['block_key']??'';
+[$ok,$res]=submit_readiness($u,$blockKey,$_POST['answers']??[],$_POST['final_answer']??'');
+if(!$ok){ flash_set($res); redirect('?p=speaker'); }
+$meta=readiness_status_meta($res['status']);
+flash_set('Анкета отправлена: '.$res['score'].' из 20 — «'.esc($meta['label']).'». '.esc($meta['desc']));
+redirect('?p=speaker');
+}
 if($a==='add_material'){
 require_role('operator');
 $title=trim($_POST['title']??''); $desc=trim($_POST['description']??''); $type=$_POST['type']??''; $topic=trim($_POST['topic']??''); $link=trim($_POST['link']??'');
@@ -830,6 +839,39 @@ $mark=$d['ok']?'✅':'❌';
 $givenTxt=$d['given']!==null?strtoupper($d['given']):'—';
 $body.='<li style="margin-bottom:4px">'.$mark.' '.esc($d['question']).' <span class="muted">(ответ: '.esc($givenTxt).', верно: '.esc(strtoupper($d['correct'])).')</span></li>';
 }
+$body.='</ol>';
+}
+$body.='</div>';
+}
+$body.='</div></details>';
+}
+$body.='</div>';
+// ========== АНКЕТА САМООЦЕНКИ ГОТОВНОСТИ ==========
+$acuteSignals=speaker_readiness_acute_signals($sp['id']);
+foreach($acuteSignals as $bk=>$acute){
+$body.='<div class="hint-warn"><b>ⓘ Острая реакция на анкету самооценки</b> ('.esc(substr((string)$acute['created_at'],0,16)).', блок «'.esc(readiness_blocks()[$bk]['label']??$bk).'»). Это не означает «не готов» — мягко уточните состояние спикера лично, при необходимости порекомендуйте обращение к психологу. Решение о допуске к занятиям в этом случае лучше отложить до прояснения ситуации, а не выносить по баллам.</div>';
+}
+$body.='<div class="block"><h4>🧭 Анкета самооценки готовности</h4><p class="muted">Организационный ориентир для куратора, не автоматический допуск — заполняется спикером самостоятельно.</p>';
+$body.='<table class="card-view"><thead><tr><th>Блок</th><th>Статус</th><th>Баллы</th><th>Дата</th></tr></thead><tbody>';
+foreach(readiness_blocks() as $bk=>$b){
+$last=speaker_readiness_last($sp['id'],$bk);
+if($last){ $meta=readiness_status_meta($last['status']); $statusPill='<span class="pill '.esc($meta['color']).'">'.esc($meta['label']).'</span>'; $scoreTxt=esc($last['score']).' из 20'; $dateTxt=esc(substr((string)$last['created_at'],0,16)); }
+else { $statusPill='<span class="muted">не заполнена</span>'; $scoreTxt='—'; $dateTxt='—'; }
+$body.='<tr><td data-label="Блок">'.esc($b['label']).'</td><td data-label="Статус">'.$statusPill.'</td><td data-label="Баллы">'.$scoreTxt.'</td><td data-label="Дата">'.$dateTxt.'</td></tr>';
+}
+$body.='</tbody></table>';
+$rHistory=speaker_readiness_history($sp['id']);
+if($rHistory){
+$body.='<details style="margin-top:12px"><summary style="cursor:pointer;font-weight:600;color:var(--navy)">Вся история заполнений и ответы ('.count($rHistory).')</summary><div style="margin-top:10px">';
+foreach($rHistory as $att){
+$meta=readiness_status_meta($att['status']);
+$finalMeta=readiness_final_question()['options'][$att['final_answer']]??'';
+$body.='<div class="card pad" style="margin-bottom:10px"><b>'.esc(readiness_blocks()[$att['block_key']]['label']??$att['block_key']).'</b> — '.esc($att['score']).' из 20 · '.esc(substr((string)$att['created_at'],0,16)).' <span class="pill '.esc($meta['color']).'">'.esc($meta['label']).'</span>';
+$body.='<p class="muted" style="margin:6px 0 0">Итоговый вопрос: '.esc($finalMeta).($att['final_answer']==='D'?' <span class="pill" style="background:#fdecea;color:#b23b2c">острая реакция</span>':'').'</p>';
+$detail=json_decode((string)$att['answers'],true)?:[];
+if($detail){
+$body.='<ol style="margin:8px 0 0;padding-left:20px">';
+foreach($detail as $d) $body.='<li style="margin-bottom:4px">'.esc($d['question']).' <span class="muted">(ответ: '.esc($d['given_label']).')</span></li>';
 $body.='</ol>';
 }
 $body.='</div>';
@@ -1587,6 +1629,18 @@ if($ov['ready'] && !$ov['certified'] && $ov['can_retake']) $body.='<div style="m
 $body.='</div></div>';
 }
 $body.='</div></div>';
+// ========== АНКЕТА САМООЦЕНКИ ГОТОВНОСТИ ==========
+$body.='<div class="block" style="margin-top:20px"><h4>🧭 Анкета самооценки готовности</h4><p class="muted">Помогает вам и куратору понять, насколько вы сейчас готовы говорить с детьми конкретного возраста о своём опыте. Честный ответ не снижает ваш статус в программе — он лишь подсказывает следующий шаг. Заполнить можно в любой момент, повторно — тоже.</p>';
+$rOverview=speaker_readiness_overview($u);
+$body.='<div class="materials-grid">';
+foreach($rOverview as $bk=>$ov){
+$body.='<div class="material-card"><div class="material-header"><div class="material-info"><div class="material-title">'.esc($ov['label']).'</div></div></div><div class="material-body">';
+if($ov['last']){ $meta=readiness_status_meta($ov['last']['status']); $body.='<span class="pill '.esc($meta['color']).'">'.esc($meta['label']).'</span><p class="muted" style="margin:8px 0 0;font-size:12.5px">'.(int)$ov['last']['score'].' из 20 ('.esc(substr((string)$ov['last']['created_at'],0,10)).')</p>'; }
+else $body.='<span class="pill gray">Не заполнена</span>';
+$body.='<div style="margin-top:10px"><a class="btn ghost sm" href="?p=speaker_readiness&block='.esc($bk).'">'.($ov['last']?'Заполнить заново':'Заполнить анкету').'</a></div>';
+$body.='</div></div>';
+}
+$body.='</div></div>';
 $stats=speaker_stats($u['id']);
 $statCard=function($period,$lessons,$kids){
 return '<div class="stat-card"><div class="stat-period">'.esc($period).'</div><div class="stat-row"><span class="n">'.$lessons.'</span><span class="l">'.($lessons==1?'урок':($lessons>=2&&$lessons<=4?'урока':'уроков')).'</span></div><div class="stat-row"><span class="n">'.$kids.'</span><span class="l">детей</span></div></div>';
@@ -1653,6 +1707,31 @@ $body.='</div>';
 }
 $body.='<button class="btn primary" style="margin-top:8px">Завершить тест</button></form>';
 layout('Тест',$body); exit;
+}
+// ========== АНКЕТА САМООЦЕНКИ ГОТОВНОСТИ ==========
+if($p==='speaker_readiness'){
+require_role('speaker');
+if(!$u['active']){ redirect('?p=speaker'); }
+$blockKey=$_GET['block']??'';
+$blocks=readiness_blocks();
+if(!array_key_exists($blockKey,$blocks)){ layout('Анкета','<div class="card pad">Блок анкеты не найден. <a href="?p=speaker">Назад</a></div>'); exit; }
+$block=$blocks[$blockKey];
+$body='<div class="head"><h2>Анкета самооценки: «'.esc($block['label']).'»</h2><a class="btn ghost" href="?p=speaker">← в кабинет</a></div>';
+$body.='<p class="muted">Честный ответ не снижает ваш статус в программе — он определяет, с какой аудиторией и в каком формате комфортнее начать. Результат видят фонд и оператор как рабочий ориентир, а не автоматический запрет.</p>';
+$body.='<form method="post" class="card pad">'.csrf_field().'<input type="hidden" name="action" value="submit_readiness"><input type="hidden" name="block_key" value="'.esc($blockKey).'">';
+foreach($block['questions'] as $i=>$q){
+$body.='<div style="margin-bottom:18px'.($i>0?';padding-top:16px;border-top:1px solid var(--line)':'').'"><p style="font-weight:600;margin:0 0 8px">'.($i+1).'. '.esc($q['text']).'</p>';
+foreach($q['options'] as $ok=>$opt){
+$body.='<label class="chk" style="display:block;margin:4px 0"><input type="radio" name="answers['.$i.']" value="'.$ok.'" required> '.$ok.') '.esc($opt['label']).'</label>';
+}
+$body.='</div>';
+}
+$fq=readiness_final_question();
+$body.='<div style="margin-bottom:8px;padding-top:16px;border-top:2px solid var(--amber)"><p style="font-weight:600;margin:0 0 8px">Последний вопрос. '.esc($fq['text']).'</p>';
+foreach($fq['options'] as $ok=>$label) $body.='<label class="chk" style="display:block;margin:4px 0"><input type="radio" name="final_answer" value="'.$ok.'" required> '.$ok.') '.esc($label).'</label>';
+$body.='<p class="muted" style="margin-top:6px;font-size:12.5px">Этот вопрос не влияет на баллы по возрастному блоку — он только помогает куратору при необходимости мягко поддержать вас.</p></div>';
+$body.='<button class="btn primary" style="margin-top:8px">Отправить анкету</button></form>';
+layout('Анкета готовности',$body); exit;
 }
 // ========== РЕДАКТИРОВАНИЕ ЗАЯВКИ (страница) ==========
 if($p==='request_edit'){
