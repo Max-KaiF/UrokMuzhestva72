@@ -301,6 +301,30 @@ require_role('operator');
 [$ok,$msg]=delete_material((int)($_POST['id']??0));
 flash_set($msg); redirect('?p=materials');
 }
+// ========== ТЕСТИРОВАНИЕ СПИКЕРОВ: БАНК ВОПРОСОВ (ОПЕРАТОР) ==========
+if($a==='add_test_question' || $a==='update_test_question'){
+require_role('operator');
+$ageGroup=$_POST['age_group']??'';
+$question=trim($_POST['question']??'');
+$opts=['a'=>trim($_POST['option_a']??''),'b'=>trim($_POST['option_b']??''),'c'=>trim($_POST['option_c']??''),'d'=>trim($_POST['option_d']??'')];
+$correct=$_POST['correct_option']??'';
+$qid=(int)($_POST['id']??0);
+$back='?p=test_question_edit&group='.esc($ageGroup).($qid?'&id='.$qid:'');
+if(!array_key_exists($ageGroup,ages())){ flash_set('Выберите возрастную группу.'); redirect($back); }
+if($question===''){ flash_set('Укажите текст вопроса.'); redirect($back); }
+if($opts['a']===''||$opts['b']===''||$opts['c']===''||$opts['d']===''){ flash_set('Заполните все 4 варианта ответа.'); redirect($back); }
+if(!in_array($correct,['a','b','c','d'],true)){ flash_set('Отметьте правильный вариант ответа.'); redirect($back); }
+if($a==='add_test_question'){ add_test_question($ageGroup,$question,$opts,$correct,$u['id']); flash_set('Вопрос добавлен.'); }
+else { $existing=get_test_question($qid); if(!$existing){ flash_set('Вопрос не найден.'); redirect('?p=speaker_tests'); } update_test_question($qid,$ageGroup,$question,$opts,$correct,$u['id']); flash_set('Вопрос обновлён.'); }
+redirect('?p=speaker_tests&group='.esc($ageGroup));
+}
+if($a==='delete_test_question'){
+require_role('operator');
+$q=get_test_question((int)($_POST['id']??0));
+$ag=$q['age_group']??'';
+delete_test_question((int)($_POST['id']??0),$u['id']);
+flash_set('Вопрос удалён.'); redirect('?p=speaker_tests&group='.esc($ag));
+}
 if($a==='delete_request'){
 require_role('school');
 $rid=(int)($_POST['id']??0); $r=$rid?get_request($rid):null;
@@ -1230,6 +1254,7 @@ $body.='<div style="display:flex;gap:8px;flex-wrap:wrap">
 <form method="get" style="display:inline"><input type="hidden" name="p" value="archive_run"><button class="btn ghost" onclick="return confirm(\'Архивировать?\')">🗄️ Запустить архивацию</button></form>
 <a class="btn ghost" href="?p=operator&tab=speakers">Реестр спикеров</a>
 <a class="btn ghost" href="?p=materials">🗂️ Материалы</a>
+<a class="btn ghost" href="?p=speaker_tests">📝 Тестирование спикеров</a>
 </div>';
 layout('Инструменты',$body); exit;
 }
@@ -1299,6 +1324,50 @@ $body.='<div class="form-group"><label class="form-label">Файл (до 100 М�
 $body.='<div class="form-group"><label class="form-label">Или ссылка на файл</label><input class="form-input" name="link" value="'.esc($m['link']??'').'" placeholder="https://..."><p class="form-hint">Нужно указать файл или ссылку (можно оба).</p></div>';
 $body.='<div class="form-actions"><button class="btn primary btn-lg">Сохранить</button></div></form>';
 layout('Материал',$body); exit;
+}
+// ========== ТЕСТИРОВАНИЕ СПИКЕРОВ: БАНК ВОПРОСОВ (ОПЕРАТОР) ==========
+if($p==='speaker_tests'){
+require_role('operator');
+$counts=test_question_counts(); $target=test_question_target();
+$ageKeys=array_keys(ages());
+$cur=$_GET['group']??$ageKeys[0];
+if(!array_key_exists($cur,ages())) $cur=$ageKeys[0];
+$body='<div class="head"><h2>Тестирование спикеров</h2><a class="btn ghost" href="?p=operator_tools">← в инструменты</a></div>';
+$body.='<p class="muted">Банк вопросов для допуска спикеров к возрастным группам. Цель — '.$target.' вопросов на группу; тест включает все активные вопросы группы.</p>';
+$body.='<div class="guide-tabs" style="margin:14px 0">';
+foreach(ages() as $k=>$v){ $c=$counts[$k]??0; $body.='<a class="guide-tab'.($k===$cur?' active':'').'" href="?p=speaker_tests&group='.esc($k).'" style="text-decoration:none;display:inline-block">'.esc($v).' <span class="pill '.($c>=$target?'green':'gray').'" style="margin-left:4px">'.$c.'/'.$target.'</span></a>'; }
+$body.='</div>';
+$body.='<a class="btn primary" href="?p=test_question_edit&group='.esc($cur).'">+ Добавить вопрос</a>';
+$rows=list_test_questions($cur);
+if(!$rows){ $body.='<div class="empty-state" style="margin-top:14px"><div class="empty-icon">📝</div><h3>Вопросов пока нет</h3><p class="muted">Добавьте первый вопрос для группы «'.esc(ages()[$cur]).'».</p></div>'; }
+else {
+$body.='<table class="card-view" style="margin-top:14px"><thead><tr><th>Вопрос</th><th>Правильный ответ</th><th>Действия</th></tr></thead><tbody>';
+foreach($rows as $q){
+$correctText=$q['option_'.$q['correct_option']];
+$body.='<tr><td data-label="Вопрос">'.esc($q['question']).'</td><td data-label="Правильный ответ" class="muted">'.esc($correctText).'</td><td data-label="Действия"><a class="btn ghost sm" href="?p=test_question_edit&id='.$q['id'].'">✏️</a> <form method="post" style="display:inline" onsubmit="return confirm(\'Удалить вопрос?\')">'.csrf_field().'<input type="hidden" name="action" value="delete_test_question"><input type="hidden" name="id" value="'.$q['id'].'"><button type="submit" class="btn-delete">Удалить</button></form></td></tr>';
+}
+$body.='</tbody></table>';
+}
+layout('Тестирование спикеров',$body); exit;
+}
+if($p==='test_question_edit'){
+require_role('operator');
+$id=(int)($_GET['id']??0); $q=$id?get_test_question($id):null;
+if($id && !$q){ layout('Вопрос','<div class="card pad">Вопрос не найден. <a href="?p=speaker_tests">Назад</a></div>'); exit; }
+$ageGroup=$q['age_group']??($_GET['group']??array_key_first(ages()));
+if(!array_key_exists($ageGroup,ages())) $ageGroup=array_key_first(ages());
+$gOpt=''; foreach(ages() as $k=>$v) $gOpt.='<option value="'.esc($k).'" '.($ageGroup===$k?'selected':'').'>'.esc($v).'</option>';
+$body='<div class="head"><h2>'.($q?'Редактирование вопроса':'Добавить вопрос').'</h2><a class="btn ghost" href="?p=speaker_tests&group='.esc($ageGroup).'">← к списку</a></div>';
+$body.='<form method="post" class="card pad" style="max-width:640px">'.csrf_field().'<input type="hidden" name="action" value="'.($q?'update_test_question':'add_test_question').'">'.($q?'<input type="hidden" name="id" value="'.$q['id'].'">':'');
+$body.='<label class="lbl">Возрастная группа <span style="color:#d11">*</span></label><select name="age_group" required>'.$gOpt.'</select>';
+$body.='<label class="lbl">Текст вопроса <span style="color:#d11">*</span></label><textarea name="question" required>'.esc($q['question']??'').'</textarea>';
+foreach(['a'=>'A','b'=>'Б','c'=>'В','d'=>'Г'] as $ok=>$ol){
+$checked=($q && $q['correct_option']===$ok)?'checked':'';
+$body.='<label class="lbl" style="margin-top:12px">Вариант '.$ol.' <span style="color:#d11">*</span></label><div style="display:flex;gap:8px;align-items:center"><input type="radio" name="correct_option" value="'.$ok.'" '.$checked.' required style="width:auto;flex:none"><input name="option_'.$ok.'" required value="'.esc($q['option_'.$ok]??'').'" style="flex:1"></div>';
+}
+$body.='<p class="muted" style="margin-top:6px">Отметьте радиокнопкой правильный вариант.</p>';
+$body.='<button class="btn primary" style="margin-top:14px">Сохранить</button></form>';
+layout('Вопрос теста',$body); exit;
 }
 // ========== КАБИНЕТ ФОНДА ==========
 if($p==='fund'){

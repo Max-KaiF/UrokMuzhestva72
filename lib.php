@@ -67,6 +67,15 @@ id $pk, email VARCHAR(190) UNIQUE, requested_at VARCHAR(40)
 db()->exec("CREATE TABLE IF NOT EXISTS push_subscriptions (
 id $pk, user_id INTEGER, endpoint VARCHAR(500) UNIQUE, p256dh VARCHAR(255), auth VARCHAR(100), created_at VARCHAR(40)
 )$tail");
+db()->exec("CREATE TABLE IF NOT EXISTS speaker_test_questions (
+id $pk, age_group VARCHAR(20), question TEXT,
+option_a VARCHAR(500), option_b VARCHAR(500), option_c VARCHAR(500), option_d VARCHAR(500),
+correct_option VARCHAR(1), active INTEGER DEFAULT 1, created_by INTEGER, created_at VARCHAR(40)
+)$tail");
+db()->exec("CREATE TABLE IF NOT EXISTS speaker_test_attempts (
+id $pk, speaker_user_id INTEGER, age_group VARCHAR(20), score INTEGER, total INTEGER,
+passed INTEGER DEFAULT 0, answers TEXT, created_at VARCHAR(40)
+)$tail");
 foreach([
 "ALTER TABLE users ADD COLUMN fund_user_id INTEGER",
 "ALTER TABLE users ADD COLUMN email VARCHAR(190)",
@@ -106,6 +115,7 @@ foreach([
 "ALTER TABLE requests ADD COLUMN claimed_fund_id INTEGER",
 "ALTER TABLE requests ADD COLUMN claimed_at VARCHAR(40)",
 "ALTER TABLE requests ADD COLUMN desired_speaker_id INTEGER",
+"ALTER TABLE users ADD COLUMN certified_age_groups VARCHAR(255)",
 "CREATE INDEX idx_requests_status ON requests(status)",
 "CREATE INDEX idx_requests_school ON requests(school_user_id)",
 "CREATE INDEX idx_requests_fund ON requests(claimed_fund_id)",
@@ -699,6 +709,35 @@ function speaker_org_name($sid){ $s=find_user_by_id((int)$sid); if(!$s || empty(
 function fund_name_by_id($fid){ $f=$fid?find_user_by_id((int)$fid):null; return $f ? (string)$f['display_name'] : ''; }
 function head_funds(){ return db()->query("SELECT * FROM users WHERE role='fund' AND (parent_fund_id IS NULL OR parent_fund_id=0) ORDER BY display_name")->fetchAll(); }
 function pending_subfunds($head){ $st=db()->prepare("SELECT * FROM users WHERE role='fund' AND parent_fund_id=? AND active=0 ORDER BY id DESC"); $st->execute([$head['id']]); return $st->fetchAll(); }
+// ========== ТЕСТИРОВАНИЕ СПИКЕРОВ ПО ВОЗРАСТНЫМ ГРУППАМ ==========
+// Банк вопросов ведёт оператор, отдельно по каждой возрастной группе (ages()).
+// Целевой размер банка — 10 вопросов на группу; тест включает все активные вопросы группы.
+function test_question_target(){ return 10; }
+function list_test_questions($ageGroup=null){
+if($ageGroup){ $st=db()->prepare("SELECT * FROM speaker_test_questions WHERE age_group=? ORDER BY id"); $st->execute([$ageGroup]); return $st->fetchAll(); }
+return db()->query("SELECT * FROM speaker_test_questions ORDER BY age_group, id")->fetchAll();
+}
+function get_test_question($id){ $st=db()->prepare("SELECT * FROM speaker_test_questions WHERE id=?"); $st->execute([$id]); return $st->fetch()?:null; }
+function test_question_counts(){
+$rows=db()->query("SELECT age_group, COUNT(*) c FROM speaker_test_questions WHERE active=1 GROUP BY age_group")->fetchAll();
+$out=[]; foreach($rows as $r) $out[$r['age_group']]=(int)$r['c']; return $out;
+}
+function add_test_question($ageGroup,$question,$opts,$correct,$actorId){
+db()->prepare("INSERT INTO speaker_test_questions(age_group,question,option_a,option_b,option_c,option_d,correct_option,active,created_by,created_at) VALUES(?,?,?,?,?,?,?,1,?,?)")
+->execute([$ageGroup,$question,$opts['a'],$opts['b'],$opts['c'],$opts['d'],$correct,$actorId,now()]);
+$id=db()->lastInsertId();
+log_action($actorId,'operator','test_question_add','speaker_test_questions',$id,"Добавлен вопрос теста ($ageGroup)");
+return $id;
+}
+function update_test_question($id,$ageGroup,$question,$opts,$correct,$actorId){
+db()->prepare("UPDATE speaker_test_questions SET age_group=?,question=?,option_a=?,option_b=?,option_c=?,option_d=?,correct_option=? WHERE id=?")
+->execute([$ageGroup,$question,$opts['a'],$opts['b'],$opts['c'],$opts['d'],$correct,$id]);
+log_action($actorId,'operator','test_question_update','speaker_test_questions',$id,"Изменён вопрос теста #$id");
+}
+function delete_test_question($id,$actorId){
+db()->prepare("DELETE FROM speaker_test_questions WHERE id=?")->execute([$id]);
+log_action($actorId,'operator','test_question_delete','speaker_test_questions',$id,"Удалён вопрос теста #$id");
+}
 function child_subfunds($head){ $st=db()->prepare("SELECT * FROM users WHERE role='fund' AND parent_fund_id=? ORDER BY display_name"); $st->execute([$head['id']]); return $st->fetchAll(); }
 function fund_label($f){ $n=($f['display_name']!=='')?$f['display_name']:('Организация №'.$f['id']); if(!empty($f['parent_fund_id'])) $n='— '.$n.' (подразделение'.(!empty($f['district'])?', '.$f['district']:'').')'; elseif(!empty($f['district'])) $n.=' ('.$f['district'].')'; return $n; }
 function active_speakers($fund=null){ if($fund){ $st=db()->prepare("SELECT * FROM users WHERE role='speaker' AND active=1 AND fund_user_id=? ORDER BY display_name"); $st->execute([$fund['id']]); return $st->fetchAll(); } return db()->query("SELECT * FROM users WHERE role='speaker' AND active=1 ORDER BY display_name")->fetchAll(); }
