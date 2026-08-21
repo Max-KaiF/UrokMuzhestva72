@@ -130,6 +130,12 @@ foreach([
 ] as $sql){ try{ db()->exec($sql); }catch(Throwable $e){} }
 try{ db()->exec("UPDATE requests SET speakers_needed=1 WHERE speakers_needed IS NULL"); }catch(Throwable $e){}
 try{ db()->exec("UPDATE requests SET lessons_per_speaker=1 WHERE lessons_per_speaker IS NULL OR lessons_per_speaker<1"); }catch(Throwable $e){}
+// Тестирование по возрастным группам вводится не с нуля: спикерам, зарегистрированным
+// ДО этой доработки, самозаявленные группы сохраняются как допуск без пересдачи.
+// Важно: рубеж по дате регистрации, а не просто «допуск ещё не проставлен» — иначе
+// это правило подхватывало бы и будущих спикеров при каждом запросе (init_schema()
+// выполняется на каждый запрос), и тест перестал бы быть обязательным для новых.
+try{ db()->exec("UPDATE users SET certified_age_groups=age_groups WHERE role='speaker' AND active=1 AND (certified_age_groups IS NULL OR certified_age_groups='') AND age_groups IS NOT NULL AND age_groups<>'' AND created_at<='2026-08-21 23:59:59'"); }catch(Throwable $e){}
 try{ if((int)db()->query("SELECT COUNT(*) c FROM districts")->fetch()['c']===0){
 foreach(['Абатский','Армизонский','Аромашевский','Бердюжский','Вагайский','Викуловский','Голышмановский','Заводоуковский','Исетский','Ишимский','Казанский','Нижнетавдинский','Омутинский','Сладковский','Сорокинский','Тобольский','Тюменский','Тюмень','Уватский','Упоровский','Юргинский','Ялуторовский','Ярковский'] as $dn){
 $ins=db()->prepare("INSERT INTO districts(name,neighbors,created_at) VALUES(?,?,?)"); try{ $ins->execute([$dn,'',now()]); }catch(Throwable $e){}
@@ -1119,8 +1125,8 @@ if(!empty($r['claimed_fund_id'])){ $cf=find_user_by_id((int)$r['claimed_fund_id'
 foreach(active_speakers() as $s){
 if(is_candidate($r['id'],$s['id'])) continue;
 if($claimScope!==null && !in_array((int)$s['fund_user_id'],$claimScope,true)) continue;
-$g=array_filter(explode(',',$s['age_groups']));
-if($r['age_group'] && $g && !in_array($r['age_group'],$g)) continue;
+$g=array_filter(explode(',',(string)($s['certified_age_groups']??'')));
+if($r['age_group'] && !in_array($r['age_group'],$g,true)) continue;
 if($allowed && !in_array(trim((string)$s['district']),$allowed)) continue;
 if(speaker_is_unavailable($s['id'],$r['udate'])) continue;
 if(speaker_conflicts($s['id'],$r)) continue;

@@ -805,6 +805,38 @@ if(!empty($sp['sp_awards'])) $body.='<div class="block"><h4>Награды</h4><
 if(!empty($sp['sp_achievements'])) $body.='<div class="block"><h4>Достижения</h4><p>'.nl2br(esc($sp['sp_achievements'])).'</p></div>';
 if(!empty($sp['sp_hobbies'])) $body.='<div class="block"><h4>Увлечения, хобби</h4><p>'.esc($sp['sp_hobbies']).'</p></div>';
 if(!empty($sp['sp_bio'])) $body.='<div class="block"><h4>О себе</h4><p>'.nl2br(esc($sp['sp_bio'])).'</p></div>';
+// ========== ДОПУСК К ВОЗРАСТНЫМ ГРУППАМ (тестирование) ==========
+$body.='<div class="block"><h4>🎓 Допуск к возрастным группам</h4>';
+$certified=speaker_certified_groups($sp);
+$body.='<table class="card-view"><thead><tr><th>Группа</th><th>Статус</th><th>Последняя попытка</th></tr></thead><tbody>';
+foreach(ages() as $gk=>$glabel){
+$isCert=in_array($gk,$certified,true);
+$last=speaker_last_attempt($sp['id'],$gk);
+$statusPill=$isCert?'<span class="pill green">✓ Допущен</span>':'<span class="pill gray">не допущен</span>';
+$lastTxt=$last?esc($last['score']).' из '.esc($last['total']).' · '.esc(substr((string)$last['created_at'],0,16)).($last['passed']?' <span class="pill green">пройден</span>':' <span class="pill gray">не пройден</span>'):'<span class="muted">попыток не было</span>';
+$body.='<tr><td data-label="Группа">'.esc($glabel).'</td><td data-label="Статус">'.$statusPill.'</td><td data-label="Последняя попытка">'.$lastTxt.'</td></tr>';
+}
+$body.='</tbody></table>';
+$history=speaker_test_attempts_history($sp['id']);
+if($history){
+$body.='<details style="margin-top:12px"><summary style="cursor:pointer;font-weight:600;color:var(--navy)">Вся история попыток и ответы ('.count($history).')</summary><div style="margin-top:10px">';
+foreach($history as $att){
+$body.='<div class="card pad" style="margin-bottom:10px"><b>'.esc(ages()[$att['age_group']]??$att['age_group']).'</b> — '.esc($att['score']).' из '.esc($att['total']).' · '.esc(substr((string)$att['created_at'],0,16)).' '.($att['passed']?'<span class="pill green">пройден</span>':'<span class="pill gray">не пройден</span>');
+$detail=json_decode((string)$att['answers'],true)?:[];
+if($detail){
+$body.='<ol style="margin:8px 0 0;padding-left:20px">';
+foreach($detail as $d){
+$mark=$d['ok']?'✅':'❌';
+$givenTxt=$d['given']!==null?strtoupper($d['given']):'—';
+$body.='<li style="margin-bottom:4px">'.$mark.' '.esc($d['question']).' <span class="muted">(ответ: '.esc($givenTxt).', верно: '.esc(strtoupper($d['correct'])).')</span></li>';
+}
+$body.='</ol>';
+}
+$body.='</div>';
+}
+$body.='</div></details>';
+}
+$body.='</div>';
 layout('Спикер: '.$sp['display_name'],$body); exit;
 }
 // ========== ПРОФИЛЬ ==========
