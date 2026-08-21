@@ -372,9 +372,14 @@ elseif($a==='fund_replace'){ require_role('fund'); $reasonRaw=$_POST['reason']??
 elseif($a==='speaker_decline'){ require_role('speaker'); [$ok,$msg]=speaker_decline($r,$u['id']); }
 elseif($a==='feedback'){
 $comment=trim($_POST['comment']??'');
+$postUrl=trim($_POST['post_url']??'');
 if($comment==='') $msg='Напишите отзыв.';
 elseif(st_index($r['status'])<st_index('done')) $msg='Отзыв можно оставить после проведения.';
-elseif($u['role']==='school' && school_owns_request($u,$r)){ upd($rid,['fb_app_comment'=>$comment,'fb_app_at'=>now()]); $msg='Спасибо! Отзыв сохранён.'; }
+elseif($u['role']==='school' && school_owns_request($u,$r)){
+if($postUrl==='') $msg='Укажите ссылку на пост о проведённом занятии — без неё заявка не закрывается.';
+elseif(!preg_match('~^https?://~i',$postUrl)) $msg='Ссылка на пост должна начинаться с http:// или https://.';
+else { upd($rid,['fb_app_comment'=>$comment,'fb_post_url'=>$postUrl,'fb_app_at'=>now()]); $msg='Спасибо! Отзыв и ссылка на пост сохранены.'; }
+}
 elseif($u['role']==='speaker'){ $row=get_rs_row($rid,$u['id']); if($row&&$row['confirmed']){ set_vet_feedback($rid,$u['id'],$comment); $msg='Спасибо! Отзыв сохранён.'; } else $msg='Нет доступа.'; }
 else $msg='Нет доступа.';
 }
@@ -1299,13 +1304,15 @@ $scopeOg=$opg==='school'?'school':($dept?:null);
 $body='<div class="head"><h2>'.($type==='app'?'Отзывы заявителей':'Отзывы спикеров').'</h2><a class="btn ghost" href="?p='.esc($u['role']).'">← в кабинет</a></div>';
 if($type==='app'){
 $rows=$isFund?list_app_reviews_for_fund($u):list_app_reviews($scopeOg);
-$body.='<table class="card-view"><thead><tr><th>Заявитель</th><th>Спикеры</th><th>Тема урока</th><th>Дата отзыва</th><th>Отзыв</th></tr></thead><tbody>';
+$body.='<table class="card-view"><thead><tr><th>Заявитель</th><th>Спикеры</th><th>Тема урока</th><th>Дата отзыва</th><th>Отзыв</th><th>Пост</th></tr></thead><tbody>';
 foreach($rows as $r){
 $speakers=implode(', ',array_map(fn($x)=>$x['display_name'],req_confirmed_rows($r['id'])));
 $review=esc($r['fb_app_comment']??'');
-$body.='<tr onclick="location=\'?p=request&id='.$r['id'].'\'"><td class="id" data-label="Заявитель"><a href="?p=request&id='.$r['id'].'">'.esc($r['org']).'</a></td><td data-label="Спикеры" class="muted">'.esc($speakers?:'—').'</td><td data-label="Тема" class="muted">'.esc($r['topic']?:'—').'</td><td data-label="Дата" class="muted">'.esc($r['fb_app_at']?:'—').'</td><td data-label="Отзыв">'.$review.'</td></tr>';
+$postUrl=trim((string)($r['fb_post_url']??''));
+$postCell=$postUrl!==''?'<a href="'.esc($postUrl).'" target="_blank" rel="noopener" onclick="event.stopPropagation()">ссылка</a>':'<span class="muted">—</span>';
+$body.='<tr onclick="location=\'?p=request&id='.$r['id'].'\'"><td class="id" data-label="Заявитель"><a href="?p=request&id='.$r['id'].'">'.esc($r['org']).'</a></td><td data-label="Спикеры" class="muted">'.esc($speakers?:'—').'</td><td data-label="Тема" class="muted">'.esc($r['topic']?:'—').'</td><td data-label="Дата" class="muted">'.esc($r['fb_app_at']?:'—').'</td><td data-label="Отзыв">'.$review.'</td><td data-label="Пост">'.$postCell.'</td></tr>';
 }
-if(!$rows) $body.='<tr><td colspan="5" class="muted">Отзывов заявителей пока нет.</td></tr>';
+if(!$rows) $body.='<tr><td colspan="6" class="muted">Отзывов заявителей пока нет.</td></tr>';
 $body.='</tbody></table>';
 } else {
 $rows=$isFund?list_speaker_reviews_for_fund($u):list_speaker_reviews($scopeOg);
@@ -1849,7 +1856,8 @@ $body.='<div class="block"><h4>После урока</h4><p class="muted">Отм
 .'<form method="post" style="margin-top:12px;border-top:1px solid #eee;padding-top:12px">'.csrf_field().'<input type="hidden" name="action" value="not_held"><input type="hidden" name="id" value="'.$r['id'].'"><label class="lbl">Урок не состоялся — причина</label>'.render_reason_select('reason',cancel_reasons()).'<label class="lbl" style="margin-top:8px">Комментарий (необязательно)</label><input name="reason_comment"><br><button class="btn ghost sm" style="margin-top:10px;color:#b23b2c;border-color:#f5c6c0">Урок не состоялся</button></form></div>';
 }
 if(st_index($r['status'])>=st_index('done')){
-$body.='<div class="block"><h4>Ваш отзыв</h4><form method="post">'.csrf_field().'<input type="hidden" name="action" value="feedback"><input type="hidden" name="id" value="'.$r['id'].'"><label class="lbl">Комментарий</label><textarea name="comment" required>'.esc($r['fb_app_comment']).'</textarea><button class="btn primary sm" style="margin-top:10px">'.(trim((string)$r['fb_app_comment'])!==''?'Обновить отзыв':'Отправить отзыв').'</button></form></div>';
+$hasFeedback=trim((string)$r['fb_app_comment'])!=='' && trim((string)($r['fb_post_url']??''))!=='';
+$body.='<div class="block"><h4>Ваш отзыв</h4><p class="muted">Ссылка на пост о проведённом занятии обязательна — без неё заявка не закрывается.</p><form method="post">'.csrf_field().'<input type="hidden" name="action" value="feedback"><input type="hidden" name="id" value="'.$r['id'].'"><label class="lbl">Комментарий</label><textarea name="comment" required>'.esc($r['fb_app_comment']).'</textarea><label class="lbl">Ссылка на пост о проведённом занятии <span style="color:#d11">*</span></label><input type="url" name="post_url" required placeholder="https://..." value="'.esc($r['fb_post_url']??'').'"><button class="btn primary sm" style="margin-top:10px">'.($hasFeedback?'Обновить отзыв':'Отправить отзыв').'</button></form></div>';
 }
 }
 elseif($u['role']==='fund'){
@@ -1916,7 +1924,8 @@ elseif($u['role']==='operator'){
 $yn=fn($v)=>$v?'✓ да':'— нет';
 $body.='<div class="block"><h4>Состав ('.$confN.' из '.$need.')</h4>'.($listHtml?:'<p class="muted">спикеры не выбраны</p>').'<p class="muted">Подтверждение Фондом: <b>'.esc($r['fund_confirmed_at']?:'ожидается').'</b> · Инструктаж: <b>'.($r['briefing_done']?esc($r['briefing_date']?:'проведён'):'нет').'</b></p></div>';
 $body.='<div class="block"><h4>Готовность (подтверждает заявитель)</h4><p class="muted">'.'Площадка: <b>'.$yn($r['prep_venue']).'</b> · Сопровождение: <b>'.$yn($r['prep_escort']).'</b><br>'.($r['prep_confirmed_at']?'Подтверждено: <b>'.esc($r['prep_confirmed_at']).'</b>':'ещё не подтверждено').'</p></div>';
-$body.='<div class="block"><h4>Обратная связь</h4>'.fbline('Заявитель',$r['fb_app_comment']); foreach(req_confirmed_rows($r['id']) as $row) $body.=fbline('Спикер: '.$row['display_name'],$row['vet_comment']); $body.='</div>';
+$postUrl=trim((string)($r['fb_post_url']??''));
+$body.='<div class="block"><h4>Обратная связь</h4>'.fbline('Заявитель',$r['fb_app_comment']).'<p class="muted" style="margin-top:-6px">Пост о занятии: '.($postUrl!==''?'<a href="'.esc($postUrl).'" target="_blank" rel="noopener">'.esc($postUrl).'</a>':'<span style="color:#b23b2c">не указан — заявка не закроется без ссылки</span>').'</p>'; foreach(req_confirmed_rows($r['id']) as $row) $body.=fbline('Спикер: '.$row['display_name'],$row['vet_comment']); $body.='</div>';
 $body.='<div class="block">';
 if($r['status']==='prep') $body.='<p class="muted">Ожидается отметка заявителя о проведении урока.</p>';
 if($r['status']==='done') $body.='<form method="post" class="inline">'.csrf_field().'<input type="hidden" name="action" value="close"><input type="hidden" name="id" value="'.$r['id'].'"><button class="btn primary sm">Закрыть заявку</button></form>';

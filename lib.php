@@ -28,7 +28,7 @@ topic TEXT, notes TEXT, status VARCHAR(20),
 speaker_user_id INTEGER, fund_confirmed_at VARCHAR(40), fund_coordinator VARCHAR(255),
 briefing_done INTEGER DEFAULT 0, briefing_date VARCHAR(40),
 prep_parents INTEGER DEFAULT 0, prep_venue INTEGER DEFAULT 0, prep_escort INTEGER DEFAULT 0, prep_confirmed_at VARCHAR(40),
-fb_app_rating INTEGER, fb_app_comment TEXT, fb_app_at VARCHAR(40),
+fb_app_rating INTEGER, fb_app_comment TEXT, fb_app_at VARCHAR(40), fb_post_url VARCHAR(500),
 fb_vet_rating INTEGER, fb_vet_comment TEXT, fb_vet_at VARCHAR(40), created_at VARCHAR(40),
 archived INTEGER DEFAULT 0, archived_at VARCHAR(40), closed_at VARCHAR(40),
 cancel_reason VARCHAR(255), cancelled_at VARCHAR(40),
@@ -119,6 +119,7 @@ foreach([
 "ALTER TABLE requests ADD COLUMN claimed_fund_id INTEGER",
 "ALTER TABLE requests ADD COLUMN claimed_at VARCHAR(40)",
 "ALTER TABLE requests ADD COLUMN desired_speaker_id INTEGER",
+"ALTER TABLE requests ADD COLUMN fb_post_url VARCHAR(500)",
 "ALTER TABLE users ADD COLUMN certified_age_groups VARCHAR(255)",
 "CREATE INDEX idx_requests_status ON requests(status)",
 "CREATE INDEX idx_requests_school ON requests(school_user_id)",
@@ -1439,7 +1440,12 @@ if(prep_complete($nr)){ upd($r['id'],['prep_confirmed_at'=>now()]); if(in_array(
 upd($r['id'],['prep_confirmed_at'=>null]); return [true,'Сохранено. Отметьте все пункты, чтобы подтвердить готовность.'];
 }
 function mark_done($r){ if($r['status']!=='prep') return [false,'Урок можно отметить проведённым после подтверждения готовности.']; upd($r['id'],['status'=>'done']); log_action(current_user()['id']??null,'operator','mark_done','requests',$r['id'],"Отмечен как проведённый"); return [true,'Отмечено как «Проведён».']; }
-function close_request($r){ if($r['status']!=='done') return [false,'Закрыть можно только проведённый урок.']; if(trim((string)($r['fb_app_comment']??''))===''){ return [false,'Заявка закрывается после отзыва заявителя.']; } upd($r['id'],['status'=>'closed','closed_at'=>now()]); log_action(current_user()['id']??null,'operator','close','requests',$r['id'],"Заявка закрыта"); return [true,'Заявка закрыта.']; }
+function close_request($r){
+if($r['status']!=='done') return [false,'Закрыть можно только проведённый урок.'];
+if(trim((string)($r['fb_app_comment']??''))==='') return [false,'Заявка закрывается после отзыва заявителя.'];
+if(trim((string)($r['fb_post_url']??''))==='') return [false,'Заявка закрывается после того, как заявитель укажет ссылку на пост о проведённом занятии.'];
+upd($r['id'],['status'=>'closed','closed_at'=>now()]); log_action(current_user()['id']??null,'operator','close','requests',$r['id'],"Заявка закрыта"); return [true,'Заявка закрыта.'];
+}
 function mark_not_held($r,$reason,$comment=''){
 if($r['status']!=='prep') return [false,'Отметить «не состоялся» можно на этапе «Готовность подтверждена».'];
 if(!in_array($reason,cancel_reasons())) return [false,'Укажите причину.'];
@@ -1934,14 +1940,14 @@ if($s==='new') return ['Фонд','Взять заявку в обработку
 if($s==='chosen') return ['Фонд','Сформировать и подтвердить состав'];
 if($s==='confirmed') return ['Заявитель','Подтвердить готовность площадки'];
 if($s==='prep'){ $over=!empty($r['udate']) && strtotime(substr($r['udate'],0,10))<strtotime(date('Y-m-d')); return ['Заявитель',$over?'Урок должен был состояться — отметьте «Проведён» или «Не состоялся»':'После урока отметить «Проведён» или «Не состоялся»']; }
-if($s==='done') return trim((string)($r['fb_app_comment']??''))==='' ? ['Заявитель','Оставить отзыв об уроке'] : ['Оператор','Закрыть заявку'];
+if($s==='done'){ $needsFeedback=trim((string)($r['fb_app_comment']??''))===''||trim((string)($r['fb_post_url']??''))===''; return $needsFeedback ? ['Заявитель','Оставить отзыв и ссылку на пост об уроке'] : ['Оператор','Закрыть заявку']; }
 if($s==='closed') return ['—','Заявка закрыта'];
 if($s==='cancelled') return ['—','Урок не состоялся'];
 return ['—',''];
 }
 function auto_close_done($days=7){
 $cut=date('Y-m-d H:i:s',strtotime("-$days days"));
-$st=db()->prepare("SELECT * FROM requests WHERE status='done' AND fb_app_comment IS NOT NULL AND fb_app_comment<>'' AND COALESCE(fb_app_at, created_at) < ?");
+$st=db()->prepare("SELECT * FROM requests WHERE status='done' AND fb_app_comment IS NOT NULL AND fb_app_comment<>'' AND fb_post_url IS NOT NULL AND fb_post_url<>'' AND COALESCE(fb_app_at, created_at) < ?");
 $st->execute([$cut]); $n=0;
 foreach($st->fetchAll() as $r){ upd($r['id'],['status'=>'closed','closed_at'=>now()]); log_action(null,'system','auto_close','requests',$r['id'],'Автозакрытие через '.$days.' дн. после отзыва'); $n++; }
 return $n;
@@ -1951,7 +1957,7 @@ $role = $user['role'];
 $uid = $user['id'];
 if ($role === 'school') {
 $ids=school_scope_ids($user); $in=implode(',',array_fill(0,count($ids),'?'));
-$st = db()->prepare("SELECT * FROM requests WHERE school_user_id IN ($in) AND (archived=0 OR archived IS NULL) AND ((status IN ('confirmed','brief') AND (prep_confirmed_at IS NULL OR prep_confirmed_at='')) OR status='prep' OR (status='done' AND (fb_app_comment IS NULL OR fb_app_comment=''))) ORDER BY udate ASC");
+$st = db()->prepare("SELECT * FROM requests WHERE school_user_id IN ($in) AND (archived=0 OR archived IS NULL) AND ((status IN ('confirmed','brief') AND (prep_confirmed_at IS NULL OR prep_confirmed_at='')) OR status='prep' OR (status='done' AND (fb_app_comment IS NULL OR fb_app_comment='' OR fb_post_url IS NULL OR fb_post_url=''))) ORDER BY udate ASC");
 $st->execute($ids); return $st->fetchAll();
 }
 if ($role === 'fund') {
@@ -1959,7 +1965,7 @@ return fund_actionable($user);
 }
 if ($role === 'operator') {
 $scope = (($user['op_group']??'')==='school') ? " AND op_group='school'" : "";
-$st = db()->query("SELECT * FROM requests WHERE (archived=0 OR archived IS NULL) AND status='done' AND fb_app_comment IS NOT NULL AND fb_app_comment<>''$scope ORDER BY udate ASC");
+$st = db()->query("SELECT * FROM requests WHERE (archived=0 OR archived IS NULL) AND status='done' AND fb_app_comment IS NOT NULL AND fb_app_comment<>'' AND fb_post_url IS NOT NULL AND fb_post_url<>''$scope ORDER BY udate ASC");
 return $st->fetchAll();
 }
 return [];
