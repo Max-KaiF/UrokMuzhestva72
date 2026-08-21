@@ -1302,7 +1302,7 @@ $st->execute([$sid,$r['udate'],$r['id']]);
 foreach($st->fetchAll() as $o){
 if(same_org($o['org'],$r['org'])) continue;
 $s2=tmin($o['utime']); if($s2===null) continue; $e2=tmin($o['utime_end']??'') ?? $s2;
-if(($s1-120) < $e2 && $s2 < ($e1+120)) return true;
+if(($s1-20) < $e2 && $s2 < ($e1+20)) return true;
 }
 return false;
 }
@@ -1382,7 +1382,7 @@ function fund_recommend($fund,$r,$sid){
 if($r['status']!=='chosen') return [false,'Рекомендация возможна на этапе «Спикеры выбраны».'];
 $row=get_rs_row($r['id'],$sid); if(!$row) return [false,'Спикер не в списке кандидатов.'];
 if(candidate_action($fund,$row)!=='recommend') return [false,'Этого кандидата рекомендует другое подразделение или он уже обработан.'];
-if(speaker_conflicts($sid,$r)) return [false,'Спикер занят в другом учреждении в пределах 2 часов от этого урока.'];
+if(speaker_conflicts($sid,$r)) return [false,'Спикер занят в другом учреждении в пределах 20 минут от этого урока.'];
 [$ok,$err]=check_speaker_load($sid,$r['udate'],max(1,(int)($r['lessons_per_speaker']??1))); if(!$ok) return [false,$err];
 db()->prepare("UPDATE request_speakers SET recommended=1 WHERE request_id=? AND speaker_user_id=?")->execute([$r['id'],$sid]);
 log_action($fund['id'],'fund','fund_recommend','requests',$r['id'],"Подразделение рекомендовало спикера #$sid");
@@ -1393,7 +1393,7 @@ if($r['status']!=='chosen') return [false,'Подтверждение возмо
 $row=get_rs_row($r['id'],$sid); if(!$row) return [false,'Спикер не в списке кандидатов.'];
 if(candidate_action($fund,$row)!=='confirm') return [false,'Вы не можете подтвердить этого кандидата (нет прав или нет рекомендации подразделения).'];
 if(count_confirmed($r['id'])>=$r['speakers_needed']) return [false,'Нужное число спикеров уже подтверждено.'];
-if(speaker_conflicts($sid,$r)) return [false,'Спикер занят в другом учреждении в пределах 2 часов от этого урока.'];
+if(speaker_conflicts($sid,$r)) return [false,'Спикер занят в другом учреждении в пределах 20 минут от этого урока.'];
 [$ok,$err]=check_speaker_load($sid,$r['udate'],max(1,(int)($r['lessons_per_speaker']??1))); if(!$ok) return [false,$err];
 db()->prepare("UPDATE request_speakers SET confirmed=1 WHERE request_id=? AND speaker_user_id=?")->execute([$r['id'],$sid]);
 if(empty($r['fund_confirmed_at'])) upd($r['id'],['fund_confirmed_at'=>now()]);
