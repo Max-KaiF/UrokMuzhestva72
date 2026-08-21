@@ -1614,6 +1614,7 @@ $tr=''; foreach($rows as $r){ $mark=$r['cfd']?'<span class="pill green">в со�
 $body='<div class="head"><h2>Мои уроки</h2><div><a class="btn ghost" href="?p=calendar">📅 Календарь</a> <a class="btn ghost" href="?p=materials">🗂️ Материалы</a></div></div>';
 $body.='<div class="kpis"><div class="kpi"><div class="n">'.$daily.' / 2</div><div class="l">Загрузка сегодня</div></div><div class="kpi"><div class="n">'.$weekly.' / 7</div><div class="l">Загрузка на неделе</div></div><div class="kpi"><div class="n">'.count($rows).'</div><div class="l">Всего назначено</div></div></div>';
 $body.='<p class="muted" style="margin-top:-8px;font-size:12.5px">Загрузка — активные уроки в пределах лимита (2 в день / 7 в неделю). Сколько уроков уже проведено — смотрите ниже.</p>';
+if($todayExempt=speaker_load_exempt_label(date('Y-m-d'))) $body.='<div class="hint-ok" style="margin-top:8px">📅 Сегодня — «'.esc($todayExempt).'». Ограничение по нагрузке (2 урока в день / 7 в неделю) в этот день не действует.</div>';
 // ========== ДОПУСК К ВОЗРАСТНЫМ ГРУППАМ ==========
 $body.='<div class="block" style="margin-top:20px"><h4>🎓 Допуск к возрастным группам</h4><p class="muted">На заявки этой группы вас предложат фонду, только если группа допущена. Пройти тест можно в любой момент — сдавать все сразу не обязательно.</p>';
 $overview=speaker_test_overview($u);

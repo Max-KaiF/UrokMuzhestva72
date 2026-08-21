@@ -151,6 +151,8 @@ a{color:var(--rf-blue);}
 .turn-other{background:#eef3fb;border:1px solid #d4e0f3;color:#0039A6;}
 .hint-warn{background:#fff8e1;border:1px solid #ffe082;border-left:4px solid #C77700;border-radius:8px;padding:10px 14px;margin:10px 0;color:#7a5200;font-size:14px}
 .hint-warn b{color:#9a6000}
+.hint-ok{background:#e8f5e9;border:1px solid #a5d6a7;border-left:4px solid #2e7d32;border-radius:8px;padding:10px 14px;margin:10px 0;color:#1b5e20;font-size:14px}
+.hint-ok b{color:#1b5e20}
 .notes-block{background:#fffbea;border:1px solid #ffe082;border-left:4px solid #C77700;border-radius:8px;padding:10px 14px;margin:10px 0;color:#7a5200;font-size:14px}
 .notes-block b{color:#9a6000}
 .guide-tabs{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0 22px;max-width:900px}
