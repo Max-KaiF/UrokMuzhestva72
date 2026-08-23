@@ -1604,7 +1604,7 @@ $sch_waiting=count(array_filter($rows,fn($r)=>$r['status']==='new'));
 $sch_inwork=count(array_filter($rows,fn($r)=>in_array($r['status'],['chosen','confirmed','prep'],true)));
 $sch_done=count(array_filter($rows,fn($r)=>in_array($r['status'],['done','closed'],true)));
 $body.='<div class="kpis"><div class="kpi"><div class="n">'.$sch_total.'</div><div class="l">Всего заявок</div></div><div class="kpi"><div class="n">'.$sch_waiting.'</div><div class="l">Ожидают фонда</div></div><div class="kpi"><div class="n">'.$sch_inwork.'</div><div class="l">В работе</div></div><div class="kpi"><div class="n">'.$sch_done.'</div><div class="l">Проведено</div></div></div>';
-$body.=school_month_report($rows,'schMonth');
+$body.=school_month_report(school_requests_for_stats($u),'schMonth');
 $body.= $rows ? '<table class="card-view"><thead><tr>'.sort_th('Код','code').sort_th('Дата и время','date').'<th>Аудитория</th><th>Спикеры</th>'.sort_th('Статус','status').'</tr></thead><tbody>'.$tr.'</tbody></table>' : '<div class="empty-state"><div class="empty-icon">📋</div><h3>Заявок пока нет</h3><p class="muted">Нажмите «Подать заявку», чтобы отправить первую заявку на Урок Мужества.</p></div>';
 layout('Кабинет заявителя',$body); exit;
 }

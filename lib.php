@@ -961,6 +961,9 @@ function active_speakers($fund=null){ if($fund){ $st=db()->prepare("SELECT * FRO
 // ---- объединение заявителей в одну организацию (школа/СПО/вуз) ----
 function school_root_row($school){ if(!empty($school['parent_school_id'])){ $r=find_user_by_id((int)$school['parent_school_id']); if($r) return $r; } return $school; }
 function school_scope_ids($school){ $root=school_root_row($school); $ids=[(int)$root['id'],(int)$school['id']]; $st=db()->prepare("SELECT id FROM users WHERE role='school' AND parent_school_id=?"); $st->execute([$root['id']]); foreach($st->fetchAll(PDO::FETCH_COLUMN) as $mid) $ids[]=(int)$mid; return array_values(array_unique($ids)); }
+// Без фильтра по archived — источник для «Показатели за месяц» на кабинете заявителя,
+// архивация не должна прятать историю проведённых уроков из статистики.
+function school_requests_for_stats($school){ $ids=school_scope_ids($school); $in=implode(',',array_fill(0,count($ids),'?')); $st=db()->prepare("SELECT * FROM requests WHERE school_user_id IN ($in) ORDER BY id DESC"); $st->execute($ids); return $st->fetchAll(); }
 function school_effective($school){ $root=school_root_row($school); if((int)$root['id']===(int)$school['id']) return $school; $eff=$school; foreach(['org_name','level','district','address','building','op_group'] as $k) $eff[$k]=$root[$k]; return $eff; }
 function school_owns_request($school,$r){ return in_array((int)$r['school_user_id'],school_scope_ids($school),true); }
 function head_schools(){ return db()->query("SELECT * FROM users WHERE role='school' AND active=1 AND (parent_school_id IS NULL OR parent_school_id=0) ORDER BY org_name")->fetchAll(); }
@@ -1791,33 +1794,39 @@ $r['fb_app_comment']??''
 rewind($fp); $csv=stream_get_contents($fp); fclose($fp); return $csv;
 }
 // ========== КАЛЕНДАРЬ ==========
+// Без фильтра по archived — при просмотре прошлых месяцев календарь должен показывать
+// проведённые уроки, даже если заявка уже ушла в архив спустя 30 дней после закрытия.
 function get_calendar_events($month=null,$year=null,$user=null){
 if(!$month) $month=date('m'); if(!$year) $year=date('Y');
 $from=sprintf('%04d-%02d-01',(int)$year,(int)$month); $to=date('Y-m-t',strtotime($from));
 $role=$user['role']??'operator'; $uid=$user['id']??0;
-if($role==='school'){ $st=db()->prepare("SELECT * FROM requests WHERE udate BETWEEN ? AND ? AND school_user_id=? AND (archived=0 OR archived IS NULL) ORDER BY udate,utime"); $st->execute([$from,$to,$uid]); }
-elseif($role==='speaker'){ $st=db()->prepare("SELECT r.* FROM requests r JOIN request_speakers rs ON rs.request_id=r.id WHERE r.udate BETWEEN ? AND ? AND rs.speaker_user_id=? AND rs.confirmed=1 AND (r.archived=0 OR r.archived IS NULL) ORDER BY r.udate,r.utime"); $st->execute([$from,$to,$uid]); }
-elseif($role==='fund'){ $st=db()->prepare("SELECT * FROM requests WHERE udate BETWEEN ? AND ? AND id IN (SELECT request_id FROM request_speakers) AND (archived=0 OR archived IS NULL) ORDER BY udate,utime"); $st->execute([$from,$to]); }
-else { $og=($user['op_group']??'')==='school'?" AND op_group='school'":""; $st=db()->prepare("SELECT * FROM requests WHERE udate BETWEEN ? AND ? AND (archived=0 OR archived IS NULL)$og ORDER BY udate,utime"); $st->execute([$from,$to]); }
+if($role==='school'){ $st=db()->prepare("SELECT * FROM requests WHERE udate BETWEEN ? AND ? AND school_user_id=? ORDER BY udate,utime"); $st->execute([$from,$to,$uid]); }
+elseif($role==='speaker'){ $st=db()->prepare("SELECT r.* FROM requests r JOIN request_speakers rs ON rs.request_id=r.id WHERE r.udate BETWEEN ? AND ? AND rs.speaker_user_id=? AND rs.confirmed=1 ORDER BY r.udate,r.utime"); $st->execute([$from,$to,$uid]); }
+elseif($role==='fund'){ $st=db()->prepare("SELECT * FROM requests WHERE udate BETWEEN ? AND ? AND id IN (SELECT request_id FROM request_speakers) ORDER BY udate,utime"); $st->execute([$from,$to]); }
+else { $og=($user['op_group']??'')==='school'?" AND op_group='school'":""; $st=db()->prepare("SELECT * FROM requests WHERE udate BETWEEN ? AND ?$og ORDER BY udate,utime"); $st->execute([$from,$to]); }
 $rows=$st->fetchAll();
 foreach($rows as &$r){ $r['speakers']=implode(', ', array_map(fn($x)=>$x['display_name'], req_confirmed_rows($r['id']))); }
 return $rows;
 }
 // ---------- показатели ----------
+// Без фильтра по archived — отчёт «Отзывы заявителей/спикеров» должен показывать всю историю,
+// включая заявки, ушедшие в архив спустя 30 дней после закрытия.
 function list_app_reviews($opGroup=null){
-$sql="SELECT * FROM requests WHERE (archived=0 OR archived IS NULL) AND fb_app_comment IS NOT NULL AND fb_app_comment<>''"; $p=[];
+$sql="SELECT * FROM requests WHERE fb_app_comment IS NOT NULL AND fb_app_comment<>''"; $p=[];
 if($opGroup){ $sql.=' AND op_group=?'; $p[]=$opGroup; }
 $sql.=' ORDER BY fb_app_at DESC';
 $st=db()->prepare($sql); $st->execute($p); return $st->fetchAll();
 }
 function list_speaker_reviews($opGroup=null){
-$sql="SELECT rs.*, r.code, r.org, r.topic, r.op_group, r.archived, u.display_name speaker_name FROM request_speakers rs JOIN requests r ON r.id=rs.request_id JOIN users u ON u.id=rs.speaker_user_id WHERE (r.archived=0 OR r.archived IS NULL) AND rs.vet_comment IS NOT NULL AND rs.vet_comment<>''"; $p=[];
+$sql="SELECT rs.*, r.code, r.org, r.topic, r.op_group, r.archived, u.display_name speaker_name FROM request_speakers rs JOIN requests r ON r.id=rs.request_id JOIN users u ON u.id=rs.speaker_user_id WHERE rs.vet_comment IS NOT NULL AND rs.vet_comment<>''"; $p=[];
 if($opGroup){ $sql.=' AND r.op_group=?'; $p[]=$opGroup; }
 $sql.=' ORDER BY rs.vet_at DESC';
 $st=db()->prepare($sql); $st->execute($p); return $st->fetchAll();
 }
+// Без фильтра по archived: это источник данных для показателей/статистики (KPI, «Показатели
+// за месяц»), а не рабочего списка заявок — архивация не должна прятать историю из отчётов.
 function operator_scope_requests($opGroup=null){
-$sql='SELECT * FROM requests WHERE (archived=0 OR archived IS NULL)'; $p=[];
+$sql='SELECT * FROM requests WHERE 1=1'; $p=[];
 if($opGroup){ $sql.=' AND op_group=?'; $p[]=$opGroup; }
 $st=db()->prepare($sql); $st->execute($p); return $st->fetchAll();
 }
@@ -1901,22 +1910,24 @@ return [
 ['Отзывы спикеров',$spkReviews,'?p=reviews&type=speaker'.$rq],
 ];
 }
+// Без фильтра по archived — как и operator_scope_requests(), это источник для KPI/«Показатели
+// за месяц», архивация не должна прятать историю из статистики.
 function fund_scope_requests($fund){
 $ids=fund_scope_ids($fund); if(!$ids) return [];
 $in=implode(',',array_fill(0,count($ids),'?'));
-$st=db()->prepare("SELECT * FROM requests WHERE (archived=0 OR archived IS NULL) AND claimed_fund_id IN ($in)");
+$st=db()->prepare("SELECT * FROM requests WHERE claimed_fund_id IN ($in)");
 $st->execute($ids); return $st->fetchAll();
 }
 function list_app_reviews_for_fund($fund){
 $ids=fund_scope_ids($fund); if(!$ids) return [];
 $in=implode(',',array_fill(0,count($ids),'?'));
-$st=db()->prepare("SELECT * FROM requests WHERE (archived=0 OR archived IS NULL) AND claimed_fund_id IN ($in) AND fb_app_comment IS NOT NULL AND fb_app_comment<>'' ORDER BY fb_app_at DESC");
+$st=db()->prepare("SELECT * FROM requests WHERE claimed_fund_id IN ($in) AND fb_app_comment IS NOT NULL AND fb_app_comment<>'' ORDER BY fb_app_at DESC");
 $st->execute($ids); return $st->fetchAll();
 }
 function list_speaker_reviews_for_fund($fund){
 $ids=fund_scope_ids($fund); if(!$ids) return [];
 $in=implode(',',array_fill(0,count($ids),'?'));
-$st=db()->prepare("SELECT rs.*, r.code, r.org, r.topic, u.display_name speaker_name FROM request_speakers rs JOIN requests r ON r.id=rs.request_id JOIN users u ON u.id=rs.speaker_user_id WHERE (r.archived=0 OR r.archived IS NULL) AND rs.vet_comment IS NOT NULL AND rs.vet_comment<>'' AND u.fund_user_id IN ($in) ORDER BY rs.vet_at DESC");
+$st=db()->prepare("SELECT rs.*, r.code, r.org, r.topic, u.display_name speaker_name FROM request_speakers rs JOIN requests r ON r.id=rs.request_id JOIN users u ON u.id=rs.speaker_user_id WHERE rs.vet_comment IS NOT NULL AND rs.vet_comment<>'' AND u.fund_user_id IN ($in) ORDER BY rs.vet_at DESC");
 $st->execute($ids); return $st->fetchAll();
 }
 function fund_kpis($fund){
