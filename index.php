@@ -1073,7 +1073,7 @@ if($u['role']==='fund'){ $where.=" AND role='speaker' AND fund_user_id=?"; $para
 elseif($u['role']==='school'){ $schRoot=school_root_row($u); $where.=" AND role='school' AND parent_school_id=?"; $params[]=$schRoot['id']; $scopeNote='Сотрудники, зарегистрированные как участники организации «'.esc($schRoot['org_name']).'».'; }
 else { $og=$u['op_group']??'';
 if($og===''){ $superAdmin=true; if($role_filter){ $where.=" AND role=?"; $params[]=$role_filter; } }
-else { $where.=" AND role='school' AND (op_group=? OR (op_group IS NULL OR op_group='') AND level IN (".implode(',',array_fill(0,count(applicant_group_levels($og)),'?')).'))'; $params[]=$og; $params=array_merge($params,applicant_group_levels($og)); $scopeNote='Только ваши организации.'; }
+else { $where.=" AND (role='fund' OR (role='school' AND (op_group=? OR (op_group IS NULL OR op_group='') AND level IN (".implode(',',array_fill(0,count(applicant_group_levels($og)),'?')).'))))'; $params[]=$og; $params=array_merge($params,applicant_group_levels($og)); $scopeNote='Ваши организации, а также фонды — для сброса пароля.'; }
 }
 $q=trim($_GET['q']??'');
 if($q!==''){ $where.=" AND (login LIKE ? OR display_name LIKE ? OR org_name LIKE ? OR email LIKE ?)"; $qq='%'.$q.'%'; $params=array_merge($params,[$qq,$qq,$qq,$qq]); }
@@ -1087,10 +1087,9 @@ $body.='<div class="table-scroll"><table class="card-view resizable"><thead><tr>
 foreach($users as $x){
 $status=$x['active']?'<span class="pill green">активен</span>':'<span class="pill gray">ожидает</span>';
 $actions='';
-if($schoolIsRoot){
-$actions.='<form method="post" style="display:inline">'.csrf_field().'<input type="hidden" name="action" value="admin_reset_password"><input type="hidden" name="target_id" value="'.$x['id'].'"><input type="password" name="newpass" placeholder="Новый пароль" required style="width:140px"><button class="btn ghost sm">Сбросить пароль</button></form>';
-$actions.=' <form method="post" style="display:inline" onsubmit="return confirm(\'Удалить?\')">'.csrf_field().'<input type="hidden" name="action" value="delete_user"><input type="hidden" name="target_id" value="'.$x['id'].'"><button class="btn ghost sm" style="color:#b23b2c;border-color:#f5c6c0">Удалить</button></form>';
-}
+$canResetPw=can_reset_password($u,$x);
+if($schoolIsRoot && $canResetPw) $actions.='<form method="post" style="display:inline">'.csrf_field().'<input type="hidden" name="action" value="admin_reset_password"><input type="hidden" name="target_id" value="'.$x['id'].'"><input type="password" name="newpass" placeholder="Новый пароль" required style="width:140px"><button class="btn ghost sm">Сбросить пароль</button></form>';
+if($schoolIsRoot && can_manage($u,$x)) $actions.=' <form method="post" style="display:inline" onsubmit="return confirm(\'Удалить?\')">'.csrf_field().'<input type="hidden" name="action" value="delete_user"><input type="hidden" name="target_id" value="'.$x['id'].'"><button class="btn ghost sm" style="color:#b23b2c;border-color:#f5c6c0">Удалить</button></form>';
 if($u['role']==='school' && $schoolIsRoot && $x['active']){ $actions.=' <form method="post" style="display:inline" onsubmit="return confirm(\'Передать права головного аккаунта организации сотруднику «'.esc($x['contact_name']).'»? Вы станете обычным сотрудником, а он сможет подтверждать новых сотрудников и редактировать данные организации.\')">'.csrf_field().'<input type="hidden" name="action" value="transfer_school_head"><input type="hidden" name="uid" value="'.$x['id'].'"><button class="btn ghost sm">Сделать головным</button></form>'; }
 if($actions==='') $actions='<span class="muted">—</span>';
 $body.='<tr><td class="id">'.esc($x['login']).'</td><td data-label="ФИО/Орг">'.esc($x['display_name']?:$x['org_name']).'</td><td data-label="Роль">'.esc($x['role']).'</td><td data-label="Email">'.esc($x['email']??'—').'</td><td data-label="ФИО контактного лица" class="muted">'.esc($x['contact_name']?:'—').'</td><td data-label="Должность" class="muted">'.esc($x['position']?:'—').'</td><td data-label="Телефон" class="muted">'.esc($x['phone']?:'—').'</td><td data-label="Адрес местонахождения" class="muted">'.esc($x['address']?:'—').'</td><td data-label="№ корпуса" class="muted">'.esc($x['building']?:'—').'</td><td data-label="Статус">'.$status.'</td><td data-label="Действия">'.$actions.'</td></tr>';

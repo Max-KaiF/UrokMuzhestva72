@@ -636,10 +636,18 @@ return $target['role']==='school' && (int)($target['parent_school_id']??0)===(in
 }
 return false;
 }
+// Фонды не привязаны к школьному/региональному отделу (в отличие от заявителей), поэтому
+// сбросить пароль фонду — без почты, из раздела «Пользователи» — может любой оператор,
+// даже если can_manage() не даёт ему прав управлять фондом в остальном (например, удалять).
+function can_reset_password($actor,$target){
+if(!$target) return false;
+if($actor['role']==='operator' && $target['role']==='fund') return true;
+return can_manage($actor,$target);
+}
 function admin_reset_password($admin,$target_id,$newpass){
 $u=find_user_by_id($target_id);
 if(!$u) return [false,'Пользователь не найден.'];
-if(!can_manage($admin,$u)) return [false,'У вас нет прав управлять этим пользователем.'];
+if(!can_reset_password($admin,$u)) return [false,'У вас нет прав управлять этим пользователем.'];
 $hash=password_hash($newpass,PASSWORD_DEFAULT);
 db()->prepare("UPDATE users SET pass_hash=? WHERE id=?")->execute([$hash,$target_id]);
 log_action($admin['id'],$admin['role'],'admin_password_reset','users',$target_id,"Административный сброс пароля для {$u['login']}");
