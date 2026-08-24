@@ -1654,13 +1654,13 @@ foreach($shuffledQ as $pos=>$sq){
 $i=$sq['orig_index'];
 $body.='<div style="margin-bottom:18px'.($pos>0?';padding-top:16px;border-top:1px solid var(--line)':'').'"><p style="font-weight:600;margin:0 0 8px">'.($pos+1).'. '.esc($sq['text']).'</p>';
 foreach($sq['options'] as $ok=>$opt){
-$body.='<label class="chk" style="display:block;margin:4px 0"><input type="radio" name="answers['.$i.']" value="'.$ok.'" required> '.$ok.') '.esc($opt['label']).'</label>';
+$body.='<label class="chk" style="display:block;margin:4px 0"><input type="radio" name="answers['.$i.']" value="'.$ok.'" required> '.esc($opt['label']).'</label>';
 }
 $body.='</div>';
 }
 $fq=readiness_final_question_shuffled();
 $body.='<div style="margin-bottom:8px;padding-top:16px;border-top:2px solid var(--amber)"><p style="font-weight:600;margin:0 0 8px">Последний вопрос. '.esc($fq['text']).'</p>';
-foreach($fq['options'] as $ok=>$label) $body.='<label class="chk" style="display:block;margin:4px 0"><input type="radio" name="final_answer" value="'.$ok.'" required> '.$ok.') '.esc($label).'</label>';
+foreach($fq['options'] as $ok=>$label) $body.='<label class="chk" style="display:block;margin:4px 0"><input type="radio" name="final_answer" value="'.$ok.'" required> '.esc($label).'</label>';
 $body.='<p class="muted" style="margin-top:6px;font-size:12.5px">Этот вопрос не влияет на баллы по возрастному блоку — он только помогает куратору при необходимости мягко поддержать вас.</p></div>';
 $body.='<button class="btn primary" style="margin-top:8px">Отправить анкету</button></form>';
 layout('Анкета готовности',$body); exit;
@@ -1686,7 +1686,7 @@ if($sq['line']!==$curLine){ $curLine=$sq['line']; $body.='<h4 style="margin:'.($
 $qn++;
 $body.='<div style="margin-bottom:16px;padding-top:12px;border-top:1px solid var(--line)"><p style="font-weight:600;margin:0 0 8px">'.esc($sq['text']).'</p>';
 foreach($sq['options'] as $ok=>$opt){
-$body.='<label class="chk" style="display:block;margin:4px 0"><input type="radio" name="answers['.$i.']" value="'.$ok.'" required> '.$ok.') '.esc($opt['label']).'</label>';
+$body.='<label class="chk" style="display:block;margin:4px 0"><input type="radio" name="answers['.$i.']" value="'.$ok.'" required> '.esc($opt['label']).'</label>';
 }
 $body.='</div>';
 }
