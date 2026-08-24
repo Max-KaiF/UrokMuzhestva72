@@ -770,6 +770,12 @@ $last=speaker_last_attempt($speakerId,$ageGroup);
 if(!$last) return true;
 return (time()-strtotime($last['created_at']))>=$cooldownSeconds;
 }
+// Сдавал ли спикер когда-либо этот тест успешно (независимо от более поздних пересдач) —
+// это условие, при котором фонд/оператор МОЖЕТ включить допуск. Само по себе не даёт допуска.
+function speaker_test_ever_passed($speakerId,$ageGroup){
+$st=db()->prepare("SELECT 1 FROM speaker_test_attempts WHERE speaker_user_id=? AND age_group=? AND passed=1 LIMIT 1");
+$st->execute([$speakerId,$ageGroup]); return (bool)$st->fetch();
+}
 // Сводка допуска спикера по всем возрастным группам — для его личного кабинета.
 function speaker_test_overview($speaker){
 $counts=test_question_counts(); $out=[];
@@ -780,6 +786,7 @@ $out[$k]=[
 'label'=>$label,
 'total_questions'=>$total,
 'ready'=>$total>=3,
+'passed'=>speaker_test_ever_passed($speaker['id'],$k),
 'certified'=>speaker_is_certified($speaker,$k),
 'last'=>$last,
 'can_retake'=>test_attempt_allowed($speaker['id'],$k),
@@ -787,13 +794,42 @@ $out[$k]=[
 }
 return $out;
 }
-// Вопросы для прохождения — без правильного ответа, в случайном порядке.
+// Фонд/оператор включает или отключает допуск спикера к возрастной группе. Включить можно
+// только после того, как спикер хотя бы раз успешно сдал тест по этой группе — сам тест
+// больше не выдаёт допуск автоматически, это финальное решение фонда/оператора.
+function set_speaker_certification($actor,$speaker,$ageGroup,$on){
+if(!array_key_exists($ageGroup,ages())) return [false,'Некорректная возрастная группа.'];
+if($actor['role']==='fund'){
+$spFund=speaker_fund_of($speaker['id']);
+if(!$spFund || !in_array((int)$spFund['id'],fund_scope_ids($actor),true)) return [false,'Этот спикер относится к другому фонду.'];
+} elseif($actor['role']!=='operator'){
+return [false,'Нет прав.'];
+}
+$cur=speaker_certified_groups($speaker);
+if($on){
+if(!speaker_test_ever_passed($speaker['id'],$ageGroup)) return [false,'Сначала спикер должен успешно сдать тест по этой группе.'];
+if(!in_array($ageGroup,$cur,true)) $cur[]=$ageGroup;
+} else {
+$cur=array_values(array_diff($cur,[$ageGroup]));
+}
+db()->prepare("UPDATE users SET certified_age_groups=? WHERE id=?")->execute([implode(',',$cur),$speaker['id']]);
+log_action($actor['id'],$actor['role'],'set_speaker_certification','users',$speaker['id'],($on?'Включён':'Отключён')." допуск к группе «".ages()[$ageGroup]."»");
+return [true,$on?'Допуск включён.':'Допуск отключён.'];
+}
+// Вопросы для прохождения — без правильного ответа, в случайном порядке; варианты ответа
+// внутри каждого вопроса тоже перемешаны (буква варианта не меняется, меняется только то,
+// в какой позиции на экране он показан — так подсчёт по correct_option остаётся верным).
 function test_questions_for_attempt($ageGroup){
 $rows=list_test_questions($ageGroup);
 $rows=array_filter($rows,fn($q)=>!empty($q['active']));
 $rows=array_values($rows);
 shuffle($rows);
-return array_map(fn($q)=>['id'=>$q['id'],'question'=>$q['question'],'options'=>['a'=>$q['option_a'],'b'=>$q['option_b'],'c'=>$q['option_c'],'d'=>$q['option_d']]],$rows);
+return array_map(function($q){
+$opts=['a'=>$q['option_a'],'b'=>$q['option_b'],'c'=>$q['option_c'],'d'=>$q['option_d']];
+$keys=array_keys($opts); shuffle($keys);
+$shuffled=[]; foreach($keys as $k) $shuffled[$k]=$opts[$k];
+return ['id'=>$q['id'],'question'=>$q['question'],'options'=>$shuffled];
+},$rows);
 }
 // $answers: [question_id => 'a'|'b'|'c'|'d']
 function submit_speaker_test($speaker,$ageGroup,$answers){
@@ -812,10 +848,8 @@ $detail[]=['question_id'=>(int)$q['id'],'question'=>$q['question'],'given'=>$giv
 $passed=$score>=test_pass_threshold($total);
 db()->prepare("INSERT INTO speaker_test_attempts(speaker_user_id,age_group,score,total,passed,answers,created_at) VALUES(?,?,?,?,?,?,?)")
 ->execute([$speaker['id'],$ageGroup,$score,$total,$passed?1:0,json_encode($detail,JSON_UNESCAPED_UNICODE),now()]);
-if($passed){
-$cur=speaker_certified_groups($speaker);
-if(!in_array($ageGroup,$cur,true)){ $cur[]=$ageGroup; db()->prepare("UPDATE users SET certified_age_groups=? WHERE id=?")->execute([implode(',',$cur),$speaker['id']]); }
-}
+// Успешная сдача больше не выдаёт допуск сама по себе — она лишь открывает фонду/оператору
+// возможность включить допуск вручную (см. set_speaker_certification()).
 log_action($speaker['id'],'speaker','speaker_test_attempt','users',$speaker['id'],"Тест «".ages()[$ageGroup]."»: $score из $total".($passed?' — пройден':' — не пройден'));
 return [true,['score'=>$score,'total'=>$total,'passed'=>$passed]];
 }
@@ -907,6 +941,27 @@ function readiness_final_question(){ return [
 'C'=>'Некоторые вопросы дались тяжело, потребовалось время, чтобы собраться и продолжить (выраженный дискомфорт)',
 'D'=>'Отвечая, я испытал(а) сильное волнение, мне было трудно сосредоточиться, или появились физические проявления стресса просто от того, что я вспоминал(а) эти темы (острая реакция)',
 ]]; }
+// Перемешивает порядок вопросов блока и порядок вариантов ответа КАЖДОГО вопроса при каждом
+// показе анкеты. Индексы вопросов (для submit_readiness()) и буквы вариантов (для подсчёта
+// баллов) не меняются — меняется только то, в каком порядке всё это показывается на экране.
+function readiness_questions_shuffled($block){
+$order=array_keys($block['questions']);
+shuffle($order);
+$out=[];
+foreach($order as $i){
+$q=$block['questions'][$i];
+$optKeys=array_keys($q['options']); shuffle($optKeys);
+$opts=[]; foreach($optKeys as $ok) $opts[$ok]=$q['options'][$ok];
+$out[]=['orig_index'=>$i,'text'=>$q['text'],'options'=>$opts];
+}
+return $out;
+}
+function readiness_final_question_shuffled(){
+$fq=readiness_final_question();
+$keys=array_keys($fq['options']); shuffle($keys);
+$opts=[]; foreach($keys as $k) $opts[$k]=$fq['options'][$k];
+return ['text'=>$fq['text'],'options'=>$opts];
+}
 function readiness_status_for_score($score){ if($score>=15) return 'ready'; if($score>=7) return 'needs_prep'; return 'not_ready'; }
 function readiness_status_meta($status){ return [
 'ready'=>['label'=>'Готов','color'=>'green','desc'=>'Допуск к занятиям в этой возрастной группе без дополнительной подготовки.'],

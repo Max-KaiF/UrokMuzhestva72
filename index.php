@@ -257,7 +257,7 @@ $ageGroup=$_POST['age_group']??'';
 [$ok,$res]=submit_speaker_test($u,$ageGroup,$_POST['answers']??[]);
 if(!$ok){ flash_set($res); redirect('?p=speaker'); }
 flash_set($res['passed']
-? 'Тест пройден: '.$res['score'].' из '.$res['total'].'. Группа «'.esc(ages()[$ageGroup]??$ageGroup).'» допущена.'
+? 'Тест пройден: '.$res['score'].' из '.$res['total'].'. Группа «'.esc(ages()[$ageGroup]??$ageGroup).'» — ожидайте, пока фонд включит допуск.'
 : 'Тест не пройден: '.$res['score'].' из '.$res['total'].'. Следующая попытка — через сутки.');
 redirect('?p=speaker');
 }
@@ -269,6 +269,15 @@ if(!$ok){ flash_set($res); redirect('?p=speaker'); }
 $meta=readiness_status_meta($res['status']);
 flash_set('Анкета отправлена: '.$res['score'].' из 20 — «'.esc($meta['label']).'». '.esc($meta['desc']));
 redirect('?p=speaker');
+}
+if($a==='set_speaker_certification'){
+require_role(['fund','operator']);
+$sp=find_user_by_id((int)($_POST['speaker_id']??0));
+$backId=(int)($_POST['speaker_id']??0);
+if(!$sp || $sp['role']!=='speaker'){ flash_set('Спикер не найден.'); redirect('?p=speaker_view&id='.$backId); }
+[$ok,$msg]=set_speaker_certification($u,$sp,$_POST['age_group']??'',!empty($_POST['on']));
+flash_set($msg);
+redirect('?p=speaker_view&id='.$backId);
 }
 if($a==='add_material'){
 require_role('operator');
@@ -820,15 +829,23 @@ if(!empty($sp['sp_achievements'])) $body.='<div class="block"><h4>Достиже
 if(!empty($sp['sp_hobbies'])) $body.='<div class="block"><h4>Увлечения, хобби</h4><p>'.esc($sp['sp_hobbies']).'</p></div>';
 if(!empty($sp['sp_bio'])) $body.='<div class="block"><h4>О себе</h4><p>'.nl2br(esc($sp['sp_bio'])).'</p></div>';
 // ========== ДОПУСК К ВОЗРАСТНЫМ ГРУППАМ (тестирование) ==========
-$body.='<div class="block"><h4>🎓 Допуск к возрастным группам</h4>';
+$body.='<div class="block"><h4>🎓 Допуск к возрастным группам</h4><p class="muted">Включить допуск можно только после того, как спикер успешно сдал тест по этой группе — переключатель становится активным сразу после сдачи.</p>';
 $certified=speaker_certified_groups($sp);
-$body.='<table class="card-view"><thead><tr><th>Группа</th><th>Статус</th><th>Последняя попытка</th></tr></thead><tbody>';
+$body.='<table class="card-view"><thead><tr><th>Группа</th><th>Тест</th><th>Допуск</th><th>Последняя попытка</th></tr></thead><tbody>';
 foreach(ages() as $gk=>$glabel){
 $isCert=in_array($gk,$certified,true);
+$passed=speaker_test_ever_passed($sp['id'],$gk);
 $last=speaker_last_attempt($sp['id'],$gk);
-$statusPill=$isCert?'<span class="pill green">✓ Допущен</span>':'<span class="pill gray">не допущен</span>';
+$testPill=$passed?'<span class="pill green">пройден</span>':'<span class="pill gray">не сдан</span>';
 $lastTxt=$last?esc($last['score']).' из '.esc($last['total']).' · '.esc(substr((string)$last['created_at'],0,16)).($last['passed']?' <span class="pill green">пройден</span>':' <span class="pill gray">не пройден</span>'):'<span class="muted">попыток не было</span>';
-$body.='<tr><td data-label="Группа">'.esc($glabel).'</td><td data-label="Статус">'.$statusPill.'</td><td data-label="Последняя попытка">'.$lastTxt.'</td></tr>';
+if($isCert){
+$toggleCell='<span class="pill green">✓ Допущен</span> <form method="post" style="display:inline"><input type="hidden" name="action" value="set_speaker_certification"><input type="hidden" name="speaker_id" value="'.$sp['id'].'"><input type="hidden" name="age_group" value="'.esc($gk).'">'.csrf_field().'<button class="btn ghost sm">Отключить</button></form>';
+} elseif($passed){
+$toggleCell='<span class="pill gray">не допущен</span> <form method="post" style="display:inline"><input type="hidden" name="action" value="set_speaker_certification"><input type="hidden" name="speaker_id" value="'.$sp['id'].'"><input type="hidden" name="age_group" value="'.esc($gk).'"><input type="hidden" name="on" value="1">'.csrf_field().'<button class="btn primary sm">Включить допуск</button></form>';
+} else {
+$toggleCell='<span class="muted">сначала тест</span>';
+}
+$body.='<tr><td data-label="Группа">'.esc($glabel).'</td><td data-label="Тест">'.$testPill.'</td><td data-label="Допуск">'.$toggleCell.'</td><td data-label="Последняя попытка">'.$lastTxt.'</td></tr>';
 }
 $body.='</tbody></table>';
 $history=speaker_test_attempts_history($sp['id']);
@@ -1628,11 +1645,12 @@ $body.='<div class="materials-grid">';
 foreach($overview as $gk=>$ov){
 $body.='<div class="material-card"><div class="material-header"><div class="material-info"><div class="material-title">'.esc($ov['label']).'</div></div></div><div class="material-body">';
 if($ov['certified']) $body.='<span class="pill green">✓ Допущен</span>';
+elseif($ov['passed']) $body.='<span class="pill amber">Тест сдан — ждём включения фондом</span>';
 elseif(!$ov['ready']) $body.='<span class="pill gray">Тест ещё не готов</span>';
 elseif($ov['last'] && !$ov['can_retake']) $body.='<span class="pill gray">Не пройден</span><p class="muted" style="margin:6px 0 0;font-size:12.5px">Следующая попытка — через сутки после предыдущей.</p>';
 else $body.='<span class="pill gray">Не пройден</span>';
 if($ov['last']) $body.='<p class="muted" style="margin:8px 0 0;font-size:12.5px">Последняя попытка: '.(int)$ov['last']['score'].' из '.(int)$ov['last']['total'].' ('.esc(substr((string)$ov['last']['created_at'],0,10)).')</p>';
-if($ov['ready'] && !$ov['certified'] && $ov['can_retake']) $body.='<div style="margin-top:10px"><a class="btn primary sm" href="?p=speaker_test&group='.esc($gk).'">Пройти тест</a></div>';
+if($ov['ready'] && !$ov['certified'] && !$ov['passed'] && $ov['can_retake']) $body.='<div style="margin-top:10px"><a class="btn primary sm" href="?p=speaker_test&group='.esc($gk).'">Пройти тест</a></div>';
 $body.='</div></div>';
 }
 $body.='</div></div>';
@@ -1705,10 +1723,13 @@ if(count($questions)<3){ layout('Тест','<div class="card pad"><p>По гру
 $body='<div class="head"><h2>Тест: «'.esc(ages()[$ageGroup]).'»</h2><a class="btn ghost" href="?p=speaker">← в кабинет</a></div>';
 $body.='<p class="muted">Вопросов: '.count($questions).'. Для допуска нужно набрать не менее '.test_pass_threshold(count($questions)).' правильных ответов.</p>';
 $body.='<form method="post" class="card pad">'.csrf_field().'<input type="hidden" name="action" value="submit_speaker_test"><input type="hidden" name="age_group" value="'.esc($ageGroup).'">';
+$posLabels=['А','Б','В','Г'];
 foreach($questions as $i=>$q){
 $body.='<div style="margin-bottom:18px'.($i>0?';padding-top:16px;border-top:1px solid var(--line)':'').'"><p style="font-weight:600;margin:0 0 8px">'.($i+1).'. '.esc($q['question']).'</p>';
-foreach(['a'=>'А','b'=>'Б','c'=>'В','d'=>'Г'] as $ok=>$ol){
-$body.='<label class="chk" style="display:block;margin:4px 0"><input type="radio" name="answers['.$q['id'].']" value="'.$ok.'" required> '.$ol.') '.esc($q['options'][$ok]).'</label>';
+$pi=0;
+foreach($q['options'] as $ok=>$otext){
+$body.='<label class="chk" style="display:block;margin:4px 0"><input type="radio" name="answers['.$q['id'].']" value="'.$ok.'" required> '.$posLabels[$pi].') '.esc($otext).'</label>';
+$pi++;
 }
 $body.='</div>';
 }
@@ -1726,14 +1747,16 @@ $block=$blocks[$blockKey];
 $body='<div class="head"><h2>Анкета самооценки: «'.esc($block['label']).'»</h2><a class="btn ghost" href="?p=speaker">← в кабинет</a></div>';
 $body.='<p class="muted">Честный ответ не снижает ваш статус в программе — он определяет, с какой аудиторией и в каком формате комфортнее начать. Результат видят фонд и оператор как рабочий ориентир, а не автоматический запрет.</p>';
 $body.='<form method="post" class="card pad">'.csrf_field().'<input type="hidden" name="action" value="submit_readiness"><input type="hidden" name="block_key" value="'.esc($blockKey).'">';
-foreach($block['questions'] as $i=>$q){
-$body.='<div style="margin-bottom:18px'.($i>0?';padding-top:16px;border-top:1px solid var(--line)':'').'"><p style="font-weight:600;margin:0 0 8px">'.($i+1).'. '.esc($q['text']).'</p>';
-foreach($q['options'] as $ok=>$opt){
+$shuffledQ=readiness_questions_shuffled($block);
+foreach($shuffledQ as $pos=>$sq){
+$i=$sq['orig_index'];
+$body.='<div style="margin-bottom:18px'.($pos>0?';padding-top:16px;border-top:1px solid var(--line)':'').'"><p style="font-weight:600;margin:0 0 8px">'.($pos+1).'. '.esc($sq['text']).'</p>';
+foreach($sq['options'] as $ok=>$opt){
 $body.='<label class="chk" style="display:block;margin:4px 0"><input type="radio" name="answers['.$i.']" value="'.$ok.'" required> '.$ok.') '.esc($opt['label']).'</label>';
 }
 $body.='</div>';
 }
-$fq=readiness_final_question();
+$fq=readiness_final_question_shuffled();
 $body.='<div style="margin-bottom:8px;padding-top:16px;border-top:2px solid var(--amber)"><p style="font-weight:600;margin:0 0 8px">Последний вопрос. '.esc($fq['text']).'</p>';
 foreach($fq['options'] as $ok=>$label) $body.='<label class="chk" style="display:block;margin:4px 0"><input type="radio" name="final_answer" value="'.$ok.'" required> '.$ok.') '.esc($label).'</label>';
 $body.='<p class="muted" style="margin-top:6px;font-size:12.5px">Этот вопрос не влияет на баллы по возрастному блоку — он только помогает куратору при необходимости мягко поддержать вас.</p></div>';
