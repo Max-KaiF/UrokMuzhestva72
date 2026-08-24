@@ -735,75 +735,16 @@ function speaker_org_name($sid){ $s=find_user_by_id((int)$sid); if(!$s || empty(
 function fund_name_by_id($fid){ $f=$fid?find_user_by_id((int)$fid):null; return $f ? (string)$f['display_name'] : ''; }
 function head_funds(){ return db()->query("SELECT * FROM users WHERE role='fund' AND (parent_fund_id IS NULL OR parent_fund_id=0) ORDER BY display_name")->fetchAll(); }
 function pending_subfunds($head){ $st=db()->prepare("SELECT * FROM users WHERE role='fund' AND parent_fund_id=? AND active=0 ORDER BY id DESC"); $st->execute([$head['id']]); return $st->fetchAll(); }
-// ========== ТЕСТИРОВАНИЕ СПИКЕРОВ ПО ВОЗРАСТНЫМ ГРУППАМ ==========
-// Банк вопросов ведёт оператор, отдельно по каждой возрастной группе (ages()).
-// Целевой размер банка — 10 вопросов на группу; тест включает все активные вопросы группы.
-function test_question_target(){ return 10; }
-function list_test_questions($ageGroup=null){
-if($ageGroup){ $st=db()->prepare("SELECT * FROM speaker_test_questions WHERE age_group=? ORDER BY id"); $st->execute([$ageGroup]); return $st->fetchAll(); }
-return db()->query("SELECT * FROM speaker_test_questions ORDER BY age_group, id")->fetchAll();
-}
-function get_test_question($id){ $st=db()->prepare("SELECT * FROM speaker_test_questions WHERE id=?"); $st->execute([$id]); return $st->fetch()?:null; }
-function test_question_counts(){
-$rows=db()->query("SELECT age_group, COUNT(*) c FROM speaker_test_questions WHERE active=1 GROUP BY age_group")->fetchAll();
-$out=[]; foreach($rows as $r) $out[$r['age_group']]=(int)$r['c']; return $out;
-}
-function add_test_question($ageGroup,$question,$opts,$correct,$actorId){
-db()->prepare("INSERT INTO speaker_test_questions(age_group,question,option_a,option_b,option_c,option_d,correct_option,active,created_by,created_at) VALUES(?,?,?,?,?,?,?,1,?,?)")
-->execute([$ageGroup,$question,$opts['a'],$opts['b'],$opts['c'],$opts['d'],$correct,$actorId,now()]);
-$id=db()->lastInsertId();
-log_action($actorId,'operator','test_question_add','speaker_test_questions',$id,"Добавлен вопрос теста ($ageGroup)");
-return $id;
-}
-function update_test_question($id,$ageGroup,$question,$opts,$correct,$actorId){
-db()->prepare("UPDATE speaker_test_questions SET age_group=?,question=?,option_a=?,option_b=?,option_c=?,option_d=?,correct_option=? WHERE id=?")
-->execute([$ageGroup,$question,$opts['a'],$opts['b'],$opts['c'],$opts['d'],$correct,$id]);
-log_action($actorId,'operator','test_question_update','speaker_test_questions',$id,"Изменён вопрос теста #$id");
-}
-function delete_test_question($id,$actorId){
-db()->prepare("DELETE FROM speaker_test_questions WHERE id=?")->execute([$id]);
-log_action($actorId,'operator','test_question_delete','speaker_test_questions',$id,"Удалён вопрос теста #$id");
-}
-// ---- прохождение теста спикером ----
-function test_pass_threshold($total){ return (int)ceil($total*0.8); }
+// ========== ДОПУСК К ВОЗРАСТНЫМ ГРУППАМ ==========
+// Раньше допуск давал отдельный тест знаний оператора (банк вопросов, авто-проверка) — эта
+// механика убрана целиком (банк вопросов пустовал, наполнить его было нечем). Теперь решение
+// о допуске фонд/оператор принимает по результатам «Анкеты самооценки психологической
+// готовности» (ниже) — она сдаётся по каждой возрастной группе, но сама ничего не блокирует.
 function speaker_certified_groups($speaker){ return array_values(array_filter(explode(',',(string)($speaker['certified_age_groups']??'')))); }
-function speaker_is_certified($speaker,$ageGroup){ return in_array($ageGroup,speaker_certified_groups($speaker),true); }
-function speaker_last_attempt($speakerId,$ageGroup){
-$st=db()->prepare("SELECT * FROM speaker_test_attempts WHERE speaker_user_id=? AND age_group=? ORDER BY id DESC LIMIT 1");
-$st->execute([$speakerId,$ageGroup]); return $st->fetch()?:null;
-}
-function test_attempt_allowed($speakerId,$ageGroup,$cooldownSeconds=86400){
-$last=speaker_last_attempt($speakerId,$ageGroup);
-if(!$last) return true;
-return (time()-strtotime($last['created_at']))>=$cooldownSeconds;
-}
-// Сдавал ли спикер когда-либо этот тест успешно (независимо от более поздних пересдач) —
-// это условие, при котором фонд/оператор МОЖЕТ включить допуск. Само по себе не даёт допуска.
-function speaker_test_ever_passed($speakerId,$ageGroup){
-$st=db()->prepare("SELECT 1 FROM speaker_test_attempts WHERE speaker_user_id=? AND age_group=? AND passed=1 LIMIT 1");
-$st->execute([$speakerId,$ageGroup]); return (bool)$st->fetch();
-}
-// Сводка допуска спикера по всем возрастным группам — для его личного кабинета.
-function speaker_test_overview($speaker){
-$counts=test_question_counts(); $out=[];
-foreach(ages() as $k=>$label){
-$total=$counts[$k]??0;
-$last=speaker_last_attempt($speaker['id'],$k);
-$out[$k]=[
-'label'=>$label,
-'total_questions'=>$total,
-'ready'=>$total>=3,
-'passed'=>speaker_test_ever_passed($speaker['id'],$k),
-'certified'=>speaker_is_certified($speaker,$k),
-'last'=>$last,
-'can_retake'=>test_attempt_allowed($speaker['id'],$k),
-];
-}
-return $out;
-}
 // Фонд/оператор включает или отключает допуск спикера к возрастной группе. Включить можно
-// только после того, как спикер хотя бы раз успешно сдал тест по этой группе — сам тест
-// больше не выдаёт допуск автоматически, это финальное решение фонда/оператора.
+// только после того, как спикер хотя бы раз заполнил анкету самооценки психологической
+// готовности по этой группе — по её результатам (баллы, разбор по линиям, возможный маркер
+// острой реакции) фонд и принимает решение; сама анкета допуск не выдаёт автоматически.
 function set_speaker_certification($actor,$speaker,$ageGroup,$on){
 if(!array_key_exists($ageGroup,ages())) return [false,'Некорректная возрастная группа.'];
 if($actor['role']==='fund'){
@@ -814,7 +755,7 @@ return [false,'Нет прав.'];
 }
 $cur=speaker_certified_groups($speaker);
 if($on){
-if(!speaker_test_ever_passed($speaker['id'],$ageGroup)) return [false,'Сначала спикер должен успешно сдать тест по этой группе.'];
+if(!speaker_psych_readiness_last($speaker['id'],$ageGroup)) return [false,'Сначала спикер должен заполнить анкету самооценки психологической готовности по этой группе.'];
 if(!in_array($ageGroup,$cur,true)) $cur[]=$ageGroup;
 } else {
 $cur=array_values(array_diff($cur,[$ageGroup]));
@@ -822,47 +763,6 @@ $cur=array_values(array_diff($cur,[$ageGroup]));
 db()->prepare("UPDATE users SET certified_age_groups=? WHERE id=?")->execute([implode(',',$cur),$speaker['id']]);
 log_action($actor['id'],$actor['role'],'set_speaker_certification','users',$speaker['id'],($on?'Включён':'Отключён')." допуск к группе «".ages()[$ageGroup]."»");
 return [true,$on?'Допуск включён.':'Допуск отключён.'];
-}
-// Вопросы для прохождения — без правильного ответа, в случайном порядке; варианты ответа
-// внутри каждого вопроса тоже перемешаны (буква варианта не меняется, меняется только то,
-// в какой позиции на экране он показан — так подсчёт по correct_option остаётся верным).
-function test_questions_for_attempt($ageGroup){
-$rows=list_test_questions($ageGroup);
-$rows=array_filter($rows,fn($q)=>!empty($q['active']));
-$rows=array_values($rows);
-shuffle($rows);
-return array_map(function($q){
-$opts=['a'=>$q['option_a'],'b'=>$q['option_b'],'c'=>$q['option_c'],'d'=>$q['option_d']];
-$keys=array_keys($opts); shuffle($keys);
-$shuffled=[]; foreach($keys as $k) $shuffled[$k]=$opts[$k];
-return ['id'=>$q['id'],'question'=>$q['question'],'options'=>$shuffled];
-},$rows);
-}
-// $answers: [question_id => 'a'|'b'|'c'|'d']
-function submit_speaker_test($speaker,$ageGroup,$answers){
-if(!array_key_exists($ageGroup,ages())) return [false,'Некорректная возрастная группа.'];
-if(!test_attempt_allowed($speaker['id'],$ageGroup)) return [false,'Следующая попытка будет доступна через сутки после предыдущей.'];
-$questions=list_test_questions($ageGroup);
-$questions=array_values(array_filter($questions,fn($q)=>!empty($q['active'])));
-if(count($questions)<3) return [false,'По этой группе пока недостаточно вопросов для теста.'];
-$score=0; $total=count($questions); $detail=[];
-foreach($questions as $q){
-$given=$answers[$q['id']]??null;
-$ok=$given===$q['correct_option'];
-if($ok) $score++;
-$detail[]=['question_id'=>(int)$q['id'],'question'=>$q['question'],'given'=>$given,'correct'=>$q['correct_option'],'ok'=>$ok];
-}
-$passed=$score>=test_pass_threshold($total);
-db()->prepare("INSERT INTO speaker_test_attempts(speaker_user_id,age_group,score,total,passed,answers,created_at) VALUES(?,?,?,?,?,?,?)")
-->execute([$speaker['id'],$ageGroup,$score,$total,$passed?1:0,json_encode($detail,JSON_UNESCAPED_UNICODE),now()]);
-// Успешная сдача больше не выдаёт допуск сама по себе — она лишь открывает фонду/оператору
-// возможность включить допуск вручную (см. set_speaker_certification()).
-log_action($speaker['id'],'speaker','speaker_test_attempt','users',$speaker['id'],"Тест «".ages()[$ageGroup]."»: $score из $total".($passed?' — пройден':' — не пройден'));
-return [true,['score'=>$score,'total'=>$total,'passed'=>$passed]];
-}
-function speaker_test_attempts_history($speakerId,$ageGroup=null){
-if($ageGroup){ $st=db()->prepare("SELECT * FROM speaker_test_attempts WHERE speaker_user_id=? AND age_group=? ORDER BY id DESC"); $st->execute([$speakerId,$ageGroup]); return $st->fetchAll(); }
-$st=db()->prepare("SELECT * FROM speaker_test_attempts WHERE speaker_user_id=? ORDER BY id DESC"); $st->execute([$speakerId]); return $st->fetchAll();
 }
 // ========== АНКЕТА САМООЦЕНКИ ПСИХОЛОГИЧЕСКОЙ ГОТОВНОСТИ ==========
 // Отдельный от теста знаний механизм: не блокирует подбор кандидатов (free_speakers_for_request
