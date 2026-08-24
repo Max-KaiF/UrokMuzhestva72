@@ -270,6 +270,15 @@ $meta=readiness_status_meta($res['status']);
 flash_set('Анкета отправлена: '.$res['score'].' из 20 — «'.esc($meta['label']).'». '.esc($meta['desc']));
 redirect('?p=speaker');
 }
+if($a==='submit_psych_readiness'){
+require_role('speaker');
+$ageGroup=$_POST['age_group']??'';
+[$ok,$res]=submit_psych_readiness($u,$ageGroup,$_POST['answers']??[]);
+if(!$ok){ flash_set($res); redirect('?p=speaker'); }
+$meta=psych_readiness_status_meta($res['status']);
+flash_set('Анкета отправлена: '.$res['score'].' из 60 — «'.esc($meta['label']).'». Результат виден фонду как ориентир, решение о допуске остаётся за ним.');
+redirect('?p=speaker');
+}
 if($a==='set_speaker_certification'){
 require_role(['fund','operator']);
 $sp=find_user_by_id((int)($_POST['speaker_id']??0));
@@ -863,6 +872,38 @@ $body.='<li style="margin-bottom:4px">'.$mark.' '.esc($d['question']).' <span cl
 }
 $body.='</ol>';
 }
+$body.='</div>';
+}
+$body.='</div></details>';
+}
+$body.='</div>';
+// ========== АНКЕТА САМООЦЕНКИ ПСИХОЛОГИЧЕСКОЙ ГОТОВНОСТИ (по возрастной группе) ==========
+foreach(psych_readiness_blocks() as $pgk=>$pb){
+$plast=speaker_psych_readiness_last($sp['id'],$pgk);
+if($plast && !empty($plast['acute'])) $body.='<div class="hint-warn"><b>ⓘ Возможный признак острой реакции</b> — анкета психологической готовности, «'.esc($pb['label']).'» ('.esc(substr((string)$plast['created_at'],0,16)).'). '.esc(psych_readiness_acute_note()).'</div>';
+}
+$body.='<div class="block"><h4>🧠 Анкета самооценки психологической готовности</h4><p class="muted">'.esc(psych_readiness_intro()['purpose']).' Дополнительный ориентир к тесту знаний выше — сама по себе допуск не выдаёт и не отменяет.</p>';
+$body.='<table class="card-view"><thead><tr><th>Группа</th><th>Статус</th><th>Баллы</th><th>Дата</th></tr></thead><tbody>';
+foreach(psych_readiness_blocks() as $pgk=>$pb){
+$plast=speaker_psych_readiness_last($sp['id'],$pgk);
+if($plast){ $pmeta=psych_readiness_status_meta($plast['status']); $pStatusPill='<span class="pill '.esc($pmeta['color']).'">'.esc($pmeta['label']).'</span>'; $pScoreTxt=esc($plast['score']).' из 60'; $pDateTxt=esc(substr((string)$plast['created_at'],0,16)); }
+else { $pStatusPill='<span class="muted">не заполнена</span>'; $pScoreTxt='—'; $pDateTxt='—'; }
+$body.='<tr><td data-label="Группа">'.esc($pb['label']).'</td><td data-label="Статус">'.$pStatusPill.'</td><td data-label="Баллы">'.$pScoreTxt.'</td><td data-label="Дата">'.$pDateTxt.'</td></tr>';
+}
+$body.='</tbody></table>';
+$pHistory=speaker_psych_readiness_history($sp['id']);
+if($pHistory){
+$body.='<details style="margin-top:12px"><summary style="cursor:pointer;font-weight:600;color:var(--navy)">Разбор по линиям и вся история заполнений ('.count($pHistory).')</summary><div style="margin-top:10px">';
+$pLines=psych_readiness_lines();
+foreach($pHistory as $patt){
+$pmeta=psych_readiness_status_meta($patt['status']);
+$blocks5=psych_readiness_blocks();
+$pLabel=$blocks5[$patt['age_group']]['label']??$patt['age_group'];
+$body.='<div class="card pad" style="margin-bottom:10px"><b>'.esc($pLabel).'</b> — '.esc($patt['score']).' из 60 · '.esc(substr((string)$patt['created_at'],0,16)).' <span class="pill '.esc($pmeta['color']).'">'.esc($pmeta['label']).'</span>'.(!empty($patt['acute'])?' <span class="pill" style="background:#fdecea;color:#b23b2c">возможная острая реакция</span>':'');
+$sums=psych_readiness_line_breakdown($patt);
+$body.='<ul style="margin:8px 0 0;padding-left:20px">';
+foreach($pLines as $ln=>$lname) $body.='<li>Линия '.$ln.'. '.esc($lname).': <b>'.($sums[$ln]??0).' из 12</b></li>';
+$body.='</ul>';
 $body.='</div>';
 }
 $body.='</div></details>';
@@ -1654,6 +1695,18 @@ if($ov['ready'] && !$ov['certified'] && !$ov['passed'] && $ov['can_retake']) $bo
 $body.='</div></div>';
 }
 $body.='</div></div>';
+// ========== АНКЕТА САМООЦЕНКИ ПСИХОЛОГИЧЕСКОЙ ГОТОВНОСТИ (по возрастной группе) ==========
+$body.='<div class="block" style="margin-top:20px"><h4>🧠 Анкета самооценки психологической готовности</h4><p class="muted">Дополнительный ориентир для фонда при решении о допуске к конкретной возрастной группе — не замена теста и не автоматический допуск. Заполнить можно в любой момент, повторно — тоже.</p>';
+$pOverview=speaker_psych_readiness_overview($u);
+$body.='<div class="materials-grid">';
+foreach($pOverview as $gk=>$pov){
+$body.='<div class="material-card"><div class="material-header"><div class="material-info"><div class="material-title">'.esc($pov['label']).'</div></div></div><div class="material-body">';
+if($pov['last']){ $pmeta=psych_readiness_status_meta($pov['last']['status']); $body.='<span class="pill '.esc($pmeta['color']).'">'.esc($pmeta['label']).'</span><p class="muted" style="margin:8px 0 0;font-size:12.5px">'.(int)$pov['last']['score'].' из 60 ('.esc(substr((string)$pov['last']['created_at'],0,10)).')</p>'; }
+else $body.='<span class="pill gray">Не заполнена</span>';
+$body.='<div style="margin-top:10px"><a class="btn ghost sm" href="?p=speaker_psych_readiness&group='.esc($gk).'">'.($pov['last']?'Заполнить заново':'Заполнить анкету').'</a></div>';
+$body.='</div></div>';
+}
+$body.='</div></div>';
 // ========== АНКЕТА САМООЦЕНКИ ГОТОВНОСТИ ==========
 $body.='<div class="block" style="margin-top:20px"><h4>🧭 Анкета самооценки готовности</h4><p class="muted">Помогает вам и куратору понять, насколько вы сейчас готовы говорить с детьми конкретного возраста о своём опыте. Честный ответ не снижает ваш статус в программе — он лишь подсказывает следующий шаг. Заполнить можно в любой момент, повторно — тоже.</p>';
 $rOverview=speaker_readiness_overview($u);
@@ -1762,6 +1815,35 @@ foreach($fq['options'] as $ok=>$label) $body.='<label class="chk" style="display
 $body.='<p class="muted" style="margin-top:6px;font-size:12.5px">Этот вопрос не влияет на баллы по возрастному блоку — он только помогает куратору при необходимости мягко поддержать вас.</p></div>';
 $body.='<button class="btn primary" style="margin-top:8px">Отправить анкету</button></form>';
 layout('Анкета готовности',$body); exit;
+}
+// ========== АНКЕТА САМООЦЕНКИ ПСИХОЛОГИЧЕСКОЙ ГОТОВНОСТИ (по возрастной группе) ==========
+if($p==='speaker_psych_readiness'){
+require_role('speaker');
+if(!$u['active']){ redirect('?p=speaker'); }
+$ageGroup=$_GET['group']??'';
+$blocks=psych_readiness_blocks();
+if(!array_key_exists($ageGroup,$blocks)){ layout('Анкета','<div class="card pad">Возрастная группа не найдена. <a href="?p=speaker">Назад</a></div>'); exit; }
+$block=$blocks[$ageGroup]; $intro=psych_readiness_intro();
+$body='<div class="head"><h2>Анкета самооценки психологической готовности: «'.esc($block['label']).'»</h2><a class="btn ghost" href="?p=speaker">← в кабинет</a></div>';
+$body.='<div class="card pad" style="margin-bottom:14px"><p style="margin-top:0">'.esc($intro['purpose']).'</p><p>'.esc($intro['howto']).'</p><p class="muted" style="font-size:12.5px;margin-bottom:0">'.esc($intro['why3']).'</p></div>';
+$body.='<div class="hint-warn"><b>Особенность аудитории.</b> '.esc($block['audience']).'</div>';
+$body.='<form method="post" class="card pad">'.csrf_field().'<input type="hidden" name="action" value="submit_psych_readiness"><input type="hidden" name="age_group" value="'.esc($ageGroup).'">';
+$lines=psych_readiness_lines();
+$shuffledQ=psych_readiness_questions_shuffled($block);
+$curLine=null; $qn=0;
+foreach($shuffledQ as $sq){
+$i=$sq['orig_index'];
+if($sq['line']!==$curLine){ $curLine=$sq['line']; $body.='<h4 style="margin:'.($qn>0?'22px':'0').' 0 4px;color:var(--navy)">Линия '.$curLine.'. '.esc($lines[$curLine]).'</h4>'; }
+$qn++;
+$body.='<div style="margin-bottom:16px;padding-top:12px;border-top:1px solid var(--line)"><p style="font-weight:600;margin:0 0 8px">'.esc($sq['text']).'</p>';
+foreach($sq['options'] as $ok=>$opt){
+$body.='<label class="chk" style="display:block;margin:4px 0"><input type="radio" name="answers['.$i.']" value="'.$ok.'" required> '.$ok.') '.esc($opt['label']).'</label>';
+}
+$body.='</div>';
+}
+$body.='<button class="btn primary" style="margin-top:8px">Отправить анкету</button></form>';
+$body.='<p class="muted" style="font-size:12px;margin-top:14px">'.esc($intro['footer']).'</p>';
+layout('Анкета психологической готовности',$body); exit;
 }
 // ========== РЕДАКТИРОВАНИЕ ЗАЯВКИ (страница) ==========
 if($p==='request_edit'){
