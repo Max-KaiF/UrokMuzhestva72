@@ -87,6 +87,18 @@ db()->exec("CREATE TABLE IF NOT EXISTS speaker_psych_readiness_attempts (
 id $pk, speaker_user_id INTEGER, age_group VARCHAR(20), score INTEGER, total INTEGER DEFAULT 60,
 status VARCHAR(20), acute INTEGER DEFAULT 0, answers TEXT, created_at VARCHAR(40)
 )$tail");
+// Проверка готовности спикера к конкретному занятию: 4 фиксированных вопроса (тема, цели
+// урока, материальная база, методика проведения) с вариантами ответа — банк ведёт оператор
+// отдельно по каждой теме занятия (requests.topic).
+db()->exec("CREATE TABLE IF NOT EXISTS lesson_readiness_questions (
+id $pk, topic VARCHAR(255), dimension VARCHAR(20), question TEXT,
+option_a TEXT, option_b TEXT, option_c TEXT, option_d TEXT, correct_option VARCHAR(1),
+created_by INTEGER, created_at VARCHAR(40), UNIQUE(topic,dimension)
+)$tail");
+db()->exec("CREATE TABLE IF NOT EXISTS lesson_readiness_attempts (
+id $pk, speaker_user_id INTEGER, topic VARCHAR(255), request_id INTEGER, score INTEGER, total INTEGER,
+passed INTEGER, answers TEXT, created_at VARCHAR(40)
+)$tail");
 foreach([
 "ALTER TABLE users ADD COLUMN fund_user_id INTEGER",
 "ALTER TABLE users ADD COLUMN email VARCHAR(190)",
@@ -128,6 +140,10 @@ foreach([
 "ALTER TABLE requests ADD COLUMN desired_speaker_id INTEGER",
 "ALTER TABLE requests ADD COLUMN fb_post_url VARCHAR(500)",
 "ALTER TABLE users ADD COLUMN certified_age_groups VARCHAR(255)",
+"ALTER TABLE users ADD COLUMN criminal_record VARCHAR(10)",
+"ALTER TABLE users ADD COLUMN criminal_record_set_at VARCHAR(40)",
+"ALTER TABLE users ADD COLUMN criminal_cert_path VARCHAR(255)",
+"ALTER TABLE users ADD COLUMN criminal_cert_date VARCHAR(20)",
 "CREATE INDEX idx_requests_status ON requests(status)",
 "CREATE INDEX idx_requests_school ON requests(school_user_id)",
 "CREATE INDEX idx_requests_fund ON requests(claimed_fund_id)",
@@ -763,6 +779,155 @@ $cur=array_values(array_diff($cur,[$ageGroup]));
 db()->prepare("UPDATE users SET certified_age_groups=? WHERE id=?")->execute([implode(',',$cur),$speaker['id']]);
 log_action($actor['id'],$actor['role'],'set_speaker_certification','users',$speaker['id'],($on?'Включён':'Отключён')." допуск к группе «".ages()[$ageGroup]."»");
 return [true,$on?'Допуск включён.':'Допуск отключён.'];
+}
+// ========== СУДИМОСТЬ СПИКЕРА ==========
+// Самостоятельное декларирование при регистрации (и позже, в профиле). Наличие судимости не
+// блокирует регистрацию и не отключает учётную запись — человек может пользоваться платформой,
+// но исключается из подбора спикеров на занятия с детьми (см. free_speakers_for_request()).
+function criminal_record_notice(){
+return "В соответствии со статьёй 351.1 Трудового кодекса Российской Федерации к трудовой, ".
+"волонтёрской и иной деятельности, связанной с обучением, воспитанием, развитием несовершеннолетних, ".
+"организацией их отдыха и оздоровления, медицинским обеспечением, социальной защитой и социальным ".
+"обслуживанием, в сфере детско-юношеского спорта, культуры и искусства с участием несовершеннолетних ".
+"не допускаются лица, имеющие или имевшие судимость, подвергающиеся или подвергавшиеся уголовному ".
+"преследованию за преступления против жизни и здоровья, свободы, чести и достоинства личности (за ".
+"исключением незаконного помещения в психиатрический стационар, клеветы и оскорбления), половой ".
+"неприкосновенности и половой свободы личности, против семьи и несовершеннолетних, здоровья населения ".
+"и общественной нравственности, основ конституционного строя и безопасности государства, мира и ".
+"безопасности человечества, а также против общественной безопасности.\n\n".
+"На основании указанных вами при регистрации сведений организация не может допустить вас к проведению ".
+"занятий с детьми и подростками в рамках программы «Уроки мужества». Ваша учётная запись при этом ".
+"сохраняется и не блокируется — вы можете пользоваться другими доступными вам функциями платформы, ".
+"но не будете предложены заявителям в качестве спикера ни по одной заявке.\n\n".
+"Если вы считаете, что это ограничение применено к вам ошибочно, обратитесь к куратору вашего фонда ".
+"или напишите на ".cfg()['support_email'].".";
+}
+function speaker_has_criminal_record($speaker){ return ($speaker['criminal_record']??'')==='yes'; }
+function speaker_criminal_answer_needed($speaker){ return ($speaker['role']??'')==='speaker' && empty($speaker['criminal_record']); }
+// Валидация и сохранение загруженной справки о несудимости (PDF/JPG/PNG, с проверкой реального
+// содержимого файла, а не только расширения). Возвращает [ok, ошибка_или_null, имя_файла_или_null].
+function criminal_cert_allowed_extensions(){ return ['pdf','jpg','jpeg','png']; }
+function validate_uploaded_criminal_cert($file){
+if(empty($file['name'])) return [true,null,null];
+if(($file['error']??UPLOAD_ERR_NO_FILE)!==UPLOAD_ERR_OK) return [false,'Ошибка загрузки справки.',null];
+if($file['size']>PHOTO_MAX_BYTES) return [false,'Файл справки слишком большой (максимум 8 МБ).',null];
+$ext=strtolower(pathinfo($file['name'],PATHINFO_EXTENSION));
+if(!in_array($ext,criminal_cert_allowed_extensions(),true)) return [false,'Справка должна быть в формате PDF, JPG или PNG.',null];
+if($ext==='pdf'){
+$head=@file_get_contents($file['tmp_name'],false,null,0,5);
+if($head!=='%PDF-') return [false,'Файл повреждён или не является настоящим PDF.',null];
+} else {
+$info=@getimagesize($file['tmp_name']);
+if(!$info||!in_array($info['mime'],['image/jpeg','image/png'],true)) return [false,'Файл повреждён или не является настоящим изображением JPG/PNG.',null];
+}
+$dir=__DIR__.'/uploads/certs'; if(!is_dir($dir)) mkdir($dir,0755,true);
+$stored=bin2hex(random_bytes(16)).'.'.$ext;
+if(!move_uploaded_file($file['tmp_name'],$dir.'/'.$stored)) return [false,'Не удалось сохранить файл справки.',null];
+return [true,null,$stored];
+}
+// $certPath может быть null при answer='no', если файл уже был загружен ранее (правка в профиле).
+function set_speaker_criminal_record($speaker,$answer,$certDate,$certPath){
+if(!in_array($answer,['yes','no'],true)) return [false,'Ответьте на вопрос о судимости.'];
+$fields=['criminal_record'=>$answer,'criminal_record_set_at'=>now()];
+if($answer==='no'){
+$certDate=trim((string)$certDate);
+if($certDate==='') return [false,'Укажите дату справки о несудимости.'];
+if(!$certPath && empty($speaker['criminal_cert_path'])) return [false,'Загрузите справку о несудимости.'];
+$fields['criminal_cert_date']=$certDate;
+if($certPath) $fields['criminal_cert_path']=$certPath;
+} else {
+$fields['criminal_cert_date']=null;
+}
+$set=implode(',',array_map(fn($k)=>"$k=?",array_keys($fields)));
+db()->prepare("UPDATE users SET $set WHERE id=?")->execute([...array_values($fields),$speaker['id']]);
+log_action($speaker['id'],'speaker','criminal_record_set','users',$speaker['id'],$answer==='yes'?'Указана судимость — исключён из подбора на занятия':'Указано отсутствие судимости, справка приложена');
+return [true,$answer];
+}
+// ========== ПРОВЕРКА ГОТОВНОСТИ СПИКЕРА К КОНКРЕТНОМУ ЗАНЯТИЮ ==========
+// 4 фиксированных вопроса на тему занятия (requests.topic) — банк ведёт оператор. Спикер
+// проходит проверку по теме конкретной подтверждённой заявки; если он уже проходил проверку по
+// этой же теме успешно в пределах последних 14 дней (неважно, по какой заявке) — можно не
+// пересдавать. Порог прохождения — все 4 вопроса верно (тема/цели/база/методика равноценны).
+function request_topics_distinct(){ return db()->query("SELECT DISTINCT topic FROM requests WHERE topic IS NOT NULL AND topic<>'' ORDER BY topic")->fetchAll(PDO::FETCH_COLUMN); }
+function lesson_readiness_all_topics(){
+$configured=array_column(db()->query("SELECT DISTINCT topic FROM lesson_readiness_questions ORDER BY topic")->fetchAll(),'topic');
+$used=array_merge(material_topics(),request_topics_distinct());
+$all=array_values(array_unique(array_merge($configured,$used)));
+sort($all,SORT_STRING|SORT_FLAG_CASE);
+return $all;
+}
+function lesson_readiness_dimensions(){ return [
+'topic'=>'Тема занятия','goals'=>'Цели урока','materials'=>'Материальная база','method'=>'Методика проведения',
+]; }
+function lesson_readiness_questions_for_topic($topic){
+$st=db()->prepare("SELECT * FROM lesson_readiness_questions WHERE topic=?"); $st->execute([$topic]);
+$out=[]; foreach($st->fetchAll() as $q) $out[$q['dimension']]=$q; return $out;
+}
+function lesson_readiness_ready($topic){
+$qs=lesson_readiness_questions_for_topic($topic);
+foreach(array_keys(lesson_readiness_dimensions()) as $d) if(empty($qs[$d])) return false;
+return true;
+}
+function set_lesson_readiness_question($topic,$dimension,$question,$opts,$correct,$actorId){
+if(!array_key_exists($dimension,lesson_readiness_dimensions())) return [false,'Некорректный раздел вопроса.'];
+$existing=db()->prepare("SELECT id FROM lesson_readiness_questions WHERE topic=? AND dimension=?");
+$existing->execute([$topic,$dimension]); $row=$existing->fetch();
+if($row){
+db()->prepare("UPDATE lesson_readiness_questions SET question=?,option_a=?,option_b=?,option_c=?,option_d=?,correct_option=?,created_by=?,created_at=? WHERE id=?")
+->execute([$question,$opts['a'],$opts['b'],$opts['c'],$opts['d'],$correct,$actorId,now(),$row['id']]);
+log_action($actorId,'operator','lesson_readiness_update','lesson_readiness_questions',$row['id'],"Изменён вопрос «$dimension» по теме «$topic»");
+} else {
+db()->prepare("INSERT INTO lesson_readiness_questions(topic,dimension,question,option_a,option_b,option_c,option_d,correct_option,created_by,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)")
+->execute([$topic,$dimension,$question,$opts['a'],$opts['b'],$opts['c'],$opts['d'],$correct,$actorId,now()]);
+$id=db()->lastInsertId();
+log_action($actorId,'operator','lesson_readiness_add','lesson_readiness_questions',$id,"Добавлен вопрос «$dimension» по теме «$topic»");
+}
+return [true,'Сохранено.'];
+}
+function speaker_topic_last_pass($speakerId,$topic){
+$st=db()->prepare("SELECT * FROM lesson_readiness_attempts WHERE speaker_user_id=? AND topic=? AND passed=1 ORDER BY id DESC LIMIT 1");
+$st->execute([$speakerId,$topic]); return $st->fetch()?:null;
+}
+function speaker_topic_ready($speakerId,$topic,$days=14){
+if(trim((string)$topic)==='') return true; // у заявки не указана тема — проверять нечего
+$last=speaker_topic_last_pass($speakerId,$topic);
+if(!$last) return false;
+return (time()-strtotime($last['created_at']))<=$days*86400;
+}
+function submit_lesson_readiness($speaker,$topic,$requestId,$answers){
+if(!lesson_readiness_ready($topic)) return [false,'По этой теме пока не заполнены вопросы проверки готовности.'];
+$qs=lesson_readiness_questions_for_topic($topic);
+$score=0; $total=0; $detail=[];
+foreach(lesson_readiness_dimensions() as $dk=>$dl){
+$q=$qs[$dk]; $total++;
+$given=$answers[$dk]??null;
+$ok=$given===$q['correct_option'];
+if($ok) $score++;
+$detail[]=['dimension'=>$dk,'label'=>$dl,'question'=>$q['question'],'given'=>$given,'correct'=>$q['correct_option'],'ok'=>$ok];
+}
+$passed=$score>=$total;
+db()->prepare("INSERT INTO lesson_readiness_attempts(speaker_user_id,topic,request_id,score,total,passed,answers,created_at) VALUES(?,?,?,?,?,?,?,?)")
+->execute([$speaker['id'],$topic,$requestId,$score,$total,$passed?1:0,json_encode($detail,JSON_UNESCAPED_UNICODE),now()]);
+log_action($speaker['id'],'speaker','lesson_readiness_attempt','users',$speaker['id'],"Проверка готовности по теме «$topic»: $score из $total".($passed?' — пройдена':' — не пройдена'));
+return [true,['score'=>$score,'total'=>$total,'passed'=>$passed]];
+}
+function speaker_lesson_readiness_history($speakerId){
+$st=db()->prepare("SELECT * FROM lesson_readiness_attempts WHERE speaker_user_id=? ORDER BY id DESC"); $st->execute([$speakerId]); return $st->fetchAll();
+}
+// Перемешивает порядок вопросов (по разделам) и порядок вариантов ответа внутри каждого —
+// как в остальных анкетах платформы. Буква варианта (для проверки correct_option) не меняется.
+function lesson_readiness_questions_shuffled($topic){
+$qs=lesson_readiness_questions_for_topic($topic);
+$dims=array_keys(lesson_readiness_dimensions()); shuffle($dims);
+$out=[];
+foreach($dims as $dk){
+$q=$qs[$dk]; if(!$q) continue;
+$opts=['a'=>$q['option_a'],'b'=>$q['option_b'],'c'=>$q['option_c'],'d'=>$q['option_d']];
+$keys=array_keys($opts); shuffle($keys);
+$shuffled=[]; foreach($keys as $k) $shuffled[$k]=$opts[$k];
+$out[]=['dimension'=>$dk,'label'=>lesson_readiness_dimensions()[$dk],'text'=>$q['question'],'options'=>$shuffled];
+}
+return $out;
 }
 // ========== АНКЕТА САМООЦЕНКИ ПСИХОЛОГИЧЕСКОЙ ГОТОВНОСТИ ==========
 // Отдельный от теста знаний механизм: не блокирует подбор кандидатов (free_speakers_for_request
@@ -1779,6 +1944,7 @@ $claimScope=null;
 if(!empty($r['claimed_fund_id'])){ $cf=find_user_by_id((int)$r['claimed_fund_id']); if($cf) $claimScope=fund_scope_ids($cf); }
 foreach(active_speakers() as $s){
 if(is_candidate($r['id'],$s['id'])) continue;
+if(speaker_has_criminal_record($s)) continue;
 if($claimScope!==null && !in_array((int)$s['fund_user_id'],$claimScope,true)) continue;
 $g=array_filter(explode(',',(string)($s['certified_age_groups']??'')));
 if($r['age_group'] && !in_array($r['age_group'],$g,true)) continue;
@@ -1823,9 +1989,10 @@ $full='Заявка возвращена в общую обработку, эт�
 log_action($fund['id'],'fund','fund_return_to_processing','requests',$r['id'],$full);
 return [true,'Заявка возвращена на этап «Новая». Теперь любой фонд может взять её в обработку.'];
 }
+function request_deletable($r){ return in_array($r['status'],['new','chosen','confirmed','brief','prep'],true); }
 function delete_request($r,$actor){
 if($actor['role']!=='school'||!school_owns_request($actor,$r)) return [false,'Нет доступа.'];
-if($r['status']!=='new') return [false,'Удалить можно только заявку на этапе «Новая».'];
+if(!request_deletable($r)) return [false,'Удалить можно только заявку до этапа «Проведён».'];
 db()->prepare("DELETE FROM requests WHERE id=?")->execute([$r['id']]);
 log_action($actor['id'],'school','request_delete','requests',$r['id'],"Удалена заявка {$r['code']}");
 return [true,'Заявка удалена.'];
@@ -1902,7 +2069,18 @@ upd($r['id'],['prep_parents'=>$parents,'prep_venue'=>$venue,'prep_escort'=>$esco
 if(prep_complete($nr)){ upd($r['id'],['prep_confirmed_at'=>now()]); if(in_array($nr['status'],['confirmed','brief'])) upd($r['id'],['status'=>'prep']); log_action(current_user()['id']??null,'school','confirm_prep','requests',$r['id'],"Готовность подтверждена"); return [true,'Готовность подтверждена.']; }
 upd($r['id'],['prep_confirmed_at'=>null]); return [true,'Сохранено. Отметьте все пункты, чтобы подтвердить готовность.'];
 }
-function mark_done($r){ if($r['status']!=='prep') return [false,'Урок можно отметить проведённым после подтверждения готовности.']; upd($r['id'],['status'=>'done']); log_action(current_user()['id']??null,'operator','mark_done','requests',$r['id'],"Отмечен как проведённый"); return [true,'Отмечено как «Проведён».']; }
+function mark_done($r){
+if($r['status']!=='prep') return [false,'Урок можно отметить проведённым после подтверждения готовности.'];
+$topic=trim((string)($r['topic']??''));
+// Проверка обязательна, только если по теме реально заполнены все 4 вопроса — иначе
+// незаполненный банк вопросов молча блокировал бы отметку «Проведён» для всех подряд.
+if($topic!=='' && lesson_readiness_ready($topic)){
+foreach(req_confirmed_rows($r['id']) as $row){
+if(!speaker_topic_ready($row['speaker_user_id'],$topic)) return [false,'Спикер '.$row['display_name'].' ещё не прошёл проверку готовности по теме «'.$topic.'» (или проходил её более 14 дней назад) — сначала пусть пройдёт её на странице заявки.'];
+}
+}
+upd($r['id'],['status'=>'done']); log_action(current_user()['id']??null,'operator','mark_done','requests',$r['id'],"Отмечен как проведённый"); return [true,'Отмечено как «Проведён».'];
+}
 function close_request($r){
 if($r['status']!=='done') return [false,'Закрыть можно только проведённый урок.'];
 if(trim((string)($r['fb_app_comment']??''))==='') return [false,'Заявка закрывается после отзыва заявителя.'];

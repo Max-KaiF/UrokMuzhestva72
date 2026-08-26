@@ -90,7 +90,26 @@ unset($_SESSION[$ackKey]);
 [$ok,$res]=create_user('school',$login,$pass,['org_name'=>$orgNameIn,'level'=>$_POST['level'],'display_name'=>$orgNameIn,'email'=>$email,'district'=>$district,'contact_name'=>$c_name,'position'=>$c_pos,'phone'=>$c_phone,'address'=>$c_addr,'building'=>$c_build,'op_group'=>$schoolOg]);
 }
 }
-elseif($role==='speaker'){ if(empty($_POST['display_name'])){ fail_redirect('Укажите ФИО.','?p=register'); } $phone=normalize_phone($_POST['phone']??''); if($phone===null){ fail_redirect('Укажите телефон в формате +7XXXXXXXXXX (10 цифр после +7).','?p=register'); } $fid=(int)($_POST['fund_user_id']??0); if(!$fid || !find_user_by_id($fid) || find_user_by_id($fid)['role']!=='fund'){ fail_redirect('Выберите фонд.','?p=register'); } if(fund_speaker_reg_limit_reached($fid)){ fail_redirect('Этот фонд уже получил максимум заявок от новых спикеров за сегодня (4). Попробуйте зарегистрироваться завтра.','?p=register'); } $groups=implode(',',array_keys($_POST['groups']??[])); if($groups===''){ fail_redirect('Выберите хотя бы одну возрастную группу.','?p=register'); } [$ok,$res]=create_user('speaker',$login,$pass,['display_name'=>trim($_POST['display_name']),'groups'=>$groups,'email'=>$email,'district'=>$district,'phone'=>$phone,'fund_user_id'=>$fid]); }
+elseif($role==='speaker'){
+if(empty($_POST['display_name'])){ fail_redirect('Укажите ФИО.','?p=register'); }
+$phone=normalize_phone($_POST['phone']??''); if($phone===null){ fail_redirect('Укажите телефон в формате +7XXXXXXXXXX (10 цифр после +7).','?p=register'); }
+$fid=(int)($_POST['fund_user_id']??0); if(!$fid || !find_user_by_id($fid) || find_user_by_id($fid)['role']!=='fund'){ fail_redirect('Выберите фонд.','?p=register'); }
+if(fund_speaker_reg_limit_reached($fid)){ fail_redirect('Этот фонд уже получил максимум заявок от новых спикеров за сегодня (4). Попробуйте зарегистрироваться завтра.','?p=register'); }
+$groups=implode(',',array_keys($_POST['groups']??[])); if($groups===''){ fail_redirect('Выберите хотя бы одну возрастную группу.','?p=register'); }
+$crimAnswer=$_POST['criminal_record']??''; if(!in_array($crimAnswer,['yes','no'],true)){ fail_redirect('Ответьте на вопрос о судимости.','?p=register'); }
+$crimCertDate=trim($_POST['criminal_cert_date']??'');
+if($crimAnswer==='no'){
+if($crimCertDate===''){ fail_redirect('Укажите дату справки о несудимости.','?p=register'); }
+if(empty($_FILES['criminal_cert']['name'])){ fail_redirect('Загрузите справку о несудимости.','?p=register'); }
+}
+[$certOk,$certErr,$crimCertPath]=validate_uploaded_criminal_cert($_FILES['criminal_cert']??[]);
+if(!$certOk){ fail_redirect($certErr,'?p=register'); }
+[$ok,$res]=create_user('speaker',$login,$pass,['display_name'=>trim($_POST['display_name']),'groups'=>$groups,'email'=>$email,'district'=>$district,'phone'=>$phone,'fund_user_id'=>$fid]);
+if($ok){
+set_speaker_criminal_record(['id'=>$res],$crimAnswer,$crimCertDate,$crimCertPath);
+if($crimAnswer==='yes' && !empty($email)) @send_smtp_email($email,trim($_POST['display_name']),'[Уроки мужества 72] Уведомление о допуске к работе с детьми',criminal_record_notice());
+}
+}
 elseif($role==='fund'){ $fdn=trim($_POST['fund_display_name']??''); if($fdn===''){ fail_redirect('Укажите наименование Фонда.','?p=register'); } $ftype=$_POST['fund_type']??'head'; if($ftype==='sub'){ $pfid=(int)($_POST['parent_fund_id']??0); $pf=$pfid?find_user_by_id($pfid):null; if(!$pf || $pf['role']!=='fund'){ fail_redirect('Подразделение должно указать головной фонд.','?p=register'); } [$ok,$res]=create_user('fund',$login,$pass,['display_name'=>$fdn,'email'=>$email,'district'=>$district,'parent_fund_id'=>$pfid,'active'=>0,'contact_name'=>$c_name,'position'=>$c_pos,'phone'=>$c_phone]); } else { if(($_POST['fund_code']??'')!==cfg()['fund_signup_code']){ fail_redirect('Неверный код регистрации Фонда. Если у вас его нет, напишите на '.cfg()['support_email'].'.','?p=register'); } [$ok,$res]=create_user('fund',$login,$pass,['display_name'=>$fdn,'email'=>$email,'district'=>$district,'contact_name'=>$c_name,'position'=>$c_pos,'phone'=>$c_phone]); } }
 elseif($role==='operator'){ $odn=trim($_POST['op_display_name']??''); if($odn===''){ fail_redirect('Укажите наименование оператора.','?p=register'); } if(($_POST['op_code']??'')!==cfg()['operator_signup_code']){ fail_redirect('Неверный код регистрации оператора. Если у вас его нет, напишите на '.cfg()['support_email'].'.','?p=register'); } $og=$_POST['op_group']??''; if(!in_array($og,['school','region'])){ fail_redirect('Выберите департамент.','?p=register'); } [$ok,$res]=create_user('operator',$login,$pass,['display_name'=>$odn,'email'=>$email,'op_group'=>$og,'district'=>$district,'contact_name'=>$c_name,'position'=>$c_pos,'phone'=>$c_phone]); }
 else { fail_redirect('Выберите роль.','?p=register'); }
@@ -129,6 +148,15 @@ $dir=__DIR__.'/uploads/photos'; if(!is_dir($dir)) mkdir($dir,0755,true);
 if(!move_uploaded_file($_FILES['photo']['tmp_name'],$dir.'/'.$stored)){ flash_set('Не удалось сохранить фото.'); redirect('?p=profile'); }
 if(!empty($u['photo_path'])){ $old=__DIR__.'/uploads/photos/'.$u['photo_path']; if(is_file($old)) @unlink($old); }
 $set[]='photo_path=?'; $par[]=$stored;
+}
+$crimAnswer=$_POST['criminal_record']??'';
+if(in_array($crimAnswer,['yes','no'],true)){
+[$certOk,$certErr,$crimCertPath]=validate_uploaded_criminal_cert($_FILES['criminal_cert']??[]);
+if(!$certOk){ flash_set($certErr); redirect('?p=profile'); }
+$prevCrim=$u['criminal_record']??'';
+[$crimOk,$crimErr]=set_speaker_criminal_record($u,$crimAnswer,$_POST['criminal_cert_date']??'',$crimCertPath);
+if(!$crimOk){ flash_set($crimErr); redirect('?p=profile'); }
+if($crimAnswer==='yes' && $prevCrim!=='yes' && !empty($em)) @send_smtp_email($em,$dn?:'спикер','[Уроки мужества 72] Уведомление о допуске к работе с детьми',criminal_record_notice());
 }
 }
 if(in_array($u['role'],['school','fund','operator'],true)){
@@ -269,6 +297,50 @@ $meta=psych_readiness_status_meta($res['status']);
 flash_set('Анкета отправлена: '.$res['score'].' из 60 — «'.esc($meta['label']).'». Результат виден фонду как ориентир, решение о допуске остаётся за ним.');
 redirect('?p=speaker');
 }
+if($a==='save_lesson_readiness_question'){
+require_role('operator');
+$topic=trim($_POST['topic']??''); $dimension=$_POST['dimension']??'';
+$question=trim($_POST['question']??'');
+$opts=['a'=>trim($_POST['option_a']??''),'b'=>trim($_POST['option_b']??''),'c'=>trim($_POST['option_c']??''),'d'=>trim($_POST['option_d']??'')];
+$correct=$_POST['correct_option']??'';
+$back='?p=lesson_readiness_admin&topic='.urlencode($topic);
+if($topic===''){ flash_set('Укажите тему.'); redirect('?p=lesson_readiness_admin'); }
+if($question===''){ flash_set('Укажите текст вопроса.'); redirect($back); }
+if($opts['a']===''||$opts['b']===''||$opts['c']===''||$opts['d']===''){ flash_set('Заполните все 4 варианта ответа.'); redirect($back); }
+if(!in_array($correct,['a','b','c','d'],true)){ flash_set('Отметьте правильный вариант ответа.'); redirect($back); }
+[$ok,$msg]=set_lesson_readiness_question($topic,$dimension,$question,$opts,$correct,$u['id']);
+flash_set($msg); redirect($back);
+}
+if($a==='submit_lesson_readiness'){
+require_role('speaker');
+$rid=(int)($_POST['request_id']??0); $r=$rid?get_request($rid):null;
+if(!$r){ flash_set('Заявка не найдена.'); redirect('?p=speaker'); }
+$row=get_rs_row($rid,$u['id']);
+if(!$row||!$row['confirmed']){ flash_set('Вы не входите в утверждённый состав по этой заявке.'); redirect('?p=speaker'); }
+$topic=trim((string)($r['topic']??''));
+[$ok,$res]=submit_lesson_readiness($u,$topic,$rid,$_POST['answers']??[]);
+if(!$ok){ flash_set($res); redirect('?p=request&id='.$rid); }
+flash_set($res['passed']
+? 'Проверка готовности пройдена: '.$res['score'].' из '.$res['total'].'.'
+: 'Проверка готовности не пройдена: '.$res['score'].' из '.$res['total'].'. Изучите материалы ещё раз и попробуйте снова.');
+redirect('?p=request&id='.$rid);
+}
+if($a==='set_criminal_record'){
+require_role('speaker');
+$answer=$_POST['criminal_record']??'';
+$certDate=$_POST['criminal_cert_date']??'';
+[$certOk,$certErr,$certPath]=validate_uploaded_criminal_cert($_FILES['criminal_cert']??[]);
+if(!$certOk){ flash_set($certErr); redirect('?p=speaker_criminal_check'); }
+[$ok,$res]=set_speaker_criminal_record($u,$answer,$certDate,$certPath);
+if(!$ok){ flash_set($res); redirect('?p=speaker_criminal_check'); }
+if($answer==='yes'){
+if(!empty($u['email'])) @send_smtp_email($u['email'],$u['display_name']?:'спикер','[Уроки мужества 72] Уведомление о допуске к работе с детьми',criminal_record_notice());
+flash_set('Сведения сохранены — подробности ниже.');
+} else {
+flash_set('Спасибо, сведения сохранены.');
+}
+redirect('?p=speaker');
+}
 if($a==='set_speaker_certification'){
 require_role(['fund','operator']);
 $sp=find_user_by_id((int)($_POST['speaker_id']??0));
@@ -378,6 +450,9 @@ if(!$u && $p==='login') unset($_SESSION['pending_uid']);
 if(!$u && !empty($_SESSION['pending_uid']) && !in_array($p,['login','verify_otp'])) redirect('?p=verify_otp');
 if(!$u && !in_array($p,['login','register','reset_password','reset_request','privacy','guide','verify_otp','demo'])) $p='login';
 if($u && ($p===''||$p==='login'||$p==='register')) $p=$u['role'];
+// Спикер, зарегистрированный до появления этого поля, обязан ответить на вопрос о судимости
+// при первом же следующем входе — до этого никакие другие страницы кабинета не открываются.
+if($u && speaker_criminal_answer_needed($u) && $p!=='speaker_criminal_check') $p='speaker_criminal_check';
 if($p==='export' && $u && in_array($u['role'],['fund','school'])){
 require_login();
 $rows = ($u['role']==='fund') ? fund_dashboard_requests($u) : (function() use($u){
@@ -794,6 +869,7 @@ if(!in_array($u['role'],['fund','operator'],true)) exit('Нет доступа.'
 $back=$u['role']==='fund'?'?p=fund&tab=speakers':'?p=operator&tab=speakers';
 $g=array_map(fn($k)=>ages()[$k]??$k,array_filter(explode(',',$sp['age_groups'])));
 $body='<div class="head"><h2>'.esc($sp['display_name']).'</h2><a class="btn ghost" href="'.esc($back).'">← К списку спикеров</a></div>';
+if(speaker_has_criminal_record($sp)) $body.='<div class="hint-warn" style="background:#fdecea;border-left-color:#b23b2c;color:#7a2418"><b>⚠ Спикер указал наличие судимости.</b> В соответствии со ст. 351.1 ТК РФ он не может проводить занятия с детьми — недоступен для подбора ни по одной заявке.</div>';
 $body.='<div class="card pad" style="max-width:640px;display:flex;gap:18px;flex-wrap:wrap">';
 if(!empty($sp['photo_path'])) $body.='<img src="?p=speaker_photo&id='.$sp['id'].'" alt="" style="width:140px;height:140px;object-fit:cover;border-radius:12px;border:1px solid var(--line);flex:0 0 auto">';
 else $body.='<div class="muted" style="width:140px;height:140px;border-radius:12px;border:1px dashed var(--line2);display:flex;align-items:center;justify-content:center;flex:0 0 auto">нет фото</div>';
@@ -907,6 +983,12 @@ $body.='<label class="lbl">Награды</label><textarea name="sp_awards" plac
 $body.='<label class="lbl">Достижения</label><textarea name="sp_achievements">'.esc($u['sp_achievements']??'').'</textarea>';
 $body.='<label class="lbl">Увлечения, хобби</label><input name="sp_hobbies" value="'.esc($u['sp_hobbies']??'').'">';
 $body.='<label class="lbl">Коротко о себе</label><textarea name="sp_bio" placeholder="как вас представить школьникам">'.esc($u['sp_bio']??'').'</textarea>';
+$body.='<h4 style="margin-top:16px">Судимость</h4><p class="muted" style="margin:0 0 8px">Обязательно по закону (ст. 351.1 ТК РФ) для допуска к работе с детьми. Текущий ответ: <b>'.($u['criminal_record']==='yes'?'есть судимость':($u['criminal_record']==='no'?'судимости нет':'не указано')).'</b>.</p>';
+$body.='<label class="lbl">Есть ли у Вас судимость (снятая или непогашенная)?</label><select name="criminal_record" id="pcrim_sel" onchange="pcrimSw()"><option value="">— не менять —</option><option value="no"'.(($u['criminal_record']??'')==='no'?' selected':'').'>Нет</option><option value="yes"'.(($u['criminal_record']??'')==='yes'?' selected':'').'>Да</option></select>';
+$body.='<div id="pcrim_no_fields" style="display:none"><label class="lbl">Дата справки о несудимости</label><input type="date" name="criminal_cert_date" value="'.esc($u['criminal_cert_date']??'').'">';
+if(!empty($u['criminal_cert_path'])) $body.='<p class="muted" style="margin:4px 0">Справка уже загружена (от '.esc($u['criminal_cert_date']??'—').'). Загрузите новый файл, только если нужно её заменить.</p>';
+$body.='<label class="lbl">Справка о несудимости (PDF/JPG/PNG)</label><input type="file" name="criminal_cert" accept=".pdf,.jpg,.jpeg,.png"></div>';
+$body.='<script>function pcrimSw(){var v=document.getElementById("pcrim_sel").value;document.getElementById("pcrim_no_fields").style.display=(v==="no")?"block":"none";}pcrimSw();</script>';
 }
 if($u['role']==='school' && !$isMember){
 $curOg=school_dept_group($u);
@@ -990,7 +1072,7 @@ $headFundOpt='<option value="">— выберите головной фонд �
 $schoolOpt='<option value="">— выберите организацию —</option>'; foreach(head_schools() as $sc) $schoolOpt.='<option value="'.$sc['id'].'"'.osel($old,'parent_school_id',$sc['id']).'>'.esc(school_label($sc)).'</option>';
 $preRoleRaw=$old['role']??($_GET['role']??''); $preRole=in_array($preRoleRaw,['school','speaker','fund','operator'],true)?$preRoleRaw:'school';
 $roleOpt=''; foreach(['school'=>'Образовательная организация (заявитель)','speaker'=>'Спикер (ветеран)','fund'=>'Фонд (направляет спикеров)','operator'=>'Оператор'] as $rk=>$rl) $roleOpt.='<option value="'.$rk.'"'.($rk===$preRole?' selected':'').'>'.esc($rl).'</option>';
-$body='<div class="auth"><h2>Регистрация</h2><p class="muted" style="max-width:480px">Не уверены, что выбрать? Посмотрите <a href="?p=guide">как устроена работа по каждой роли</a> — от регистрации до завершения урока.</p><form method="post" class="card pad" id="regform">'.csrf_field().'<input type="hidden" name="action" value="register">
+$body='<div class="auth"><h2>Регистрация</h2><p class="muted" style="max-width:480px">Не уверены, что выбрать? Посмотрите <a href="?p=guide">как устроена работа по каждой роли</a> — от регистрации до завершения урока.</p><form method="post" enctype="multipart/form-data" class="card pad" id="regform">'.csrf_field().'<input type="hidden" name="action" value="register">
 <label class="lbl">Кто вы?</label><select name="role" id="role" onchange="rsw()">'.$roleOpt.'</select><p class="muted" style="margin:2px 0 8px">От выбора роли зависит, какие поля нужно заполнить и что вы сможете делать в личном кабинете.</p>
 <h4 style="margin-top:16px">Учётные данные</h4>
 <label class="lbl">Логин <span style="color:#d11">*</span></label><input name="login" required value="'.ov($old,'login').'"><label class="lbl">Пароль (от 10 символов) <span style="color:#d11">*</span></label><input type="password" name="pass" required>
@@ -1001,7 +1083,10 @@ $body='<div class="auth"><h2>Регистрация</h2><p class="muted" style="
 <div id="school_owner_fields"><p class="muted" style="margin:0 0 8px">После регистрации заявку проверит профильный департамент образования. Адрес и контакты нужны, чтобы Фонд и департамент могли согласовать визит спикера.</p><h4>Организация</h4><label class="lbl">Наименование организации <span style="color:#d11">*</span></label><input name="org_name" id="reg_org_name" data-req value="'.ov($old,'org_name').'"><label class="lbl">Уровень</label><select name="level" id="level_sel" onchange="lvlSync()"><option value="school"'.osel($old,'level','school').'>Школа</option><option value="spo"'.osel($old,'level','spo').'>Профессиональная образовательная организация</option><option value="vuz"'.osel($old,'level','vuz').'>Высшее учебное заведение</option><option value="other"'.osel($old,'level','other').'>Иное (спортивная школа, детский дом и т.п.)</option></select><label class="lbl">Департамент <span style="color:#d11">*</span></label><select name="school_op_group" id="school_og" data-req><option value="school"'.osel($old,'school_op_group','school').'>Департамент образования Администрации города Тюмени (школы)</option><option value="region"'.osel($old,'school_op_group','region').'>Департамент образования и науки Тюменской области (СПО и вузы)</option></select><p class="muted" style="margin:2px 0 8px">Определяет, какой департамент будет модерировать вашу регистрацию и заявки. Подставляется по уровню организации — при необходимости выберите вручную.</p><label class="lbl">Адрес местонахождения <span style="color:#d11">*</span></label><input name="address" id="reg_address" placeholder="г. Тюмень, ул. ..., д. ..." data-req value="'.ov($old,'address').'"><label class="lbl">№ корпуса <span style="color:#d11">*</span></label><input name="building" id="reg_building" placeholder="напр. 1" data-req value="'.ov($old,'building').'"><p class="muted" style="margin:2px 0 8px">Если у организации нет отдельных корпусов, укажите «1».</p></div>
 <div id="school_member_fields" style="display:none"><label class="lbl">Организация <span style="color:#d11">*</span></label><select name="parent_school_id" id="parent_school_id">'.$schoolOpt.'</select><p class="muted" style="margin:2px 0 8px">Не нашли свою организацию? Значит, никто из коллег ещё не регистрировался — выберите «Регистрирую организацию впервые» выше.</p></div>
 <h4>Контактное лицо</h4><label class="lbl">ФИО контактного лица <span style="color:#d11">*</span></label><input name="contact_name" data-req value="'.ov($old,'contact_name').'"><label class="lbl">Должность <span style="color:#d11">*</span></label><input name="position" data-req value="'.ov($old,'position').'"><label class="lbl">Телефон <span style="color:#d11">*</span></label><input name="contact_phone" data-req value="'.ov($old,'contact_phone').'"><p class="muted" style="margin:2px 0 0">Контакты для согласования даты, времени и деталей визита спикера.</p></div>
-<div class="rf speaker" style="display:none"><p class="muted" style="margin:0 0 8px">Регистрацию подтверждает выбранный Фонд — он же будет направлять вас на уроки и согласовывать состав.</p><label class="lbl">ФИО <span style="color:#d11">*</span></label><input name="display_name" data-req value="'.ov($old,'display_name').'"><label class="lbl">Телефон для связи <span style="color:#d11">*</span></label><input name="phone" data-req value="'.ov($old,'phone').'"><label class="lbl">Фонд <span style="color:#d11">*</span></label><select name="fund_user_id" data-req>'.$fundOpt.'</select><label class="lbl">Возрастные группы <span style="color:#d11">*</span></label><div class="chks" id="groups_wrap">'.$ag.'</div><p class="muted" style="margin:6px 0 0">Определяет, для уроков с какой аудиторией вас будут предлагать заявителям.</p></div>
+<div class="rf speaker" style="display:none"><p class="muted" style="margin:0 0 8px">Регистрацию подтверждает выбранный Фонд — он же будет направлять вас на уроки и согласовывать состав.</p><label class="lbl">ФИО <span style="color:#d11">*</span></label><input name="display_name" data-req value="'.ov($old,'display_name').'"><label class="lbl">Телефон для связи <span style="color:#d11">*</span></label><input name="phone" data-req value="'.ov($old,'phone').'"><label class="lbl">Фонд <span style="color:#d11">*</span></label><select name="fund_user_id" data-req>'.$fundOpt.'</select><label class="lbl">Возрастные группы <span style="color:#d11">*</span></label><div class="chks" id="groups_wrap">'.$ag.'</div><p class="muted" style="margin:6px 0 0">Определяет, для уроков с какой аудиторией вас будут предлагать заявителям.</p>
+<label class="lbl">Есть ли у Вас судимость (снятая или непогашенная)? <span style="color:#d11">*</span></label><select name="criminal_record" id="crim_sel" data-req onchange="crimSw()"><option value="">— выберите —</option><option value="no"'.osel($old,'criminal_record','no').'>Нет</option><option value="yes"'.osel($old,'criminal_record','yes').'>Да</option></select>
+<div id="crim_no_fields" style="display:none"><label class="lbl">Дата справки о несудимости <span style="color:#d11">*</span></label><input type="date" name="criminal_cert_date" id="crim_cert_date" value="'.ov($old,'criminal_cert_date').'"><label class="lbl">Справка о несудимости (PDF/JPG/PNG) <span style="color:#d11">*</span></label><input type="file" name="criminal_cert" id="crim_cert_file" accept=".pdf,.jpg,.jpeg,.png"></div>
+<p class="muted" style="margin:6px 0 0;font-size:12.5px">Обязательно по закону (ст. 351.1 ТК РФ) для допуска к работе с детьми. При ответе «Да» регистрация не блокируется, но вы не будете предлагаться заявителям в качестве спикера.</p></div>
 <div class="rf fund" style="display:none"><p class="muted" style="margin:0 0 8px">Фонд подбирает и подтверждает состав спикеров для заявок. Структурное подразделение работает под контролем головного фонда.</p><h4>Организация</h4><label class="lbl">Наименование Фонда <span style="color:#d11">*</span></label><input name="fund_display_name" data-req value="'.ov($old,'fund_display_name').'"><label class="lbl">Тип</label><select name="fund_type" id="fund_type" onchange="ftsw()"><option value="head"'.osel($old,'fund_type','head').'>Головной фонд</option><option value="sub"'.osel($old,'fund_type','sub').'>Структурное подразделение</option></select><div id="parentfund" style="display:none"><label class="lbl">Головной фонд <span style="color:#d11">*</span></label><select name="parent_fund_id" id="parent_fund_id">'.$headFundOpt.'</select><p class="muted" style="margin:2px 0 8px">Подразделение получит доступ после подтверждения головным фондом.</p></div><div id="fundcode"><label class="lbl">Код регистрации Фонда <span style="color:#d11">*</span></label><input name="fund_code" id="fund_code" value="'.ov($old,'fund_code').'"><p class="muted" style="margin:2px 0 8px">Код регистрации головного фонда выдаёт администратор платформы — он подтверждает право направлять спикеров. Нет кода? Напишите на <a href="mailto:'.esc(cfg()['support_email']).'">'.esc(cfg()['support_email']).'</a>.</p></div><h4>Контактное лицо</h4><label class="lbl">ФИО контактного лица <span style="color:#d11">*</span></label><input name="contact_name" data-req value="'.ov($old,'contact_name').'"><label class="lbl">Должность <span style="color:#d11">*</span></label><input name="position" data-req value="'.ov($old,'position').'"><label class="lbl">Телефон <span style="color:#d11">*</span></label><input name="contact_phone" data-req value="'.ov($old,'contact_phone').'"></div>
 <div class="rf operator" style="display:none"><p class="muted" style="margin:0 0 8px">Оператор модерирует заявителей и контролирует ход заявок в пределах своего департамента.</p><h4>Организация</h4><label class="lbl">Наименование <span style="color:#d11">*</span></label><input name="op_display_name" data-req value="'.ov($old,'op_display_name').'"><label class="lbl">Департамент</label><select name="op_group"><option value="school"'.osel($old,'op_group','school').'>ДОА г. Тюмени (школы)</option><option value="region"'.osel($old,'op_group','region').'>ДОиН ТО (СПО и вузы)</option></select><p class="muted" style="margin:2px 0 8px">Определяет, заявки каких организаций вы будете видеть и модерировать.</p><label class="lbl">Код регистрации оператора <span style="color:#d11">*</span></label><input name="op_code" data-req value="'.ov($old,'op_code').'"><p class="muted" style="margin:2px 0 8px">Код выдаёт администратор платформы — он подтверждает право модерировать заявки. Нет кода? Напишите на <a href="mailto:'.esc(cfg()['support_email']).'">'.esc(cfg()['support_email']).'</a>.</p><h4>Контактное лицо</h4><label class="lbl">ФИО контактного лица <span style="color:#d11">*</span></label><input name="contact_name" data-req value="'.ov($old,'contact_name').'"><label class="lbl">Должность <span style="color:#d11">*</span></label><input name="position" data-req value="'.ov($old,'position').'"><label class="lbl">Телефон <span style="color:#d11">*</span></label><input name="contact_phone" data-req value="'.ov($old,'contact_phone').'"></div>
 <label class="chk" style="margin-top:10px"><input type="checkbox" name="consent" required> Согласие на обработку ПДн <span style="color:#d11">*</span> (<a href="?p=privacy" target="_blank">политика</a>)</label>
@@ -1016,7 +1101,15 @@ var b=document.querySelector(".rf."+r);
 if(b){ b.style.display="block"; b.querySelectorAll("input,select,textarea").forEach(function(inp){ inp.disabled=false; }); b.querySelectorAll("[data-req]").forEach(function(inp){ inp.required=true; }); }
 if(r==="fund") ftsw();
 if(r==="school") sctsw();
+if(r==="speaker") crimSw();
 validateGroups();
+}
+function crimSw(){
+var sel=document.getElementById("crim_sel"); if(!sel||sel.disabled) return;
+var w=document.getElementById("crim_no_fields"); var show=(sel.value==="no");
+w.style.display=show?"block":"none";
+document.getElementById("crim_cert_date").required=show;
+document.getElementById("crim_cert_file").required=show;
 }
 rsw();
 lvlSync();
@@ -1190,7 +1283,7 @@ $body='<div class="head"><h2>Реестр спикеров</h2><a class="btn gho
 $allsp=db()->query("SELECT * FROM users WHERE role='speaker' ORDER BY display_name")->fetchAll();
 if(!empty($_GET['sort'])) $allsp=sort_users_rows($allsp,$_GET['sort'],$_GET['dir']??'asc');
 $body.='<div class="table-scroll"><table class="card-view resizable"><thead><tr>'.sort_th('Спикер','name').sort_th('Организация','fund_name').sort_th('Район','district').'<th>Возрастные группы</th>'.sort_th('Телефон','phone').sort_th('Статус','status').'</tr></thead><tbody>';
-foreach($allsp as $s){ $g=array_map(fn($k)=>ages()[$k]??$k,array_filter(explode(',',$s['age_groups']))); $f=$s['fund_user_id']?find_user_by_id((int)$s['fund_user_id']):null; $fname=($f && $f['display_name']!=='')?esc($f['display_name']):'<span class="muted">не указана</span>'; $stp=$s['active']?'<span class="pill green">активен</span>':'<span class="pill gray">на подтверждении</span>'; $body.='<tr onclick="location=\'?p=speaker_view&id='.$s['id'].'\'"><td class="id" data-label="Спикер"><a href="?p=speaker_view&id='.$s['id'].'">'.esc($s['display_name']).'</a></td><td data-label="Организация">'.$fname.'</td><td data-label="Район" class="muted">'.esc($s['district']?:'—').'</td><td data-label="Группы" class="muted">'.esc(implode(', ',$g)).'</td><td data-label="Телефон" class="muted">'.esc($s['phone']?:'—').'</td><td data-label="Статус">'.$stp.'</td></tr>'; }
+foreach($allsp as $s){ $g=array_map(fn($k)=>ages()[$k]??$k,array_filter(explode(',',$s['age_groups']))); $f=$s['fund_user_id']?find_user_by_id((int)$s['fund_user_id']):null; $fname=($f && $f['display_name']!=='')?esc($f['display_name']):'<span class="muted">не указана</span>'; $stp=$s['active']?'<span class="pill green">активен</span>':'<span class="pill gray">на подтверждении</span>'; if(speaker_has_criminal_record($s)) $stp.=' <span class="pill" style="background:#fdecea;color:#b23b2c">⚠ судимость</span>'; $body.='<tr onclick="location=\'?p=speaker_view&id='.$s['id'].'\'"><td class="id" data-label="Спикер"><a href="?p=speaker_view&id='.$s['id'].'">'.esc($s['display_name']).'</a></td><td data-label="Организация">'.$fname.'</td><td data-label="Район" class="muted">'.esc($s['district']?:'—').'</td><td data-label="Группы" class="muted">'.esc(implode(', ',$g)).'</td><td data-label="Телефон" class="muted">'.esc($s['phone']?:'—').'</td><td data-label="Статус">'.$stp.'</td></tr>'; }
 if(!$allsp) $body.='<tr><td colspan="6" class="muted">Спикеров пока нет.</td></tr>'; $body.='</tbody></table></div>';
 $pend=pending_speakers(); if($pend) $body.='<p class="muted" style="margin-top:12px">Ожидают подтверждения Фондом: '.count($pend).'.</p>';
 layout('Реестр спикеров',$body); exit;
@@ -1337,6 +1430,7 @@ $body.='<div style="display:flex;gap:8px;flex-wrap:wrap">
 <form method="get" style="display:inline"><input type="hidden" name="p" value="archive_run"><button class="btn ghost" onclick="return confirm(\'Архивировать?\')">🗄️ Запустить архивацию</button></form>
 <a class="btn ghost" href="?p=operator&tab=speakers">Реестр спикеров</a>
 <a class="btn ghost" href="?p=materials">🗂️ Материалы</a>
+<a class="btn ghost" href="?p=lesson_readiness_admin">📘 Проверка готовности к занятиям</a>
 </div>';
 layout('Инструменты',$body); exit;
 }
@@ -1419,9 +1513,9 @@ $body.='<div class="card pad" style="margin-bottom:10px"><b>'.esc($s['display_na
 .'<form method="post">'.csrf_field().'<input type="hidden" name="action" value="approve_speaker"><input type="hidden" name="uid" value="'.$s['id'].'"><div class="chks" style="margin:8px 0">'.$ag.'</div><div style="display:flex;gap:8px"><button class="btn primary">Подтвердить и дать доступ</button></div></form>'
 .'<form method="post" style="margin-top:6px" onsubmit="return confirm(\'Отклонить регистрацию спикера?\')">'.csrf_field().'<input type="hidden" name="action" value="reject_speaker"><input type="hidden" name="uid" value="'.$s['id'].'"><button class="btn ghost sm" style="color:#b23b2c;border-color:#f5c6c0">Отклонить</button></form>'
 .'</div>'; }
-$act=active_speakers($u); $body.='<h4>Подтверждённые спикеры</h4><table class="card-view"><thead><tr><th>Спикер</th><th>Район</th><th>Телефон</th><th>Возрастные группы</th></tr></thead><tbody>';
-foreach($act as $s){ $g=array_map(fn($k)=>ages()[$k]??$k,array_filter(explode(',',$s['age_groups']))); $body.='<tr onclick="location=\'?p=speaker_view&id='.$s['id'].'\'"><td class="id"><a href="?p=speaker_view&id='.$s['id'].'">'.esc($s['display_name']).'</a></td><td class="muted">'.esc($s['district']?:'—').'</td><td class="muted">'.esc($s['phone']?:'—').'</td><td class="muted">'.esc(implode(', ',$g)).'</td></tr>'; }
-if(!$act) $body.='<tr><td colspan="4" class="muted">Пока нет.</td></tr>'; $body.='</tbody></table>';
+$act=active_speakers($u); $body.='<h4>Подтверждённые спикеры</h4><table class="card-view"><thead><tr><th>Спикер</th><th>Район</th><th>Телефон</th><th>Возрастные группы</th><th>Статус</th></tr></thead><tbody>';
+foreach($act as $s){ $g=array_map(fn($k)=>ages()[$k]??$k,array_filter(explode(',',$s['age_groups']))); $crimBadge=speaker_has_criminal_record($s)?'<span class="pill" style="background:#fdecea;color:#b23b2c">⚠ судимость</span>':'<span class="muted">—</span>'; $body.='<tr onclick="location=\'?p=speaker_view&id='.$s['id'].'\'"><td class="id"><a href="?p=speaker_view&id='.$s['id'].'">'.esc($s['display_name']).'</a></td><td class="muted">'.esc($s['district']?:'—').'</td><td class="muted">'.esc($s['phone']?:'—').'</td><td class="muted">'.esc(implode(', ',$g)).'</td><td data-label="Статус">'.$crimBadge.'</td></tr>'; }
+if(!$act) $body.='<tr><td colspan="5" class="muted">Пока нет.</td></tr>'; $body.='</tbody></table>';
 $body.='<div style="margin-top:14px;display:flex;gap:8px"><a class="btn ghost" href="?p=users&role=speaker">👥 Управление спикерами</a><a class="btn ghost" href="?p=audit&user_role=speaker">📋 Журнал</a><a class="btn ghost" href="?p=calendar">📅 Календарь</a></div>';
 layout('Спикеры Фонда',$body); exit;
 }
@@ -1566,6 +1660,7 @@ $daily=speaker_daily_count($u['id'],date('Y-m-d'));
 $weekly=speaker_weekly_count($u['id'],date('Y-m-d'));
 $tr=''; foreach($rows as $r){ $mark=$r['cfd']?'<span class="pill green">в составе</span>':(st_index($r['status'])>=st_index('confirmed')?'<span class="pill gray">не выбран</span>':'<span class="pill gray">кандидат</span>'); $tr.='<tr onclick="location=\'?p=request&id='.$r['id'].'\'"><td class="id"><a href="?p=request&id='.$r['id'].'">'.esc($r['code']).'</a></td><td>'.esc($r['org']).'</td><td>'.dt($r).'</td><td>'.$mark.'</td><td>'.pill($r['status']).'</td></tr>'; }
 $body='<div class="head"><h2>Мои уроки</h2><div><a class="btn ghost" href="?p=calendar">📅 Календарь</a> <a class="btn ghost" href="?p=materials">🗂️ Материалы</a></div></div>';
+if(speaker_has_criminal_record($u)) $body.='<div class="hint-warn">'.nl2br(esc(criminal_record_notice())).'</div>';
 $body.='<div class="kpis"><div class="kpi"><div class="n">'.$daily.' / 2</div><div class="l">Загрузка сегодня</div></div><div class="kpi"><div class="n">'.$weekly.' / 7</div><div class="l">Загрузка на неделе</div></div><div class="kpi"><div class="n">'.count($rows).'</div><div class="l">Всего назначено</div></div></div>';
 $body.='<p class="muted" style="margin-top:-8px;font-size:12.5px">Загрузка — активные уроки в пределах лимита (2 в день / 7 в неделю). Сколько уроков уже проведено — смотрите ниже.</p>';
 if($todayExempt=speaker_load_exempt_label(date('Y-m-d'))) $body.='<div class="hint-ok" style="margin-top:8px">📅 Сегодня — «'.esc($todayExempt).'». Ограничение по нагрузке (2 урока в день / 7 в неделю) в этот день не действует.</div>';
@@ -1694,6 +1789,71 @@ $body.='<button class="btn primary" style="margin-top:8px">Отправить а
 $body.='<p class="muted" style="font-size:12px;margin-top:14px">'.esc($intro['footer']).'</p>';
 layout('Анкета психологической готовности',$body); exit;
 }
+// ========== СУДИМОСТЬ СПИКЕРА (обязательный экран для тех, кто ещё не отвечал) ==========
+if($p==='speaker_criminal_check'){
+require_role('speaker');
+$body='<div class="head"><h2>Сведения о судимости</h2></div>';
+$body.='<div class="card pad" style="max-width:560px"><p style="margin-top:0">Это обязательное поле для всех спикеров программы «Уроки мужества» — занятия проводятся с детьми и подростками. Ответ сохраняется один раз, но при необходимости вы сможете изменить его позже в профиле.</p>';
+$body.='<form method="post" enctype="multipart/form-data">'.csrf_field().'<input type="hidden" name="action" value="set_criminal_record">';
+$body.='<label class="lbl">Есть ли у Вас судимость (снятая или непогашенная)? <span style="color:#d11">*</span></label><select name="criminal_record" id="crim_sel" onchange="crimSw()" required><option value="">— выберите —</option><option value="no">Нет</option><option value="yes">Да</option></select>';
+$body.='<div id="crim_no_fields" style="display:none;margin-top:10px"><label class="lbl">Дата справки о несудимости <span style="color:#d11">*</span></label><input type="date" name="criminal_cert_date"><label class="lbl">Справка о несудимости (PDF/JPG/PNG) <span style="color:#d11">*</span></label><input type="file" name="criminal_cert" accept=".pdf,.jpg,.jpeg,.png"></div>';
+$body.='<p class="muted" style="font-size:12.5px;margin-top:10px">При ответе «Да» ваша учётная запись не блокируется — вы сможете пользоваться другими функциями платформы, но не будете предложены заявителям в качестве спикера. Подробности будут показаны после сохранения и продублированы на вашу почту.</p>';
+$body.='<button class="btn primary" style="margin-top:12px">Сохранить</button></form></div>';
+$body.='<script>function crimSw(){var v=document.getElementById("crim_sel").value;var w=document.getElementById("crim_no_fields");var show=(v==="no");w.style.display=show?"block":"none";w.querySelectorAll("input").forEach(function(i){i.required=show;});}crimSw();</script>';
+layout('Сведения о судимости',$body); exit;
+}
+// ========== ПРОВЕРКА ГОТОВНОСТИ К ЗАНЯТИЯМ: БАНК ВОПРОСОВ ПО ТЕМЕ (ОПЕРАТОР) ==========
+if($p==='lesson_readiness_admin'){
+require_role('operator');
+$topics=lesson_readiness_all_topics();
+$cur=trim($_GET['topic']??''); if($cur===''&&$topics) $cur=$topics[0];
+$body='<div class="head"><h2>Проверка готовности к занятиям</h2><a class="btn ghost" href="?p=operator_tools">← в инструменты</a></div>';
+$body.='<p class="muted">Банк вопросов по темам занятий — 4 вопроса на тему (тема, цели урока, материальная база, методика проведения). Пока по теме не заполнены все 4 — проверка для неё не запрашивается у спикеров.</p>';
+if($topics){
+$body.='<div class="guide-tabs" style="margin:14px 0">';
+foreach($topics as $t){ $qs=lesson_readiness_questions_for_topic($t); $c=count($qs); $body.='<a class="guide-tab'.($t===$cur?' active':'').'" href="?p=lesson_readiness_admin&topic='.urlencode($t).'" style="text-decoration:none;display:inline-block">'.esc($t).' <span class="pill '.($c>=4?'green':'gray').'" style="margin-left:4px">'.$c.'/4</span></a>'; }
+$body.='</div>';
+}
+$body.='<form method="get" class="card pad" style="max-width:480px;margin-bottom:14px"><input type="hidden" name="p" value="lesson_readiness_admin"><label class="lbl">Добавить тему (если её нет в списке)</label><input name="topic" placeholder="точное название темы, как в заявке"><button class="btn ghost sm" style="margin-top:8px">Открыть/создать</button></form>';
+if($cur!==''){
+$qs=lesson_readiness_questions_for_topic($cur);
+$body.='<h3>Тема: «'.esc($cur).'»</h3>';
+foreach(lesson_readiness_dimensions() as $dk=>$dl){
+$q=$qs[$dk]??null;
+$body.='<form method="post" class="card pad" style="max-width:640px;margin-bottom:14px">'.csrf_field().'<input type="hidden" name="action" value="save_lesson_readiness_question"><input type="hidden" name="topic" value="'.esc($cur).'"><input type="hidden" name="dimension" value="'.esc($dk).'">';
+$body.='<h4 style="margin-top:0">'.esc($dl).'</h4>';
+$body.='<label class="lbl">Текст вопроса <span style="color:#d11">*</span></label><textarea name="question" required>'.esc($q['question']??'').'</textarea>';
+foreach(['a'=>'А','b'=>'Б','c'=>'В','d'=>'Г'] as $ok=>$ol){
+$checked=($q&&$q['correct_option']===$ok)?'checked':'';
+$body.='<label class="lbl" style="margin-top:10px">Вариант '.$ol.' <span style="color:#d11">*</span></label><div style="display:flex;gap:8px;align-items:center"><input type="radio" name="correct_option" value="'.$ok.'" '.$checked.' required style="width:auto;flex:none"><input name="option_'.$ok.'" required value="'.esc($q['option_'.$ok]??'').'" style="flex:1"></div>';
+}
+$body.='<p class="muted" style="margin-top:6px;font-size:12.5px">Отметьте радиокнопкой правильный вариант.</p>';
+$body.='<button class="btn primary sm" style="margin-top:10px">Сохранить</button></form>';
+}
+}
+layout('Проверка готовности к занятиям',$body); exit;
+}
+// ========== ПРОВЕРКА ГОТОВНОСТИ СПИКЕРА К ЗАНЯТИЮ (по конкретной заявке) ==========
+if($p==='lesson_readiness_quiz'){
+require_role('speaker');
+$rid=(int)($_GET['request_id']??0); $r=$rid?get_request($rid):null;
+if(!$r){ layout('Проверка готовности','<div class="card pad">Заявка не найдена. <a href="?p=speaker">Назад</a></div>'); exit; }
+$row=get_rs_row($rid,$u['id']);
+if(!$row||!$row['confirmed']){ layout('Проверка готовности','<div class="card pad">Вы не входите в утверждённый состав по этой заявке. <a href="?p=request&id='.$rid.'">Назад</a></div>'); exit; }
+$topic=trim((string)($r['topic']??''));
+if($topic===''||!lesson_readiness_ready($topic)){ layout('Проверка готовности','<div class="card pad">По этой теме проверка готовности пока не настроена. <a href="?p=request&id='.$rid.'">Назад</a></div>'); exit; }
+if(speaker_topic_ready($u['id'],$topic)){ layout('Проверка готовности','<div class="card pad">Вы уже подтвердили готовность по теме «'.esc($topic).'» — повторное прохождение не требуется (действует 14 дней). <a href="?p=request&id='.$rid.'">← к заявке</a></div>'); exit; }
+$body='<div class="head"><h2>Проверка готовности: «'.esc($topic).'»</h2><a class="btn ghost" href="?p=request&id='.$rid.'">← к заявке</a></div>';
+$body.='<p class="muted">Перед занятием изучите методические материалы по этой теме на странице <a href="?p=materials">«Материалы»</a> и ответьте на 4 вопроса — по теме, целям урока, материальной базе и методике проведения.</p>';
+$body.='<form method="post" class="card pad">'.csrf_field().'<input type="hidden" name="action" value="submit_lesson_readiness"><input type="hidden" name="request_id" value="'.$rid.'">';
+foreach(lesson_readiness_questions_shuffled($topic) as $sq){
+$body.='<div style="margin-bottom:18px;padding-top:12px;border-top:1px solid var(--line)"><p class="muted" style="margin:0 0 4px;text-transform:uppercase;font-size:11.5px;letter-spacing:.03em">'.esc($sq['label']).'</p><p style="font-weight:600;margin:0 0 8px">'.esc($sq['text']).'</p>';
+foreach($sq['options'] as $ok=>$otext) $body.='<label class="chk" style="display:block;margin:4px 0"><input type="radio" name="answers['.$sq['dimension'].']" value="'.$ok.'" required> '.esc($otext).'</label>';
+$body.='</div>';
+}
+$body.='<button class="btn primary" style="margin-top:8px">Отправить</button></form>';
+layout('Проверка готовности',$body); exit;
+}
 // ========== РЕДАКТИРОВАНИЕ ЗАЯВКИ (страница) ==========
 if($p==='request_edit'){
 require_role('school');
@@ -1785,10 +1945,23 @@ $turnHtml=($turnAct && !in_array($r['status'],['closed','cancelled'])) ? '<div c
 $body='<div class="head"><h2>Заявка '.esc($r['code']).' '.pill($r['status']).'</h2><div><a class="btn ghost" href="?p=audit&target_type=requests&target_id='.$r['id'].'">📋 История</a> <a class="btn ghost" href="?p='.$u['role'].'">← в кабинет</a></div></div><div class="card pad">'.$turnHtml.$info.($r['status']==='cancelled' ? '<div class="block"><div style="background:#fdecea;color:#b23b2c;border:1px solid #f5c6c0;border-radius:8px;padding:12px"><b>Урок не состоялся.</b> Причина: '.esc($r['cancel_reason']?:'не указана').($r['cancelled_at']?' · '.esc($r['cancelled_at']):'').'</div></div>' : '<div class="block"><h4>Этапы</h4>'.stepper($r['status']).'</div>');
 $listHtml='';
 foreach($rows as $row){ $badge=$row['confirmed']?'<span class="pill green">в составе</span>':'<span class="pill gray">кандидат</span>'; $org=speaker_org_name($row['speaker_user_id']); $listHtml.='<div class="fbsum"><b>'.esc($row['display_name']).'</b>'.($org!==''?' <span class="muted">· '.esc($org).'</span>':'').' '.$badge; if(trim((string)$row['vet_comment'])!=='') $listHtml.='<div class="cmt">отзыв спикера: '.esc($row['vet_comment']).'</div>'; $listHtml.='</div>'; }
+// ========== ГОТОВНОСТЬ СПИКЕРА К ЗАНЯТИЮ (проверка по теме) ==========
+$reqTopic=trim((string)($r['topic']??''));
+if($reqTopic!=='' && lesson_readiness_ready($reqTopic) && in_array($r['status'],['confirmed','brief','prep','done','closed'],true)){
+$body.='<div class="block"><h4>📘 Готовность спикера к занятию</h4><p class="muted" style="margin-top:-4px">Проверка по теме «'.esc($reqTopic).'»: 4 вопроса — по теме, целям урока, материальной базе и методике проведения. Пройденная проверка действительна 14 дней.</p>';
+foreach(req_confirmed_rows($r['id']) as $row){
+$ready=speaker_topic_ready($row['speaker_user_id'],$reqTopic);
+$last=speaker_topic_last_pass($row['speaker_user_id'],$reqTopic);
+$statusPill=$ready?'<span class="pill green">✓ подтверждена ('.esc(substr((string)$last['created_at'],0,10)).')</span>':'<span class="pill gray">не подтверждена</span>';
+$body.='<div class="row2" style="margin-bottom:6px"><span>'.esc($row['display_name']).'</span>'.$statusPill.'</div>';
+if($u['role']==='speaker' && (int)$u['id']===(int)$row['speaker_user_id'] && !$ready && in_array($r['status'],['confirmed','brief','prep'],true)) $body.='<div style="margin-top:6px"><a class="btn primary sm" href="?p=lesson_readiness_quiz&request_id='.$r['id'].'">Пройти проверку готовности</a></div>';
+}
+$body.='</div>';
+}
 if($u['role']==='school'){
 $body.='<div class="block" style="display:flex;gap:8px;flex-wrap:wrap"><a class="btn ghost sm" href="?p=school&tab=new&copy='.$r['id'].'">📋 Повторить заявку</a>';
 if(in_array($r['status'],['new','chosen','confirmed'])) $body.='<a class="btn ghost sm" href="?p=request_edit&id='.$r['id'].'">✏️ Редактировать</a>';
-if($r['status']==='new') $body.='<form method="post" style="display:inline" onsubmit="return confirm(\'Удалить заявку? Действие необратимо.\')">'.csrf_field().'<input type="hidden" name="action" value="delete_request"><input type="hidden" name="id" value="'.$r['id'].'"><button type="submit" class="btn ghost sm" style="color:#b23b2c;border-color:#f5c6c0">🗑️ Удалить</button></form>';
+if(request_deletable($r)) $body.='<form method="post" style="display:inline" onsubmit="return confirm(\'Удалить заявку? Действие необратимо.\')">'.csrf_field().'<input type="hidden" name="action" value="delete_request"><input type="hidden" name="id" value="'.$r['id'].'"><button type="submit" class="btn ghost sm" style="color:#b23b2c;border-color:#f5c6c0">🗑️ Удалить</button></form>';
 $body.='</div>';
 if(in_array($r['status'],['new','chosen'])){
 $body.='<div class="block"><h4>Спикеры</h4>';
