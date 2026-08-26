@@ -868,7 +868,7 @@ if($u['role']==='fund' && !in_array((int)($sp['fund_user_id']??0),fund_scope_ids
 if(!in_array($u['role'],['fund','operator'],true)) exit('Нет доступа.');
 $back=$u['role']==='fund'?'?p=fund&tab=speakers':'?p=operator&tab=speakers';
 $g=array_map(fn($k)=>ages()[$k]??$k,array_filter(explode(',',$sp['age_groups'])));
-$body='<div class="head"><h2>'.esc($sp['display_name']).'</h2><a class="btn ghost" href="'.esc($back).'">← К списку спикеров</a></div>';
+$body='<div class="head"><h2>'.esc($sp['display_name']).'</h2><div><a class="btn ghost" href="?p=speaker_stats&id='.$sp['id'].'">📊 Статистика</a> <a class="btn ghost" href="'.esc($back).'">← К списку спикеров</a></div></div>';
 if(speaker_has_criminal_record($sp)) $body.='<div class="hint-warn" style="background:#fdecea;border-left-color:#b23b2c;color:#7a2418"><b>⚠ Спикер указал наличие судимости.</b> В соответствии со ст. 351.1 ТК РФ он не может проводить занятия с детьми — недоступен для подбора ни по одной заявке.</div>';
 $body.='<div class="card pad" style="max-width:640px;display:flex;gap:18px;flex-wrap:wrap">';
 if(!empty($sp['photo_path'])) $body.='<img src="?p=speaker_photo&id='.$sp['id'].'" alt="" style="width:140px;height:140px;object-fit:cover;border-radius:12px;border:1px solid var(--line);flex:0 0 auto">';
@@ -1659,46 +1659,11 @@ if(!empty($_GET['sort'])) $rows=sort_requests($rows,$_GET['sort'],$_GET['dir']??
 $daily=speaker_daily_count($u['id'],date('Y-m-d'));
 $weekly=speaker_weekly_count($u['id'],date('Y-m-d'));
 $tr=''; foreach($rows as $r){ $mark=$r['cfd']?'<span class="pill green">в составе</span>':(st_index($r['status'])>=st_index('confirmed')?'<span class="pill gray">не выбран</span>':'<span class="pill gray">кандидат</span>'); $tr.='<tr onclick="location=\'?p=request&id='.$r['id'].'\'"><td class="id"><a href="?p=request&id='.$r['id'].'">'.esc($r['code']).'</a></td><td>'.esc($r['org']).'</td><td>'.dt($r).'</td><td>'.$mark.'</td><td>'.pill($r['status']).'</td></tr>'; }
-$body='<div class="head"><h2>Мои уроки</h2><div><a class="btn ghost" href="?p=calendar">📅 Календарь</a> <a class="btn ghost" href="?p=materials">🗂️ Материалы</a></div></div>';
+$body='<div class="head"><h2>Мои уроки</h2><div><a class="btn ghost" href="?p=speaker_anketas">📋 Анкеты</a> <a class="btn ghost" href="?p=speaker_stats">📊 Моя статистика</a> <a class="btn ghost" href="?p=calendar">📅 Календарь</a> <a class="btn ghost" href="?p=materials">🗂️ Материалы</a></div></div>';
 if(speaker_has_criminal_record($u)) $body.='<div class="hint-warn">'.nl2br(esc(criminal_record_notice())).'</div>';
 $body.='<div class="kpis"><div class="kpi"><div class="n">'.$daily.' / 2</div><div class="l">Загрузка сегодня</div></div><div class="kpi"><div class="n">'.$weekly.' / 7</div><div class="l">Загрузка на неделе</div></div><div class="kpi"><div class="n">'.count($rows).'</div><div class="l">Всего назначено</div></div></div>';
-$body.='<p class="muted" style="margin-top:-8px;font-size:12.5px">Загрузка — активные уроки в пределах лимита (2 в день / 7 в неделю). Сколько уроков уже проведено — смотрите ниже.</p>';
+$body.='<p class="muted" style="margin-top:-8px;font-size:12.5px">Загрузка — активные уроки в пределах лимита (2 в день / 7 в неделю). Проведённые уроки и статистика — в разделе «Моя статистика».</p>';
 if($todayExempt=speaker_load_exempt_label(date('Y-m-d'))) $body.='<div class="hint-ok" style="margin-top:8px">📅 Сегодня — «'.esc($todayExempt).'». Ограничение по нагрузке (2 урока в день / 7 в неделю) в этот день не действует.</div>';
-// ========== АНКЕТА САМООЦЕНКИ ПСИХОЛОГИЧЕСКОЙ ГОТОВНОСТИ (по возрастной группе) ==========
-$body.='<div class="block" style="margin-top:20px"><h4>🎓 Допуск к возрастным группам</h4><p class="muted">На заявки этой группы вас предложат фонду, только если группа допущена. Заполните анкету по нужной группе — фонд примет решение о допуске по её результатам. Заполнить можно в любой момент, повторно — тоже.</p>';
-$pOverview=speaker_psych_readiness_overview($u);
-$body.='<div class="materials-grid">';
-foreach($pOverview as $gk=>$pov){
-$body.='<div class="material-card"><div class="material-header"><div class="material-info"><div class="material-title">'.esc($pov['label']).'</div></div></div><div class="material-body">';
-if($pov['last']){ $pmeta=psych_readiness_status_meta($pov['last']['status']); $body.='<span class="pill '.esc($pmeta['color']).'">'.esc($pmeta['label']).'</span><p class="muted" style="margin:8px 0 0;font-size:12.5px">'.(int)$pov['last']['score'].' из 60 ('.esc(substr((string)$pov['last']['created_at'],0,10)).')</p>'; }
-else $body.='<span class="pill gray">Не заполнена</span>';
-$body.='<div style="margin-top:10px"><a class="btn ghost sm" href="?p=speaker_psych_readiness&group='.esc($gk).'">'.($pov['last']?'Заполнить заново':'Заполнить анкету').'</a></div>';
-$body.='</div></div>';
-}
-$body.='</div></div>';
-// ========== АНКЕТА САМООЦЕНКИ ГОТОВНОСТИ ==========
-$body.='<div class="block" style="margin-top:20px"><h4>🧭 Анкета самооценки готовности</h4><p class="muted">Помогает вам и куратору понять, насколько вы сейчас готовы говорить с детьми конкретного возраста о своём опыте. Честный ответ не снижает ваш статус в программе — он лишь подсказывает следующий шаг. Заполнить можно в любой момент, повторно — тоже.</p>';
-$rOverview=speaker_readiness_overview($u);
-$body.='<div class="materials-grid">';
-foreach($rOverview as $bk=>$ov){
-$body.='<div class="material-card"><div class="material-header"><div class="material-info"><div class="material-title">'.esc($ov['label']).'</div></div></div><div class="material-body">';
-if($ov['last']){ $meta=readiness_status_meta($ov['last']['status']); $body.='<span class="pill '.esc($meta['color']).'">'.esc($meta['label']).'</span><p class="muted" style="margin:8px 0 0;font-size:12.5px">'.(int)$ov['last']['score'].' из 20 ('.esc(substr((string)$ov['last']['created_at'],0,10)).')</p>'; }
-else $body.='<span class="pill gray">Не заполнена</span>';
-$body.='<div style="margin-top:10px"><a class="btn ghost sm" href="?p=speaker_readiness&block='.esc($bk).'">'.($ov['last']?'Заполнить заново':'Заполнить анкету').'</a></div>';
-$body.='</div></div>';
-}
-$body.='</div></div>';
-$stats=speaker_stats($u['id']);
-$statCard=function($period,$lessons,$kids){
-return '<div class="stat-card"><div class="stat-period">'.esc($period).'</div><div class="stat-row"><span class="n">'.$lessons.'</span><span class="l">'.($lessons==1?'урок':($lessons>=2&&$lessons<=4?'урока':'уроков')).'</span></div><div class="stat-row"><span class="n">'.$kids.'</span><span class="l">детей</span></div></div>';
-};
-$body.='<h4 style="margin-top:18px">Проведено уроков и охват детей</h4>';
-$body.='<div class="stat-grid">'.$statCard('Сегодня',$stats['day'],$stats['day_kids']).$statCard('За неделю',$stats['week'],$stats['week_kids']).$statCard('За месяц',$stats['month'],$stats['month_kids']).$statCard('Всего',$stats['total'],$stats['total_kids']).'</div>';
-if($stats['by_month']){
-$body.='<details class="card pad" style="margin-bottom:18px"><summary style="cursor:pointer;font-weight:600;color:var(--navy)">📅 Разбивка по месяцам</summary><table class="card-view" style="margin-top:12px"><thead><tr><th>Месяц</th><th>Уроков</th><th>Детей</th></tr></thead><tbody>';
-foreach($stats['by_month'] as $mk=>$mv) $body.='<tr><td class="id" data-label="Месяц">'.esc(month_label($mk)).'</td><td data-label="Уроков">'.$mv['lessons'].'</td><td data-label="Детей">'.$mv['kids'].'</td></tr>';
-$body.='</tbody></table></details>';
-}
 $body.= $rows ? '<table class="card-view"><thead><tr>'.sort_th('Код','code').sort_th('Организация','org').sort_th('Дата и время','date').'<th>Вы</th>'.sort_th('Статус','status').'</tr></thead><tbody>'.$tr.'</tbody></table>' : '<div class="card pad muted">Назначенных уроков пока нет.</div>';
 $pool=fund_pool_requests_for_speaker($u);
 if($pool){ $body.='<div class="block" style="margin-top:20px"><h4>📋 Заявки вашего фонда в обработке</h4><p class="muted">Ваш Фонд взял эти заявки в работу и подбирает спикера. Как только он назначит конкретного спикера, заявка появится в разделе «Мои уроки» у него.</p>';
@@ -1731,6 +1696,63 @@ $body.='<p class="muted" style="margin-top:10px">У вас пока нет за�
 }
 $body.='</div>';
 layout('Кабинет спикера',$body); exit;
+}
+// ========== АНКЕТЫ СПИКЕРА (отдельный раздел) ==========
+if($p==='speaker_anketas'){
+require_role('speaker');
+if(!$u['active']){ redirect('?p=speaker'); }
+$body='<div class="head"><h2>Анкеты</h2><a class="btn ghost" href="?p=speaker">← в кабинет</a></div>';
+$body.='<div class="block"><h4>🎓 Допуск к возрастным группам</h4><p class="muted">На заявки этой группы вас предложат фонду, только если группа допущена. Заполните анкету по нужной группе — фонд примет решение о допуске по её результатам. Заполнить можно в любой момент, повторно — тоже.</p>';
+$pOverview=speaker_psych_readiness_overview($u);
+$body.='<div class="materials-grid">';
+foreach($pOverview as $gk=>$pov){
+$body.='<div class="material-card"><div class="material-header"><div class="material-info"><div class="material-title">'.esc($pov['label']).'</div></div></div><div class="material-body">';
+if($pov['last']){ $pmeta=psych_readiness_status_meta($pov['last']['status']); $body.='<span class="pill '.esc($pmeta['color']).'">'.esc($pmeta['label']).'</span><p class="muted" style="margin:8px 0 0;font-size:12.5px">'.(int)$pov['last']['score'].' из 60 ('.esc(substr((string)$pov['last']['created_at'],0,10)).')</p>'; }
+else $body.='<span class="pill gray">Не заполнена</span>';
+$body.='<div style="margin-top:10px"><a class="btn ghost sm" href="?p=speaker_psych_readiness&group='.esc($gk).'">'.($pov['last']?'Заполнить заново':'Заполнить анкету').'</a></div>';
+$body.='</div></div>';
+}
+$body.='</div></div>';
+$body.='<div class="block" style="margin-top:20px"><h4>🧭 Анкета самооценки готовности</h4><p class="muted">Помогает вам и куратору понять, насколько вы сейчас готовы говорить с детьми конкретного возраста о своём опыте. Честный ответ не снижает ваш статус в программе — он лишь подсказывает следующий шаг. Заполнить можно в любой момент, повторно — тоже.</p>';
+$rOverview=speaker_readiness_overview($u);
+$body.='<div class="materials-grid">';
+foreach($rOverview as $bk=>$ov){
+$body.='<div class="material-card"><div class="material-header"><div class="material-info"><div class="material-title">'.esc($ov['label']).'</div></div></div><div class="material-body">';
+if($ov['last']){ $meta=readiness_status_meta($ov['last']['status']); $body.='<span class="pill '.esc($meta['color']).'">'.esc($meta['label']).'</span><p class="muted" style="margin:8px 0 0;font-size:12.5px">'.(int)$ov['last']['score'].' из 20 ('.esc(substr((string)$ov['last']['created_at'],0,10)).')</p>'; }
+else $body.='<span class="pill gray">Не заполнена</span>';
+$body.='<div style="margin-top:10px"><a class="btn ghost sm" href="?p=speaker_readiness&block='.esc($bk).'">'.($ov['last']?'Заполнить заново':'Заполнить анкету').'</a></div>';
+$body.='</div></div>';
+}
+$body.='</div></div>';
+layout('Анкеты',$body); exit;
+}
+// ========== СТАТИСТИКА СПИКЕРА (отдельный раздел, видит спикер и фонд) ==========
+if($p==='speaker_stats'){
+require_login();
+$sid=(int)($_GET['id']??0);
+if($u['role']==='speaker'){ if($sid && $sid!==(int)$u['id']) exit('Нет доступа.'); $sp=$u; $back='?p=speaker'; }
+elseif(in_array($u['role'],['fund','operator'],true)){
+$sp=$sid?find_user_by_id($sid):null;
+if(!$sp||$sp['role']!=='speaker'){ layout('Статистика','<div class="card pad">Спикер не найден.</div>'); exit; }
+if($u['role']==='fund' && !in_array((int)($sp['fund_user_id']??0),fund_scope_ids($u),true)){ exit('Нет доступа.'); }
+$back='?p=speaker_view&id='.$sp['id'];
+} else { exit('Нет доступа.'); }
+$stats=speaker_stats($sp['id']);
+$statCard=function($period,$lessons,$kids){
+return '<div class="stat-card"><div class="stat-period">'.esc($period).'</div><div class="stat-row"><span class="n">'.$lessons.'</span><span class="l">'.($lessons==1?'урок':($lessons>=2&&$lessons<=4?'урока':'уроков')).'</span></div><div class="stat-row"><span class="n">'.$kids.'</span><span class="l">детей</span></div></div>';
+};
+$title=$u['role']==='speaker'?'Моя статистика':'Статистика: '.esc($sp['display_name']);
+$body='<div class="head"><h2>'.$title.'</h2><a class="btn ghost" href="'.esc($back).'">← назад</a></div>';
+$body.='<h4 style="margin-top:0">Проведено уроков и охват детей</h4>';
+$body.='<div class="stat-grid">'.$statCard('Сегодня',$stats['day'],$stats['day_kids']).$statCard('За неделю',$stats['week'],$stats['week_kids']).$statCard('За месяц',$stats['month'],$stats['month_kids']).$statCard('Всего',$stats['total'],$stats['total_kids']).'</div>';
+if($stats['by_month']){
+$body.='<details class="card pad" style="margin-top:18px" open><summary style="cursor:pointer;font-weight:600;color:var(--navy)">📅 Разбивка по месяцам</summary><table class="card-view" style="margin-top:12px"><thead><tr><th>Месяц</th><th>Уроков</th><th>Детей</th></tr></thead><tbody>';
+foreach($stats['by_month'] as $mk=>$mv) $body.='<tr><td class="id" data-label="Месяц">'.esc(month_label($mk)).'</td><td data-label="Уроков">'.$mv['lessons'].'</td><td data-label="Детей">'.$mv['kids'].'</td></tr>';
+$body.='</tbody></table></details>';
+} else {
+$body.='<p class="muted" style="margin-top:14px">Проведённых уроков пока нет.</p>';
+}
+layout($u['role']==='speaker'?'Моя статистика':'Статистика спикера',$body); exit;
 }
 // ========== ТЕСТ ДЛЯ ДОПУСКА К ВОЗРАСТНОЙ ГРУППЕ ==========
 // ========== АНКЕТА САМООЦЕНКИ ГОТОВНОСТИ ==========
