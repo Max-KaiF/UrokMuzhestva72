@@ -500,7 +500,7 @@ echo $csv; exit;
 }
 }
 if($p==='archive_run' && $u && $u['role']==='operator'){
-$n=archive_old_requests(30);
+$n=archive_old_requests(5);
 flash_set("Архивировано заявок: $n");
 redirect('?p=operator&tab=archive');
 }
@@ -837,7 +837,7 @@ $body = <<<'HTML'
 <tr><td>Технические данные (логи)</td><td>1 год</td><td>Все Операторы</td></tr>
 <tr><td>Данные отзывов</td><td>5 лет</td><td>Все Операторы</td></tr>
 </tbody></table>
-<p>По истечении сроков данные уничтожаются или обезличиваются. Закрытые заявки старше 30 дней переносятся в архив с ограниченным доступом.</p>
+<p>По истечении сроков данные уничтожаются или обезличиваются. Закрытые заявки переносятся в архив с ограниченным доступом через 5 рабочих дней после закрытия.</p>
 <h4>7. Меры защиты</h4>
 <p>Организационные: ответственные лица у каждого Оператора; разграничение доступа по ролям; журнал действий (audit log); обучение работников. Технические: HTTPS (SSL/TLS); хранение паролей в хэшированном виде (bcrypt); защита от CSRF; ежедневное резервное копирование; антивирусная защита серверов.</p>
 <p><b>При инциденте (утечке)</b> Оператор обязан: незамедлительно прекратить неправомерную обработку; уведомить Роскомнадзор в течение 24 часов; в течение 72 часов представить сведения о результатах расследования; уведомить субъектов в установленный законом срок; устранить последствия.</p>
@@ -1296,7 +1296,7 @@ if(!empty($_GET['to_date'])) $afil['to_date']=$_GET['to_date'];
 $rows=get_requests_list($afil);
 if(!empty($_GET['sort'])) $rows=sort_requests($rows,$_GET['sort'],$_GET['dir']??'asc');
 $body='<div class="head"><h2>Архив заявок</h2><a class="btn ghost" href="?p=operator">← в кабинет</a></div>';
-$body.='<p class="muted">Закрытые заявки старше 30 дней автоматически переносятся в архив.</p>';
+$body.='<p class="muted">Закрытые заявки автоматически переносятся в архив через 5 рабочих дней после закрытия.</p>';
 $body.='<form method="get" class="card pad" style="margin-bottom:14px;display:flex;gap:10px;flex-wrap:wrap;align-items:end"><input type="hidden" name="p" value="operator"><input type="hidden" name="tab" value="archive">'
 .'<label class="lbl" style="margin:0">Организация</label><input name="org" value="'.esc($_GET['org']??'').'" placeholder="Поиск">'
 .'<label class="lbl" style="margin:0">С</label><input type="date" name="from_date" value="'.esc($_GET['from_date']??'').'">'
@@ -1460,10 +1460,11 @@ header('Content-Length: '.filesize($path));
 readfile($path); exit;
 }
 if($p==='materials'){
-$typeFilter=$_GET['type']??'';
-$rows=list_materials($typeFilter?:null);
+$typeFilter=$_GET['type']??''; $topicFilter=$_GET['topic']??'';
+$rows=list_materials($typeFilter?:null,$topicFilter?:null);
 $body='<div class="head"><h2>Материалы</h2><div style="display:flex;gap:8px"><a class="btn ghost" href="'.esc(role_home($u)).'">← в кабинет</a>'.($u['role']==='operator'?'<a class="btn primary" href="?p=material_edit">+ Добавить материал</a>':'').'</div></div>';
-$body.='<form method="get" style="margin-bottom:14px"><input type="hidden" name="p" value="materials"><label class="lbl" style="margin:0">Вид материала</label><select name="type" class="form-select" style="max-width:320px;display:inline-block;width:auto" onchange="this.form.submit()"><option value="">Все</option>';
+if($topicFilter!=='') $body.='<div class="hint-ok" style="margin-bottom:10px">Материалы по теме «'.esc($topicFilter).'». <a href="?p=materials">Показать все темы</a></div>';
+$body.='<form method="get" style="margin-bottom:14px"><input type="hidden" name="p" value="materials">'.($topicFilter!==''?'<input type="hidden" name="topic" value="'.esc($topicFilter).'">':'').'<label class="lbl" style="margin:0">Вид материала</label><select name="type" class="form-select" style="max-width:320px;display:inline-block;width:auto" onchange="this.form.submit()"><option value="">Все</option>';
 foreach(material_types() as $k=>$v) $body.='<option value="'.esc($k).'" '.($typeFilter===$k?'selected':'').'>'.esc($v).'</option>';
 $body.='</select></form>';
 if(!$rows){
@@ -1866,7 +1867,8 @@ $topic=trim((string)($r['topic']??''));
 if($topic===''||!lesson_readiness_ready($topic)){ layout('Проверка готовности','<div class="card pad">По этой теме проверка готовности пока не настроена. <a href="?p=request&id='.$rid.'">Назад</a></div>'); exit; }
 if(speaker_topic_ready($u['id'],$topic)){ layout('Проверка готовности','<div class="card pad">Вы уже подтвердили готовность по теме «'.esc($topic).'» — повторное прохождение не требуется (действует 14 дней). <a href="?p=request&id='.$rid.'">← к заявке</a></div>'); exit; }
 $body='<div class="head"><h2>Проверка готовности: «'.esc($topic).'»</h2><a class="btn ghost" href="?p=request&id='.$rid.'">← к заявке</a></div>';
-$body.='<p class="muted">Перед занятием изучите методические материалы по этой теме на странице <a href="?p=materials">«Материалы»</a> и ответьте на 4 вопроса — по теме, целям урока, материальной базе и методике проведения.</p>';
+$body.='<div class="hint-warn" style="margin-bottom:14px"><b>Перед прохождением:</b> скачайте и изучите технологическую карту и все материалы по теме «'.esc($topic).'» — <a href="?p=materials&topic='.urlencode($topic).'" target="_blank">открыть материалы по теме →</a></div>';
+$body.='<p class="muted">Ответьте на 4 вопроса — по теме, целям урока, материальной базе и методике проведения занятия.</p>';
 $body.='<form method="post" class="card pad">'.csrf_field().'<input type="hidden" name="action" value="submit_lesson_readiness"><input type="hidden" name="request_id" value="'.$rid.'">';
 foreach(lesson_readiness_questions_shuffled($topic) as $sq){
 $body.='<div style="margin-bottom:18px;padding-top:12px;border-top:1px solid var(--line)"><p class="muted" style="margin:0 0 4px;text-transform:uppercase;font-size:11.5px;letter-spacing:.03em">'.esc($sq['label']).'</p><p style="font-weight:600;margin:0 0 8px">'.esc($sq['text']).'</p>';
@@ -1970,7 +1972,7 @@ foreach($rows as $row){ $badge=$row['confirmed']?'<span class="pill green">в с
 // ========== ГОТОВНОСТЬ СПИКЕРА К ЗАНЯТИЮ (проверка по теме) ==========
 $reqTopic=trim((string)($r['topic']??''));
 if($reqTopic!=='' && lesson_readiness_ready($reqTopic) && in_array($r['status'],['confirmed','brief','prep','done','closed'],true)){
-$body.='<div class="block"><h4>📘 Готовность спикера к занятию</h4><p class="muted" style="margin-top:-4px">Проверка по теме «'.esc($reqTopic).'»: 4 вопроса — по теме, целям урока, материальной базе и методике проведения. Пройденная проверка действительна 14 дней.</p>';
+$body.='<div class="block"><h4>📘 Готовность спикера к занятию</h4><p class="muted" style="margin-top:-4px">Перед занятием — <a href="?p=materials&topic='.urlencode($reqTopic).'" target="_blank">изучить технологическую карту и материалы по теме «'.esc($reqTopic).'» →</a></p><p class="muted" style="margin-top:-4px">Проверка готовности: 4 вопроса — по теме, целям урока, материальной базе и методике проведения. Пройденная проверка действительна 14 дней.</p>';
 foreach(req_confirmed_rows($r['id']) as $row){
 $ready=speaker_topic_ready($row['speaker_user_id'],$reqTopic);
 $last=speaker_topic_last_pass($row['speaker_user_id'],$reqTopic);

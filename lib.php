@@ -2186,13 +2186,12 @@ db()->prepare("UPDATE materials SET $set WHERE id=?")->execute([...array_values(
 log_action(current_user()['id']??null,'operator','material_update','materials',$id,"Изменён материал: $title");
 return [true,'Материал обновлён.'];
 }
-function list_materials($type=null){
-if($type){
-$st=db()->prepare("SELECT m.*, u.display_name uploader FROM materials m LEFT JOIN users u ON u.id=m.uploaded_by WHERE m.type=? ORDER BY m.created_at DESC");
-$st->execute([$type]); return $st->fetchAll();
-}
-$st=db()->query("SELECT m.*, u.display_name uploader FROM materials m LEFT JOIN users u ON u.id=m.uploaded_by ORDER BY m.created_at DESC");
-return $st->fetchAll();
+function list_materials($type=null,$topic=null){
+$where=[]; $params=[];
+if($type){ $where[]='m.type=?'; $params[]=$type; }
+if($topic){ $where[]='m.topic=?'; $params[]=$topic; }
+$sql="SELECT m.*, u.display_name uploader FROM materials m LEFT JOIN users u ON u.id=m.uploaded_by".($where?' WHERE '.implode(' AND ',$where):'').' ORDER BY m.created_at DESC';
+$st=db()->prepare($sql); $st->execute($params); return $st->fetchAll();
 }
 function get_material($id){
 $st=db()->prepare("SELECT * FROM materials WHERE id=?"); $st->execute([$id]); return $st->fetch()?:null;
@@ -2331,8 +2330,15 @@ return $cmp*$mul;
 return $rows;
 }
 // ========== АРХИВАЦИЯ ==========
-function archive_old_requests($days=30){
-$cutoff=date('Y-m-d H:i:s',strtotime("-$days days"));
+// Отсчёт N рабочих дней назад от текущего момента (пропускаем субботы/воскресенья).
+// Официальные праздники/переносы не учитываются — только будни.
+function business_days_ago($fromTs,$days){
+$t=strtotime($fromTs); $counted=0;
+while($counted<$days){ $t=strtotime('-1 day',$t); if((int)date('N',$t)<6) $counted++; }
+return date('Y-m-d H:i:s',$t);
+}
+function archive_old_requests($businessDays=5){
+$cutoff=business_days_ago(now(),$businessDays);
 $st=db()->prepare("UPDATE requests SET archived=1, archived_at=? WHERE status='closed' AND archived=0 AND COALESCE(closed_at, fb_app_at, created_at) < ?");
 $st->execute([now(),$cutoff]); return $st->rowCount();
 }
