@@ -848,11 +848,13 @@ return [true,$answer];
 // проходит проверку по теме конкретной подтверждённой заявки; если он уже проходил проверку по
 // этой же теме успешно в пределах последних 14 дней (неважно, по какой заявке) — можно не
 // пересдавать. Порог прохождения — все 4 вопроса верно (тема/цели/база/методика равноценны).
-function request_topics_distinct(){ return db()->query("SELECT DISTINCT topic FROM requests WHERE topic IS NOT NULL AND topic<>'' ORDER BY topic")->fetchAll(PDO::FETCH_COLUMN); }
+// Список тем для банка вопросов «Готовность к занятию» — только темы, у которых уже есть
+// материалы (технологическая карта и т.п.) или заведённые вопросы. Свободные темы, которые
+// заявитель когда-либо вписал вручную в заявке, сюда сознательно не попадают — иначе список
+// быстро зарастает разовым текстом, никак не связанным с материалами.
 function lesson_readiness_all_topics(){
 $configured=array_column(db()->query("SELECT DISTINCT topic FROM lesson_readiness_questions ORDER BY topic")->fetchAll(),'topic');
-$used=array_merge(material_topics(),request_topics_distinct());
-$all=array_values(array_unique(array_merge($configured,$used)));
+$all=array_values(array_unique(array_merge($configured,material_topics())));
 sort($all,SORT_STRING|SORT_FLAG_CASE);
 return $all;
 }
@@ -1830,8 +1832,8 @@ $allowed=[
 'age_group'=>$f['age_group']??$r['age_group'],
 'notes'=>trim($f['notes']??''),
 ];
-$topicRaw=$f['topic']??'';
-$allowed['topic']=($topicRaw==='__other__')?trim($f['topic_other']??''):trim($topicRaw);
+$allowed['topic']=trim($f['topic']??'');
+if($allowed['topic']!=='' && $allowed['topic']!==($r['topic']??'') && !in_array($allowed['topic'],material_topics(),true)) return [false,'Выберите тему из списка.'];
 if(!$allowed['contact_name']) return [false,'Заполните контактное лицо.'];
 if($allowed['phone']===null) return [false,'Укажите телефон в формате +7XXXXXXXXXX (10 цифр после +7).'];
 if(!in_array($allowed['age_group'],array_keys(ages()),true)) return [false,'Некорректная возрастная группа.'];
@@ -1861,8 +1863,8 @@ $allowed=[
 'age_group'=>$f['age_group']??$r['age_group'],
 'notes'=>trim($f['notes']??''),
 ];
-$topicRaw=$f['topic']??'';
-$allowed['topic']=($topicRaw==='__other__')?trim($f['topic_other']??''):trim($topicRaw);
+$allowed['topic']=trim($f['topic']??'');
+if($allowed['topic']!=='' && $allowed['topic']!==($r['topic']??'') && !in_array($allowed['topic'],material_topics(),true)) return [false,'Выберите тему из списка.'];
 if(!$allowed['contact_name']) return [false,'Заполните контактное лицо.'];
 if($allowed['phone']===null) return [false,'Укажите телефон в формате +7XXXXXXXXXX (10 цифр после +7).'];
 $rescheduled=false;

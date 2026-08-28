@@ -238,12 +238,13 @@ if(empty($u['active'])){ flash_set('Ваша учётная запись ещё 
 $eff=school_effective($u);
 $f=['level'=>$eff['level'],'contact_name'=>trim($_POST['contact_name']??''),'phone'=>normalize_phone($_POST['phone']??''),'email'=>trim($_POST['email']??''),
 'udate'=>$_POST['udate']??'','utime'=>$_POST['utime']??'','utime_end'=>$_POST['utime_end']??'','age_group'=>$_POST['age_group']??'','participants'=>trim($_POST['participants']??''),
-'speakers_needed'=>(int)($_POST['speakers_needed']??1),'topic'=>(($_POST['topic']??'')==='__other__'?trim($_POST['topic_other']??''):trim($_POST['topic']??'')),'notes'=>trim($_POST['notes']??'')];
+'speakers_needed'=>(int)($_POST['speakers_needed']??1),'topic'=>trim($_POST['topic']??''),'notes'=>trim($_POST['notes']??'')];
 if(!$f['contact_name']||!$f['udate']||!$f['utime']||!$f['utime_end']||!$f['age_group']||empty($_POST['consent'])){ fail_redirect('Заполните обязательные поля и согласие.','?p=school&tab=new'); }
 if($f['phone']===null){ fail_redirect('Укажите телефон в формате +7XXXXXXXXXX (10 цифр после +7).','?p=school&tab=new'); }
 if($f['udate']<min_create_date()){ fail_redirect('Дату урока можно выбрать не ранее чем через 10 дней.','?p=school&tab=new'); }
 if(!valid_slot($f['utime'])||!valid_slot($f['utime_end'])){ fail_redirect('Время — с 8:00 до 18:00, минуты кратны 10.','?p=school&tab=new'); }
 if(tmin($f['utime_end'])<=tmin($f['utime'])){ fail_redirect('Время окончания должно быть позже времени начала.','?p=school&tab=new'); }
+if($f['topic']!=='' && !in_array($f['topic'],material_topics(),true)){ fail_redirect('Выберите тему из списка.','?p=school&tab=new'); }
 if(school_daily_limit_reached($u)){ fail_redirect('Ваша организация уже подала максимум заявок на сегодня (6). Попробуйте завтра.','?p=school&tab=new'); }
 $dsid=(int)($_POST['desired_speaker_id']??0);
 if($dsid){ $dsp=find_user_by_id($dsid); if(!$dsp||$dsp['role']!=='speaker'||!$dsp['active']) $dsid=0; }
@@ -1586,10 +1587,9 @@ $body='<div class="head"><h2>Подать заявку</h2><a class="btn ghost" 
 <label class="lbl">Тема занятия</label>'.(function() use($src){
 $cur=$src['topic']??''; $topics=material_topics(); $known=in_array($cur,$topics,true);
 $o='<option value="">— выберите тему —</option>';
+if($cur!==''&&!$known) $o.='<option value="'.esc($cur).'" selected>'.esc($cur).' (старая свободная тема)</option>';
 foreach($topics as $t){ $o.='<option value="'.esc($t).'"'.($cur===$t?' selected':'').'>'.esc($t).'</option>'; }
-$o.='<option value="__other__"'.(($cur!==''&&!$known)?' selected':'').'>Другая тема (указать свою)</option>';
-return '<select name="topic" onchange="var b=this.form.querySelector(\'.topic-other\');b.style.display=this.value===\'__other__\'?\'block\':\'none\';">'.$o.'</select>'
-.'<input class="topic-other" name="topic_other" placeholder="Своя тема занятия" value="'.esc($known?'':$cur).'" style="margin-top:8px;display:'.(($cur!==''&&!$known)?'block':'none').'">';
+return '<select name="topic">'.$o.'</select>';
 })().'
 <label class="lbl">Желаемый спикер (необязательно)</label>'.(function() use($src){
 $cur=(int)($src['desired_speaker_id']??0);
@@ -1887,8 +1887,8 @@ if(!school_owns_request($u,$r)){ layout('Заявка','<div class="card pad">Н
 if(!in_array($r['status'],['new','chosen','confirmed'])){ layout('Редактирование заявки','<div class="card pad"><h2>Редактирование недоступно</h2><p class="muted">Редактирование доступно только на этапах «Новая», «Спикеры выбраны» и «Состав подтверждён Фондом».</p><p><a href="?p=request&id='.$r['id'].'">← К заявке</a></p></div>'); exit; }
 $curTopic=$r['topic']??''; $topics=material_topics(); $known=in_array($curTopic,$topics,true);
 $tOpt='<option value="">— выберите тему —</option>';
+if($curTopic!==''&&!$known) $tOpt.='<option value="'.esc($curTopic).'" selected>'.esc($curTopic).' (старая свободная тема)</option>';
 foreach($topics as $t) $tOpt.='<option value="'.esc($t).'"'.($curTopic===$t?' selected':'').'>'.esc($t).'</option>';
-$tOpt.='<option value="__other__"'.(($curTopic!==''&&!$known)?' selected':'').'>Другая тема (указать свою)</option>';
 $agOpt=''; foreach(level_ages($u['level']) as $g) $agOpt.='<option value="'.esc($g).'" '.($r['age_group']===$g?'selected':'').'>'.esc(ages()[$g]).'</option>';
 $snOpt=''; for($i=1;$i<=5;$i++) $snOpt.='<option value="'.$i.'" '.((int)$r['speakers_needed']===$i?'selected':'').'>'.$i.'</option>';
 $body='<div class="head"><h2>Редактирование заявки '.esc($r['code']).'</h2><a class="btn ghost" href="?p=request&id='.$r['id'].'">← К заявке</a></div>';
@@ -1907,8 +1907,7 @@ $body.='<label class="lbl">Сколько спикеров нужно</label><se
 $body.='<label class="lbl">Контактное лицо <span style="color:#d11">*</span></label><input name="contact_name" required value="'.esc($r['contact_name']).'">';
 $body.='<label class="lbl">Телефон <span style="color:#d11">*</span></label><input name="phone" required value="'.esc($r['phone']).'">';
 $body.='<label class="lbl">Число участников</label><input name="participants" value="'.esc($r['participants']??'').'">';
-$body.='<label class="lbl">Тема занятия</label><select name="topic" onchange="var b=this.form.querySelector(\'.topic-other\');b.style.display=this.value===\'__other__\'?\'block\':\'none\';">'.$tOpt.'</select>';
-$body.='<input class="topic-other" name="topic_other" placeholder="Своя тема занятия" value="'.esc($known?'':$curTopic).'" style="margin-top:8px;display:'.(($curTopic!==''&&!$known)?'block':'none').'">';
+$body.='<label class="lbl">Тема занятия</label><select name="topic">'.$tOpt.'</select>';
 if($r['status']==='new'){
 $dsOpt='<option value="">— без предпочтения —</option>';
 foreach(active_speakers() as $s){ $ags=array_map(fn($k)=>ages()[$k]??$k,array_filter(explode(',',$s['age_groups']))); $dsOpt.='<option value="'.$s['id'].'"'.((int)($r['desired_speaker_id']??0)===(int)$s['id']?' selected':'').'>'.esc($s['display_name']).' — '.esc($s['district']?:'район не указан').' ('.esc(implode(', ',$ags)).')</option>'; }
@@ -1927,8 +1926,8 @@ if(!empty($r['claimed_fund_id']) && !in_array((int)$r['claimed_fund_id'],fund_sc
 if(!reschedulable_status($r)){ layout('Редактирование заявки','<div class="card pad"><h2>Редактирование недоступно</h2><p class="muted">Редактирование доступно на этапах «Спикеры выбраны» и «Состав подтверждён Фондом».</p><p><a href="?p=request&id='.$r['id'].'">← К заявке</a></p></div>'); exit; }
 $curTopic=$r['topic']??''; $topics=material_topics(); $known=in_array($curTopic,$topics,true);
 $tOpt='<option value="">— выберите тему —</option>';
+if($curTopic!==''&&!$known) $tOpt.='<option value="'.esc($curTopic).'" selected>'.esc($curTopic).' (старая свободная тема)</option>';
 foreach($topics as $t) $tOpt.='<option value="'.esc($t).'"'.($curTopic===$t?' selected':'').'>'.esc($t).'</option>';
-$tOpt.='<option value="__other__"'.(($curTopic!==''&&!$known)?' selected':'').'>Другая тема (указать свою)</option>';
 $agOpt=''; foreach(level_ages($r['level']) as $g) $agOpt.='<option value="'.esc($g).'" '.($r['age_group']===$g?'selected':'').'>'.esc(ages()[$g]).'</option>';
 $body='<div class="head"><h2>Редактирование заявки '.esc($r['code']).'</h2><a class="btn ghost" href="?p=request&id='.$r['id'].'">← К заявке</a></div>';
 $body.='<div class="hint-warn"><b>ⓘ</b> Изменение даты/времени будет проверено на конфликты с другими уроками уже подтверждённых спикеров.</div>';
@@ -1941,8 +1940,7 @@ $body.='<label class="lbl">Возрастная группа</label><select name
 $body.='<label class="lbl">Контактное лицо <span style="color:#d11">*</span></label><input name="contact_name" required value="'.esc($r['contact_name']).'">';
 $body.='<label class="lbl">Телефон <span style="color:#d11">*</span></label><input name="phone" required value="'.esc($r['phone']).'">';
 $body.='<label class="lbl">Число участников</label><input name="participants" value="'.esc($r['participants']??'').'">';
-$body.='<label class="lbl">Тема занятия</label><select name="topic" onchange="var b=this.form.querySelector(\'.topic-other\');b.style.display=this.value===\'__other__\'?\'block\':\'none\';">'.$tOpt.'</select>';
-$body.='<input class="topic-other" name="topic_other" placeholder="Своя тема занятия" value="'.esc($known?'':$curTopic).'" style="margin-top:8px;display:'.(($curTopic!==''&&!$known)?'block':'none').'">';
+$body.='<label class="lbl">Тема занятия</label><select name="topic">'.$tOpt.'</select>';
 $body.='<label class="lbl">Особые условия</label><textarea name="notes">'.esc($r['notes']??'').'</textarea>';
 $body.='<button class="btn primary" style="margin-top:12px">Сохранить изменения</button></form>';
 layout('Редактирование заявки',$body); exit;
