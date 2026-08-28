@@ -875,12 +875,12 @@ $existing->execute([$topic,$dimension]); $row=$existing->fetch();
 if($row){
 db()->prepare("UPDATE lesson_readiness_questions SET question=?,option_a=?,option_b=?,option_c=?,option_d=?,correct_option=?,created_by=?,created_at=? WHERE id=?")
 ->execute([$question,$opts['a'],$opts['b'],$opts['c'],$opts['d'],$correct,$actorId,now(),$row['id']]);
-log_action($actorId,'operator','lesson_readiness_update','lesson_readiness_questions',$row['id'],"Изменён вопрос «$dimension» по теме «$topic»");
+log_action($actorId,'operator','lesson_readiness_update','lesson_readiness_questions',$row['id'],"Изменён вопрос «{$dimension}» по теме «{$topic}»");
 } else {
 db()->prepare("INSERT INTO lesson_readiness_questions(topic,dimension,question,option_a,option_b,option_c,option_d,correct_option,created_by,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)")
 ->execute([$topic,$dimension,$question,$opts['a'],$opts['b'],$opts['c'],$opts['d'],$correct,$actorId,now()]);
 $id=db()->lastInsertId();
-log_action($actorId,'operator','lesson_readiness_add','lesson_readiness_questions',$id,"Добавлен вопрос «$dimension» по теме «$topic»");
+log_action($actorId,'operator','lesson_readiness_add','lesson_readiness_questions',$id,"Добавлен вопрос «{$dimension}» по теме «{$topic}»");
 }
 return [true,'Сохранено.'];
 }
@@ -908,7 +908,7 @@ $detail[]=['dimension'=>$dk,'label'=>$dl,'question'=>$q['question'],'given'=>$gi
 $passed=$score>=$total;
 db()->prepare("INSERT INTO lesson_readiness_attempts(speaker_user_id,topic,request_id,score,total,passed,answers,created_at) VALUES(?,?,?,?,?,?,?,?)")
 ->execute([$speaker['id'],$topic,$requestId,$score,$total,$passed?1:0,json_encode($detail,JSON_UNESCAPED_UNICODE),now()]);
-log_action($speaker['id'],'speaker','lesson_readiness_attempt','users',$speaker['id'],"Проверка готовности по теме «$topic»: $score из $total".($passed?' — пройдена':' — не пройдена'));
+log_action($speaker['id'],'speaker','lesson_readiness_attempt','users',$speaker['id'],"Проверка готовности по теме «{$topic}»: {$score} из {$total}".($passed?' — пройдена':' — не пройдена'));
 return [true,['score'=>$score,'total'=>$total,'passed'=>$passed]];
 }
 function speaker_lesson_readiness_history($speakerId){
