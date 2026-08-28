@@ -1461,11 +1461,28 @@ header('Content-Length: '.filesize($path));
 readfile($path); exit;
 }
 if($p==='materials'){
-$typeFilter=$_GET['type']??''; $topicFilter=$_GET['topic']??'';
-$rows=list_materials($typeFilter?:null,$topicFilter?:null);
-$body='<div class="head"><h2>Материалы</h2><div style="display:flex;gap:8px"><a class="btn ghost" href="'.esc(role_home($u)).'">← в кабинет</a>'.($u['role']==='operator'?'<a class="btn primary" href="?p=material_edit">+ Добавить материал</a>':'').'</div></div>';
-if($topicFilter!=='') $body.='<div class="hint-ok" style="margin-bottom:10px">Материалы по теме «'.esc($topicFilter).'». <a href="?p=materials">Показать все темы</a></div>';
-$body.='<form method="get" style="margin-bottom:14px"><input type="hidden" name="p" value="materials">'.($topicFilter!==''?'<input type="hidden" name="topic" value="'.esc($topicFilter).'">':'').'<label class="lbl" style="margin:0">Вид материала</label><select name="type" class="form-select" style="max-width:320px;display:inline-block;width:auto" onchange="this.form.submit()"><option value="">Все</option>';
+$typeFilter=$_GET['type']??''; $topicParam=$_GET['topic']??null;
+$addHref='?p=material_edit'.($topicParam?'&topic='.urlencode($topicParam):'');
+$body='<div class="head"><h2>Материалы</h2><div style="display:flex;gap:8px"><a class="btn ghost" href="'.esc(role_home($u)).'">← в кабинет</a>'.($u['role']==='operator'?'<a class="btn primary" href="'.esc($addHref).'">+ Добавить материал</a>':'').'</div></div>';
+if($topicParam===null && $typeFilter==='' && empty($_GET['all'])){
+// ---- Папки по темам: техкарты, ролики и документы по одной теме лежат вместе ----
+$counts=material_topic_counts(); $topics=material_topics_all();
+if(!$topics && empty($counts[''])){
+$body.='<div class="empty-state"><div class="empty-icon">🗂️</div><h3>Материалов пока нет</h3><p class="muted">'.($u['role']==='operator'?'Загрузите первый материал кнопкой выше.':'Департамент ещё не добавил ни одного материала.').'</p></div>';
+} else {
+$body.='<p class="muted">Материалы сгруппированы по темам занятий — в каждой папке техкарта, ролики и документы по одной теме вместе. <a href="?p=materials&all=1">Показать все материалы одним списком</a></p>';
+$body.='<div class="folders-grid">';
+foreach($topics as $t){ $c=$counts[$t]??0; $body.='<a class="folder-card" href="?p=materials&topic='.urlencode($t).'"><div class="folder-icon">📁</div><div class="folder-info"><div class="folder-title">'.esc($t).'</div><div class="folder-count">'.$c.' '.ru_plural($c,'материал','материала','материалов').'</div></div></a>'; }
+if(!empty($counts[''])){ $c=$counts['']; $body.='<a class="folder-card" href="?p=materials&topic=" style="border-style:dashed"><div class="folder-icon">🗂️</div><div class="folder-info"><div class="folder-title">Без темы</div><div class="folder-count">'.$c.' '.ru_plural($c,'материал','материала','материалов').'</div></div></a>'; }
+$body.='</div>';
+}
+layout('Материалы',$body); exit;
+}
+// ---- Внутри папки (или общий список по виду материала) ----
+$topicFilter=$topicParam??'';
+$rows=list_materials($typeFilter?:null,$topicParam);
+if($topicParam!==null) $body.='<div class="hint-ok" style="margin-bottom:10px">Папка: <b>'.($topicFilter!==''?esc($topicFilter):'без темы').'</b>. <a href="?p=materials">← ко всем темам</a></div>';
+$body.='<form method="get" style="margin-bottom:14px"><input type="hidden" name="p" value="materials">'.($topicParam!==null?'<input type="hidden" name="topic" value="'.esc($topicFilter).'">':'').'<label class="lbl" style="margin:0">Вид материала</label><select name="type" class="form-select" style="max-width:320px;display:inline-block;width:auto" onchange="this.form.submit()"><option value="">Все</option>';
 foreach(material_types() as $k=>$v) $body.='<option value="'.esc($k).'" '.($typeFilter===$k?'selected':'').'>'.esc($v).'</option>';
 $body.='</select></form>';
 if(!$rows){
@@ -1491,11 +1508,13 @@ if($p==='material_edit'){
 require_role('operator');
 $id=(int)($_GET['id']??0); $m=$id?get_material($id):null;
 if($id && !$m){ layout('Материал','<div class="card pad">Материал не найден. <a href="?p=materials">Назад</a></div>'); exit; }
+$backTopic=$m['topic']??trim($_GET['topic']??'');
 $tOpt=''; foreach(material_types() as $k=>$v) $tOpt.='<option value="'.esc($k).'" '.(($m['type']??'')===$k?'selected':'').'>'.esc($v).'</option>';
-$body='<div class="head"><h2>'.($m?'Редактирование материала':'Добавить материал').'</h2><a class="btn ghost" href="?p=materials">← к материалам</a></div>';
+$backHref=$backTopic!==''?'?p=materials&topic='.urlencode($backTopic):'?p=materials';
+$body='<div class="head"><h2>'.($m?'Редактирование материала':'Добавить материал').'</h2><a class="btn ghost" href="'.esc($backHref).'">← к материалам</a></div>';
 $body.='<form method="post" class="upload-form" enctype="multipart/form-data">'.csrf_field().'<input type="hidden" name="action" value="'.($m?'update_material':'add_material').'">'.($m?'<input type="hidden" name="id" value="'.$m['id'].'">':'');
 $body.='<div class="form-group"><label class="form-label">Название <span style="color:#d11">*</span></label><input class="form-input" name="title" required value="'.esc($m['title']??'').'"></div>';
-$body.='<div class="form-group"><label class="form-label">Тема <span style="color:#d11">*</span></label><input class="form-input" name="topic" required list="topics_dl" value="'.esc($m['topic']??'').'"><datalist id="topics_dl">'; foreach(material_topics() as $t) $body.='<option value="'.esc($t).'">'; $body.='</datalist></div>';
+$body.='<div class="form-group"><label class="form-label">Тема <span style="color:#d11">*</span></label><input class="form-input" name="topic" required list="topics_dl" value="'.esc($m['topic']??$backTopic).'"><p class="form-hint">Материалы с одинаковой темой попадают в одну папку — впишите новую тему или выберите существующую из подсказок.</p><datalist id="topics_dl">'; foreach(material_topics_all() as $t) $body.='<option value="'.esc($t).'">'; $body.='</datalist></div>';
 $body.='<div class="form-group"><label class="form-label">Вид материала <span style="color:#d11">*</span></label><select class="form-select" name="type" required><option value="">— выберите —</option>'.$tOpt.'</select></div>';
 $body.='<div class="form-group"><label class="form-label">Описание</label><textarea class="form-textarea" name="description">'.esc($m['description']??'').'</textarea></div>';
 $body.='<div class="form-group"><label class="form-label">Файл (до 100 МБ)</label><div class="file-upload-wrapper"><input class="file-input" type="file" name="file" id="material_file" onchange="document.getElementById(\'material_file_name\').textContent=this.files.length?this.files[0].name:\'Файл не выбран\';"><label for="material_file" class="file-upload-label"><span>📎</span><span class="file-upload-text">Нажмите, чтобы выбрать файл</span><span class="file-name" id="material_file_name">'.($m&&!empty($m['file_path'])?esc($m['file_name']):'Файл не выбран').'</span></label></div></div>';

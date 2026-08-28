@@ -2188,12 +2188,30 @@ db()->prepare("UPDATE materials SET $set WHERE id=?")->execute([...array_values(
 log_action(current_user()['id']??null,'operator','material_update','materials',$id,"Изменён материал: $title");
 return [true,'Материал обновлён.'];
 }
+// $topic: null — без фильтра по теме; '' — только материалы БЕЗ темы; строка — конкретная тема.
 function list_materials($type=null,$topic=null){
 $where=[]; $params=[];
 if($type){ $where[]='m.type=?'; $params[]=$type; }
-if($topic){ $where[]='m.topic=?'; $params[]=$topic; }
+if($topic!==null){
+if($topic===''){ $where[]="(m.topic IS NULL OR m.topic='')"; }
+else { $where[]='m.topic=?'; $params[]=$topic; }
+}
 $sql="SELECT m.*, u.display_name uploader FROM materials m LEFT JOIN users u ON u.id=m.uploaded_by".($where?' WHERE '.implode(' AND ',$where):'').' ORDER BY m.created_at DESC';
 $st=db()->prepare($sql); $st->execute($params); return $st->fetchAll();
+}
+// «Папки» на странице материалов — темы, по которым уже загружен хотя бы один материал любого
+// вида (техкарта, ролик, документ и т.п.), плюс отдельно материалы без темы, если такие есть.
+function material_topics_all(){ return db()->query("SELECT DISTINCT topic FROM materials WHERE topic IS NOT NULL AND topic<>'' ORDER BY topic")->fetchAll(PDO::FETCH_COLUMN); }
+function material_topic_counts(){
+$out=[]; foreach(db()->query("SELECT COALESCE(NULLIF(topic,''),'') topic, COUNT(*) c FROM materials GROUP BY COALESCE(NULLIF(topic,''),'')")->fetchAll() as $row) $out[$row['topic']]=(int)$row['c'];
+return $out;
+}
+// Простое склонение по числу (1 материал / 2 материала / 5 материалов).
+function ru_plural($n,$one,$few,$many){
+$n=abs((int)$n); $n10=$n%10; $n100=$n%100;
+if($n10===1 && $n100!==11) return $one;
+if($n10>=2 && $n10<=4 && ($n100<12 || $n100>14)) return $few;
+return $many;
 }
 function get_material($id){
 $st=db()->prepare("SELECT * FROM materials WHERE id=?"); $st->execute([$id]); return $st->fetch()?:null;
