@@ -2047,6 +2047,15 @@ $in=implode(',',array_fill(0,count($ids),'?'));
 $st=db()->prepare("SELECT * FROM requests WHERE (archived=0 OR archived IS NULL) AND ((status='new' AND claimed_fund_id IS NULL) OR claimed_fund_id IN ($in)) ORDER BY id DESC");
 $st->execute($ids); return $st->fetchAll();
 }
+// Число заявок этого фонда, уже перенесённых в архив (та же выборка, что fund_dashboard_requests,
+// только archived=1) — используется, чтобы пояснить расхождение между «Реестр заявок (N)» и
+// КПИ «Всего заявок» (который считает и архивные тоже).
+function fund_archived_count($fund){
+$ids=fund_scope_ids($fund); if(!$ids) return 0;
+$in=implode(',',array_fill(0,count($ids),'?'));
+$st=db()->prepare("SELECT COUNT(*) c FROM requests WHERE archived=1 AND ((status='new' AND claimed_fund_id IS NULL) OR claimed_fund_id IN ($in))");
+$st->execute($ids); return (int)$st->fetch()['c'];
+}
 function fund_pool_requests_for_speaker($speaker){
 if(empty($speaker['fund_user_id'])) return [];
 $f=find_user_by_id($speaker['fund_user_id']); if(!$f) return [];

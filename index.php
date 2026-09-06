@@ -1349,7 +1349,7 @@ $archivedCount=count(get_requests_list(array_merge($filters,['archived'=>1])));
 $activeFilters=(!$locked && $deptFilter!=='')+(!empty($_GET['status']))+(!empty($_GET['org']))+(!empty($_GET['from_date']))+(!empty($_GET['to_date']));
 $pendN=count(pending_applicants($u));
 $action_req = get_action_required_requests($u);
-$body = '<p class="muted" style="margin:0 0 10px;font-size:12px;letter-spacing:.04em;text-transform:uppercase;font-weight:600">Кабинет оператора'.($deptFilter?' · '.esc($deptFilter==='school'?'ДО г. Тюмени (школы)':'ДОиН ТО (СПО и вузы)'):'').'</p>';
+$body = '';
 if ($action_req) {
 $body .= '<div class="action-block"><h4>⚠️ Требует вашего действия <span class="action-badge">'.count($action_req).'</span></h4><ul class="action-list">';
 foreach ($action_req as $ar) {
@@ -1548,12 +1548,15 @@ layout('Спикеры Фонда',$body); exit;
 }
 $rows=fund_dashboard_requests($u);
 if(!empty($_GET['sort'])) $rows=sort_requests($rows,$_GET['sort'],$_GET['dir']??'asc');
+else $rows=sort_requests($rows,'date','asc');
+$archivedCount=fund_archived_count($u);
 $myScope=fund_scope_ids($u);
 $action_req = get_action_required_requests($u);
 $k=fund_kpis($u); $kp='';
 foreach($k as $c){
-if(!empty($c[2])){ $kp.='<a class="kpi" href="'.esc($c[2]).'" style="text-decoration:none;color:inherit"><div class="n">'.esc($c[1]).'</div><div class="l">'.esc($c[0]).'</div></a>'; }
-else { $kp.='<div class="kpi"><div class="n">'.esc($c[1]).'</div><div class="l">'.esc($c[0]).'</div></div>'; }
+$cls='kpi'.(($c[0]==='Не состоялось'&&(int)$c[1]>0)?' warn':'');
+if(!empty($c[2])){ $kp.='<a class="'.$cls.'" href="'.esc($c[2]).'" style="text-decoration:none;color:inherit"><div class="n">'.esc($c[1]).'</div><div class="l">'.esc($c[0]).'</div></a>'; }
+else { $kp.='<div class="'.$cls.'"><div class="n">'.esc($c[1]).'</div><div class="l">'.esc($c[0]).'</div></div>'; }
 }
 $body = '<div class="kpis">'.$kp.'</div>';
 $body.=month_stats_widget(fund_scope_requests($u),'fundStatMonth');
@@ -1575,9 +1578,10 @@ $mine=!empty($r['claimed_fund_id']) && in_array((int)$r['claimed_fund_id'],$mySc
 $rowCls=is_request_urgent($r)?'urgent':($mine?(($confirmedCounts[$r['id']]??0)>=1?'claim-confirmed':'claim-light'):'');
 $need=in_array($r['status'],['chosen','confirmed'])?' <span class="pill amber">нужно действие</span>':'';
 $fundName=$r['claimed_fund_id']?esc(fund_name_by_id($r['claimed_fund_id'])):'<span class="muted">свободна</span>';
-$tr.='<tr class="'.$rowCls.'" onclick="location=\'?p=request&id='.$r['id'].'\'"><td class="id"><a href="?p=request&id='.$r['id'].'">'.esc($r['code']).'</a></td><td>'.esc($r['org']).'</td><td>'.dt($r).'</td><td>'.$fundName.'</td><td>'.esc($labels[$r['id']]??'не выбран').'</td><td>'.pill($r['status']).$need.'</td></tr>';
+[$turnWho,$turnWhat]=whose_turn($r);
+$tr.='<tr class="'.$rowCls.'" onclick="location=\'?p=request&id='.$r['id'].'\'"><td class="id"><a href="?p=request&id='.$r['id'].'">'.esc($r['code']).'</a></td><td>'.esc($r['org']).'</td><td>'.dt($r).'</td><td>'.$fundName.'</td><td>'.esc($labels[$r['id']]??'не выбран').'</td><td title="'.esc($turnWho.($turnWhat?' — '.$turnWhat:'')).'">'.pill($r['status']).$need.'</td></tr>';
 }
-$body.='<div class="head"><h2>Реестр заявок</h2><div><a class="btn ghost" href="?p=fund&tab=speakers">Спикеры Фонда</a> <a class="btn ghost" href="?p=calendar">📅 Календарь</a> <a class="btn ghost" href="?p=materials">🗂️ Материалы</a> <a class="btn ghost" href="?p=export">⬇ Экспорт в CSV</a></div></div>';
+$body.='<div class="head"><h2>Реестр заявок ('.count($rows).' активных'.($archivedCount?', '.$archivedCount.' в архиве':'').')</h2><div><a class="btn ghost" href="?p=fund&tab=speakers">Спикеры Фонда</a> <a class="btn ghost" href="?p=calendar">📅 Календарь</a> <a class="btn ghost" href="?p=materials">🗂️ Материалы</a> <a class="btn ghost" href="?p=export">⬇ Экспорт в CSV</a></div></div>';
 $body.='<p class="muted">Новые заявки без спикера доступны всем фондам. <span class="pill" style="background:#eafaf0;color:#1a7f37">Светло-зелёным</span> отмечены заявки, взятые вашим фондом в обработку; <span class="pill" style="background:#c8f0d6;color:#1a7f37">зелёным</span> — с уже подтверждённым вашим спикером.</p>';
 $body.= $rows ? '<table class="card-view"><thead><tr>'.sort_th('Код','code').sort_th('Организация','org').sort_th('Дата и время','date').sort_th('Фонд','fund').sort_th('Спикеры','speakers').sort_th('Статус','status').'</tr></thead><tbody>'.$tr.'</tbody></table>' : '<div class="card pad muted">Заявок пока нет.</div>';
 layout('Кабинет Фонда',$body); exit;
@@ -1631,6 +1635,7 @@ layout('Подать заявку',$body); exit;
 $scopeIds=school_scope_ids($u); $scopeIn=implode(',',array_fill(0,count($scopeIds),'?'));
 $st=db()->prepare("SELECT * FROM requests WHERE school_user_id IN ($scopeIn) AND (archived=0 OR archived IS NULL) ORDER BY id DESC"); $st->execute($scopeIds); $rows=$st->fetchAll();
 if(!empty($_GET['sort'])) $rows=sort_requests($rows,$_GET['sort'],$_GET['dir']??'asc');
+else $rows=sort_requests($rows,'date','asc');
 $action_req = get_action_required_requests($u);
 $body = '';
 if(empty($u['parent_school_id'])){
@@ -1664,7 +1669,8 @@ $body .= '</ul></div>';
 $labels=req_labels_bulk(array_column($rows,'id'));
 $tr=''; foreach($rows as $r){
 $urgent_tr = is_request_urgent($r) ? 'urgent' : '';
-$tr.='<tr class="'.$urgent_tr.'" onclick="location=\'?p=request&id='.$r['id'].'\'"><td class="id"><a href="?p=request&id='.$r['id'].'">'.esc($r['code']).'</a></td><td>'.dt($r).'</td><td>'.esc(ages()[$r['age_group']]??'').'</td><td>'.esc($labels[$r['id']]??'не выбран').'</td><td>'.pill($r['status']).'</td></tr>';
+[$turnWho,$turnWhat]=whose_turn($r);
+$tr.='<tr class="'.$urgent_tr.'" onclick="location=\'?p=request&id='.$r['id'].'\'"><td class="id"><a href="?p=request&id='.$r['id'].'">'.esc($r['code']).'</a></td><td>'.dt($r).'</td><td>'.esc(ages()[$r['age_group']]??'').'</td><td>'.esc($labels[$r['id']]??'не выбран').'</td><td title="'.esc($turnWho.($turnWhat?' — '.$turnWhat:'')).'">'.pill($r['status']).'</td></tr>';
 }
 $body.='<div class="head"><h2>'.esc($eff['org_name']).'</h2><div><a class="btn primary" href="?p=school&tab=new">+ Подать заявку</a> <a class="btn ghost" href="?p=calendar">📅 Календарь</a> <a class="btn ghost" href="?p=materials">🗂️ Материалы</a> <a class="btn ghost" href="?p=users&role=school">👥 Сотрудники</a> <a class="btn ghost" href="?p=export">⬇ Экспорт в CSV</a></div></div>';
 $sch_total=count($rows);
@@ -1682,9 +1688,10 @@ require_role('speaker');
 if(!$u['active']){ layout('Кабинет спикера','<div class="card pad"><h2>Ожидает подтверждения</h2><p class="muted">Ваша учётная запись ожидает подтверждения Фондом.</p></div>'); exit; }
 $rows=speaker_lessons($u['id']);
 if(!empty($_GET['sort'])) $rows=sort_requests($rows,$_GET['sort'],$_GET['dir']??'asc');
+else $rows=sort_requests($rows,'date','asc');
 $daily=speaker_daily_count($u['id'],date('Y-m-d'));
 $weekly=speaker_weekly_count($u['id'],date('Y-m-d'));
-$tr=''; foreach($rows as $r){ $mark=$r['cfd']?'<span class="pill green">в составе</span>':(st_index($r['status'])>=st_index('confirmed')?'<span class="pill gray">не выбран</span>':'<span class="pill gray">кандидат</span>'); $tr.='<tr onclick="location=\'?p=request&id='.$r['id'].'\'"><td class="id"><a href="?p=request&id='.$r['id'].'">'.esc($r['code']).'</a></td><td>'.esc($r['org']).'</td><td>'.dt($r).'</td><td>'.$mark.'</td><td>'.pill($r['status']).'</td></tr>'; }
+$tr=''; foreach($rows as $r){ $mark=$r['cfd']?'<span class="pill green">в составе</span>':(st_index($r['status'])>=st_index('confirmed')?'<span class="pill gray">не выбран</span>':'<span class="pill gray">кандидат</span>'); [$turnWho,$turnWhat]=whose_turn($r); $tr.='<tr onclick="location=\'?p=request&id='.$r['id'].'\'"><td class="id"><a href="?p=request&id='.$r['id'].'">'.esc($r['code']).'</a></td><td>'.esc($r['org']).'</td><td>'.dt($r).'</td><td>'.$mark.'</td><td title="'.esc($turnWho.($turnWhat?' — '.$turnWhat:'')).'">'.pill($r['status']).'</td></tr>'; }
 $body='<div class="head"><h2>Мои уроки</h2><div><a class="btn ghost" href="?p=speaker_anketas">📋 Анкеты</a> <a class="btn ghost" href="?p=speaker_stats">📊 Моя статистика</a> <a class="btn ghost" href="?p=calendar">📅 Календарь</a> <a class="btn ghost" href="?p=materials">🗂️ Материалы</a></div></div>';
 if(speaker_has_criminal_record($u)) $body.='<div class="hint-warn">'.nl2br(esc(criminal_record_notice())).'</div>';
 $body.='<div class="kpis"><div class="kpi"><div class="n">'.$daily.' / 2</div><div class="l">Загрузка сегодня</div></div><div class="kpi"><div class="n">'.$weekly.' / 7</div><div class="l">Загрузка на неделе</div></div><div class="kpi"><div class="n">'.count($rows).'</div><div class="l">Всего назначено</div></div></div>';
