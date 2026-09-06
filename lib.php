@@ -2380,6 +2380,7 @@ if(!empty($filters['from_date'])) { $where.=' AND udate>=?'; $params[]=$filters[
 if(!empty($filters['to_date'])) { $where.=' AND udate<=?'; $params[]=$filters['to_date']; }
 if(!empty($filters['search'])) { $s='%'.$filters['search'].'%'; $where.=' AND (code LIKE ? OR org LIKE ? OR contact_name LIKE ?)'; $params=array_merge($params,[$s,$s,$s]); }
 if(!empty($filters['op_group'])) { $where.=' AND op_group=?'; $params[]=$filters['op_group']; }
+if(!empty($filters['fund_ids'])) { $in=implode(',',array_fill(0,count($filters['fund_ids']),'?')); $where.=" AND claimed_fund_id IN ($in)"; $params=array_merge($params,$filters['fund_ids']); }
 $order=!empty($filters['order'])?$filters['order']:'id DESC';
 $st=db()->prepare("SELECT * FROM requests WHERE $where ORDER BY $order");
 $st->execute($params); return $st->fetchAll();
@@ -2549,7 +2550,7 @@ $panels.='<div class="month-panel" data-ym="'.esc($ym).'" style="display:'.($ym=
 .'<div><div class="n" style="font-size:22px;color:var(--green)">'.$kids.'</div><div class="l muted">Охвачено детей</div></div>'
 .'</div>'.$table.'</div>';
 }
-$html='<div class="card pad" style="margin:14px 0" id="'.$domId.'_wrap"><div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><h4 style="margin:0">📅 Уроки за месяц</h4><select id="'.$domId.'_sel" onchange="'.$domId.'_upd()">'.$opts.'</select></div>'.$panels.'</div>'
+$html='<div class="card pad" style="margin:14px 0;background:var(--tint);border-left:4px solid var(--navy)" id="'.$domId.'_wrap"><div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><h4 style="margin:0">📅 Уроки за месяц <span class="muted" style="font-weight:400;text-transform:none;letter-spacing:normal">(в отличие от карточек выше — не за всё время, а только за выбранный месяц)</span></h4><select id="'.$domId.'_sel" onchange="'.$domId.'_upd()">'.$opts.'</select></div>'.$panels.'</div>'
 .'<script>function '.$domId.'_upd(){var v=document.getElementById("'.$domId.'_sel").value;document.querySelectorAll("#'.$domId.'_wrap .month-panel").forEach(function(el){el.style.display=(el.getAttribute("data-ym")===v)?"block":"none";});}</script>';
 return $html;
 }

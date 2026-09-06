@@ -516,7 +516,7 @@ echo '<!DOCTYPE html><html lang="ru"><head><meta charset="utf-8"><meta name="vie
 echo '<script>if("serviceWorker" in navigator){window.addEventListener("load",function(){navigator.serviceWorker.register("sw.js").catch(function(){});});}</script>';
 echo '<header class="top"><div class="topbar"><div class="mark"><img src="favicon.png" alt="" style="width:100%;height:100%;object-fit:contain"></div><div class="brand"><h1>Урок Мужества</h1><p class="brand-full">Проект разработан в рамках региональной программы «Боевой кадровый резерв Тюменской области»</p><p class="brand-short">В рамках региональной программы «БКР ТО»</p></div><div class="session">'.$sess.'</div></div>'.($fullLabel!==''?'<div class="rolebadge-full-mobile">'.esc($fullLabel).'</div>':'').'</header>';
 echo '<main class="wrap">'; if($f) echo '<div class="flash">'.esc($f).'</div>';
-if($missing) echo '<div class="hint-warn"><b>ⓘ Заполните профиль:</b> не указано — '.esc(implode(', ',$missing)).'. <a href="?p=profile">Перейти в профиль →</a></div>';
+if($missing) echo '<div class="hint-warn"><b>⚠ Заполните профиль:</b> не указано — '.esc(implode(', ',$missing)).'. <a class="btn primary sm" href="?p=profile" style="margin-left:8px">Перейти в профиль →</a></div>';
 echo $body.'</main>';
 echo '<footer style="text-align:center;padding:20px;color:var(--muted);font-size:12px"><a href="?p=privacy">Политика обработки персональных данных (152-ФЗ)</a></footer>';
 echo '<script>(function(){var n=0;document.querySelectorAll("label.lbl").forEach(function(lb){if(lb.getAttribute("for")||lb.id)return;var el=lb.nextElementSibling;while(el&&!/^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName)&&!(el.tagName==="DIV"&&el.querySelector("input,select,textarea")))el=el.nextElementSibling;if(!el)return;if(/^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName)){if(!el.id)el.id="lblauto_"+(++n);lb.setAttribute("for",el.id);}else{if(!lb.id)lb.id="lblgrp_"+(++n);el.setAttribute("role","group");el.setAttribute("aria-labelledby",lb.id);}});})();</script>';
@@ -1298,6 +1298,7 @@ if(!empty($_GET['to_date'])) $afil['to_date']=$_GET['to_date'];
 $rows=get_requests_list($afil);
 if(!empty($_GET['sort'])) $rows=sort_requests($rows,$_GET['sort'],$_GET['dir']??'asc');
 $body='<div class="head"><h2>Архив заявок</h2><a class="btn ghost" href="?p=operator">← в кабинет</a></div>';
+$body.='<div class="guide-tabs" style="margin:-6px 0 14px"><a class="guide-tab" href="?p=operator">Активные</a> <a class="guide-tab active" href="?p=operator&tab=archive">Архив</a></div>';
 $body.='<p class="muted">Закрытые заявки автоматически переносятся в архив через 5 рабочих дней после закрытия.</p>';
 $body.='<form method="get" class="card pad" style="margin-bottom:14px;display:flex;gap:10px;flex-wrap:wrap;align-items:end"><input type="hidden" name="p" value="operator"><input type="hidden" name="tab" value="archive">'
 .'<label class="lbl" style="margin:0">Организация</label><input name="org" value="'.esc($_GET['org']??'').'" placeholder="Поиск">'
@@ -1381,7 +1382,9 @@ $urgent_tr = is_request_urgent($r) ? 'urgent' : '';
 [$turnWho,$turnWhat]=whose_turn($r);
 $tr.='<tr class="'.$urgent_tr.'" onclick="location=\'?p=request&id='.$r['id'].'\'"><td class="id"><a href="?p=request&id='.$r['id'].'">'.esc($r['code']).'</a></td><td>'.esc($r['org']).'</td><td>'.dt($r).'</td><td>'.esc($labels[$r['id']]??'не выбран').'</td><td title="'.esc($turnWho.($turnWhat?' — '.$turnWhat:'')).'">'.pill($r['status']).'</td></tr>';
 }
-$body.='<div class="head"><h2>Реестр заявок ('.count($rows).' активных'.($archivedCount?', <a href="?p=operator&tab=archive" style="font-weight:400">'.$archivedCount.' в архиве</a>':'').')</h2></div><div class="kpis">'.$kp.'</div>';
+$body.='<div class="head"><h2>Реестр заявок</h2></div>';
+$body.='<div class="guide-tabs" style="margin:-6px 0 14px"><a class="guide-tab active" href="?p=operator">Активные ('.count($rows).')</a> <a class="guide-tab" href="?p=operator&tab=archive">Архив'.($archivedCount?' ('.$archivedCount.')':'').'</a></div>';
+$body.='<div class="kpis">'.$kp.'</div>';
 $body.=month_stats_widget(operator_scope_requests($locked?'school':($deptFilter?:null)),'opStatMonth');
 $body.= $rows ? '<table class="card-view"><thead><tr>'.sort_th('Код','code').sort_th('Организация','org').sort_th('Дата и время','date').'<th>Спикеры</th>'.sort_th('Статус','status').'</tr></thead><tbody>'.$tr.'</tbody></table>' : '<div class="card pad muted">Заявок не найдено.</div>';
 layout('Кабинет оператора',$body); exit;
@@ -1546,6 +1549,28 @@ if(!$act) $body.='<tr><td colspan="5" class="muted">Пока нет.</td></tr>';
 $body.='<div style="margin-top:14px;display:flex;gap:8px"><a class="btn ghost" href="?p=users&role=speaker">👥 Управление спикерами</a><a class="btn ghost" href="?p=audit&user_role=speaker">📋 Журнал</a><a class="btn ghost" href="?p=calendar">📅 Календарь</a></div>';
 layout('Спикеры Фонда',$body); exit;
 }
+if($tab==='archive'){
+$fIds=fund_scope_ids($u);
+$afil=['archived'=>1,'fund_ids'=>$fIds];
+if(!empty($_GET['org'])) $afil['org']=$_GET['org'];
+if(!empty($_GET['from_date'])) $afil['from_date']=$_GET['from_date'];
+if(!empty($_GET['to_date'])) $afil['to_date']=$_GET['to_date'];
+$rows=get_requests_list($afil);
+if(!empty($_GET['sort'])) $rows=sort_requests($rows,$_GET['sort'],$_GET['dir']??'asc');
+$body='<div class="head"><h2>Архив заявок</h2></div>';
+$body.='<div class="guide-tabs" style="margin:-6px 0 14px"><a class="guide-tab" href="?p=fund">Активные</a> <a class="guide-tab active" href="?p=fund&tab=archive">Архив</a></div>';
+$body.='<p class="muted">Закрытые заявки автоматически переносятся сюда через 5 рабочих дней после закрытия.</p>';
+$body.='<form method="get" class="card pad" style="margin-bottom:14px;display:flex;gap:10px;flex-wrap:wrap;align-items:end"><input type="hidden" name="p" value="fund"><input type="hidden" name="tab" value="archive">'
+.'<label class="lbl" style="margin:0">Организация</label><input name="org" value="'.esc($_GET['org']??'').'" placeholder="Поиск">'
+.'<label class="lbl" style="margin:0">С</label><input type="date" name="from_date" value="'.esc($_GET['from_date']??'').'">'
+.'<label class="lbl" style="margin:0">По</label><input type="date" name="to_date" value="'.esc($_GET['to_date']??'').'">'
+.'<button class="btn primary sm">Фильтр</button> <a class="btn ghost sm" href="?p=fund&tab=archive">Сбросить</a></form>';
+$labels=req_labels_bulk(array_column($rows,'id'));
+$tr=''; foreach($rows as $r){ $tr.='<tr onclick="location=\'?p=request&id='.$r['id'].'\'"><td class="id"><a href="?p=request&id='.$r['id'].'">'.esc($r['code']).'</a></td><td>'.esc($r['org']).'</td><td>'.dt($r).'</td><td>'.esc($labels[$r['id']]??'не выбран').'</td><td>'.pill($r['status']).'</td><td class="muted">'.esc($r['archived_at']??'').'</td></tr>'; }
+$hasFilter=!empty($_GET['org'])||!empty($_GET['from_date'])||!empty($_GET['to_date']);
+$body.= $rows ? '<table class="card-view"><thead><tr>'.sort_th('Код','code').sort_th('Организация','org').sort_th('Дата','date').'<th>Спикеры</th>'.sort_th('Статус','status').'<th>Архивировано</th></tr></thead><tbody>'.$tr.'</tbody></table>' : '<div class="card pad muted">'.($hasFilter?'По заданным фильтрам ничего не найдено.':'Архив пуст.').'</div>';
+layout('Архив заявок',$body); exit;
+}
 $rows=fund_dashboard_requests($u);
 if(!empty($_GET['sort'])) $rows=sort_requests($rows,$_GET['sort'],$_GET['dir']??'asc');
 else $rows=sort_requests($rows,'date','asc');
@@ -1575,14 +1600,16 @@ $labels=req_labels_bulk(array_column($rows,'id'));
 $confirmedCounts=count_confirmed_bulk(array_column($rows,'id'));
 $tr=''; foreach($rows as $r){
 $mine=!empty($r['claimed_fund_id']) && in_array((int)$r['claimed_fund_id'],$myScope,true);
-$rowCls=is_request_urgent($r)?'urgent':($mine?(($confirmedCounts[$r['id']]??0)>=1?'claim-confirmed':'claim-light'):'');
+$rowCls=is_request_urgent($r)?'urgent':'';
+$claimBadge=$mine?((($confirmedCounts[$r['id']]??0)>=1)?' <span class="pill green">✓ подтверждён</span>':' <span class="pill gray">🔧 в обработке</span>'):'';
 $need=in_array($r['status'],['chosen','confirmed'])?' <span class="pill amber">нужно действие</span>':'';
-$fundName=$r['claimed_fund_id']?esc(fund_name_by_id($r['claimed_fund_id'])):'<span class="muted">свободна</span>';
+$fundName=($r['claimed_fund_id']?esc(fund_name_by_id($r['claimed_fund_id'])):'<span class="muted">свободна</span>').$claimBadge;
 [$turnWho,$turnWhat]=whose_turn($r);
 $tr.='<tr class="'.$rowCls.'" onclick="location=\'?p=request&id='.$r['id'].'\'"><td class="id"><a href="?p=request&id='.$r['id'].'">'.esc($r['code']).'</a></td><td>'.esc($r['org']).'</td><td>'.dt($r).'</td><td>'.$fundName.'</td><td>'.esc($labels[$r['id']]??'не выбран').'</td><td title="'.esc($turnWho.($turnWhat?' — '.$turnWhat:'')).'">'.pill($r['status']).$need.'</td></tr>';
 }
-$body.='<div class="head"><h2>Реестр заявок ('.count($rows).' активных'.($archivedCount?', '.$archivedCount.' в архиве':'').')</h2><div><a class="btn ghost" href="?p=fund&tab=speakers">Спикеры Фонда</a> <a class="btn ghost" href="?p=calendar">📅 Календарь</a> <a class="btn ghost" href="?p=materials">🗂️ Материалы</a> <a class="btn ghost" href="?p=export">⬇ Экспорт в CSV</a></div></div>';
-$body.='<p class="muted">Новые заявки без спикера доступны всем фондам. <span class="pill" style="background:#eafaf0;color:#1a7f37">Светло-зелёным</span> отмечены заявки, взятые вашим фондом в обработку; <span class="pill" style="background:#c8f0d6;color:#1a7f37">зелёным</span> — с уже подтверждённым вашим спикером.</p>';
+$body.='<div class="head"><h2>Реестр заявок</h2><div><a class="btn ghost" href="?p=fund&tab=speakers">👥 Спикеры Фонда</a> <a class="btn ghost" href="?p=calendar">📅 Календарь</a> <a class="btn ghost" href="?p=materials">🗂️ Материалы</a> <a class="btn ghost" href="?p=export">⬇ Экспорт в CSV</a></div></div>';
+$body.='<div class="guide-tabs" style="margin:-6px 0 14px"><a class="guide-tab active" href="?p=fund">Активные ('.count($rows).')</a> <a class="guide-tab" href="?p=fund&tab=archive">Архив'.($archivedCount?' ('.$archivedCount.')':'').'</a></div>';
+$body.='<p class="muted">Новые заявки без спикера доступны всем фондам. Пометка <span class="pill gray">🔧 в обработке</span> / <span class="pill green">✓ подтверждён</span> у графы «Фонд» — заявки, которые взял в работу ваш фонд. <span style="background:#fff3e0;padding:2px 8px;border-radius:6px">Персиковым фоном</span> подсвечены заявки со скорым сроком урока.</p>';
 $body.= $rows ? '<table class="card-view"><thead><tr>'.sort_th('Код','code').sort_th('Организация','org').sort_th('Дата и время','date').sort_th('Фонд','fund').sort_th('Спикеры','speakers').sort_th('Статус','status').'</tr></thead><tbody>'.$tr.'</tbody></table>' : '<div class="card pad muted">Заявок пока нет.</div>';
 layout('Кабинет Фонда',$body); exit;
 }
@@ -1691,20 +1718,23 @@ if(!empty($_GET['sort'])) $rows=sort_requests($rows,$_GET['sort'],$_GET['dir']??
 else $rows=sort_requests($rows,'date','asc');
 $daily=speaker_daily_count($u['id'],date('Y-m-d'));
 $weekly=speaker_weekly_count($u['id'],date('Y-m-d'));
-$tr=''; foreach($rows as $r){ $mark=$r['cfd']?'<span class="pill green">в составе</span>':(st_index($r['status'])>=st_index('confirmed')?'<span class="pill gray">не выбран</span>':'<span class="pill gray">кандидат</span>'); [$turnWho,$turnWhat]=whose_turn($r); $tr.='<tr onclick="location=\'?p=request&id='.$r['id'].'\'"><td class="id"><a href="?p=request&id='.$r['id'].'">'.esc($r['code']).'</a></td><td>'.esc($r['org']).'</td><td>'.dt($r).'</td><td>'.$mark.'</td><td title="'.esc($turnWho.($turnWhat?' — '.$turnWhat:'')).'">'.pill($r['status']).'</td></tr>'; }
+$tr=''; foreach($rows as $r){ $mark=$r['cfd']?'<span style="color:var(--green);font-weight:600">в составе</span>':(st_index($r['status'])>=st_index('confirmed')?'<span class="muted">не выбран</span>':'<span class="muted">кандидат</span>'); [$turnWho,$turnWhat]=whose_turn($r); $tr.='<tr onclick="location=\'?p=request&id='.$r['id'].'\'"><td class="id"><a href="?p=request&id='.$r['id'].'">'.esc($r['code']).'</a></td><td>'.esc($r['org']).'</td><td>'.dt($r).'</td><td>'.$mark.'</td><td title="'.esc($turnWho.($turnWhat?' — '.$turnWhat:'')).'">'.pill($r['status']).'</td></tr>'; }
 $body='<div class="head"><h2>Мои уроки</h2><div><a class="btn ghost" href="?p=speaker_anketas">📋 Анкеты</a> <a class="btn ghost" href="?p=speaker_stats">📊 Моя статистика</a> <a class="btn ghost" href="?p=calendar">📅 Календарь</a> <a class="btn ghost" href="?p=materials">🗂️ Материалы</a></div></div>';
 if(speaker_has_criminal_record($u)) $body.='<div class="hint-warn">'.nl2br(esc(criminal_record_notice())).'</div>';
-$body.='<div class="kpis"><div class="kpi"><div class="n">'.$daily.' / 2</div><div class="l">Загрузка сегодня</div></div><div class="kpi"><div class="n">'.$weekly.' / 7</div><div class="l">Загрузка на неделе</div></div><div class="kpi"><div class="n">'.count($rows).'</div><div class="l">Всего назначено</div></div></div>';
+$dPct=$daily/2; $wPct=$weekly/7;
+$dCls='kpi'.($dPct>=1?' warn':($dPct>=0.8?' caution':''));
+$wCls='kpi'.($wPct>=1?' warn':($wPct>=0.8?' caution':''));
+$body.='<div class="kpis"><div class="'.$dCls.'"><div class="n">'.$daily.' / 2</div><div class="l">Загрузка сегодня</div></div><div class="'.$wCls.'"><div class="n">'.$weekly.' / 7</div><div class="l">Загрузка на неделе</div></div><div class="kpi"><div class="n">'.count($rows).'</div><div class="l">Всего назначено</div></div></div>';
 $body.='<p class="muted" style="margin-top:-8px;font-size:12.5px">Загрузка — активные уроки в пределах лимита (2 в день / 7 в неделю). Проведённые уроки и статистика — в разделе «Моя статистика».</p>';
 if($todayExempt=speaker_load_exempt_label(date('Y-m-d'))) $body.='<div class="hint-ok" style="margin-top:8px">📅 Сегодня — «'.esc($todayExempt).'». Ограничение по нагрузке (2 урока в день / 7 в неделю) в этот день не действует.</div>';
-$body.= $rows ? '<table class="card-view"><thead><tr>'.sort_th('Код','code').sort_th('Организация','org').sort_th('Дата и время','date').'<th>Вы</th>'.sort_th('Статус','status').'</tr></thead><tbody>'.$tr.'</tbody></table>' : '<div class="card pad muted">Назначенных уроков пока нет.</div>';
+$body.= $rows ? '<table class="card-view"><thead><tr>'.sort_th('Код','code').sort_th('Организация','org').sort_th('Дата и время','date').'<th>Роль на уроке</th>'.sort_th('Статус','status').'</tr></thead><tbody>'.$tr.'</tbody></table>' : '<div class="card pad muted">Назначенных уроков пока нет.</div>';
 $pool=fund_pool_requests_for_speaker($u);
 if($pool){ $body.='<div class="block" style="margin-top:20px"><h4>📋 Заявки вашего фонда в обработке</h4><p class="muted">Ваш Фонд взял эти заявки в работу и подбирает спикера. Как только он назначит конкретного спикера, заявка появится в разделе «Мои уроки» у него.</p>';
 $body.='<table class="card-view"><thead><tr><th>Код</th><th>Организация</th><th>Дата и время</th></tr></thead><tbody>';
 foreach($pool as $pr) $body.='<tr><td class="id">'.esc($pr['code']).'</td><td>'.esc($pr['org']).'</td><td>'.dt($pr).'</td></tr>';
 $body.='</tbody></table></div>'; }
 // ========== КАЛЕНДАРЬ НЕДОСТУПНОСТИ ==========
-$body.='<div class="block" style="margin-top:20px"><h4>📅 Календарь недоступности</h4>';
+$body.='<div class="card pad" style="margin-top:20px"><h4>📅 Календарь недоступности</h4>';
 $body.='<p class="muted">Укажите периоды, когда вы не можете проводить занятия (отпуск, больничный и т.п.). В эти даты вы не будете попадать в список доступных спикеров.</p>';
 $body.='<form method="post" class="card pad" style="margin-bottom:15px;background:#f9fafb">'.csrf_field().'<input type="hidden" name="action" value="add_unavailable">';
 $body.='<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end">';
@@ -1716,12 +1746,12 @@ $body.='</div></form>';
 $unavailable=list_unavailable($u['id']);
 if($unavailable){
 $body.='<h4 style="margin-top:15px">Ваши закрытые периоды</h4>';
-$body.='<table class="card-view"><thead><tr><th>Период</th><th>Дней</th><th>Причина</th><th></th></tr></thead><tbody>';
+$body.='<table class="card-view"><thead><tr><th>Период</th><th>Дней</th><th>Причина</th><th>Действия</th></tr></thead><tbody>';
 foreach($unavailable as $un){
 $days=max(1,(strtotime($un['date_to'])-strtotime($un['date_from']))/86400+1);
 $reason=esc($un['reason']?:'—');
 if($un['date_to']<date('Y-m-d')) $reason=' <span class="muted">(прошло)</span> '.$reason;
-$body.='<tr><td class="id" data-label="Период">'.esc($un['date_from']).' — '.esc($un['date_to']).'</td><td data-label="Дней">'.(int)$days.'</td><td data-label="Причина">'.$reason.'</td><td data-label=""><form method="post" style="display:inline" onsubmit="return confirm(\'Удалить период?\')">'.csrf_field().'<input type="hidden" name="action" value="remove_unavailable"><input type="hidden" name="uid" value="'.$un['id'].'"><button type="submit" class="btn ghost sm" style="color:#b23b2c;border-color:#f5c6c0">Удалить</button></form></td></tr>';
+$body.='<tr><td class="id" data-label="Период">'.esc($un['date_from']).' — '.esc($un['date_to']).'</td><td data-label="Дней">'.(int)$days.'</td><td data-label="Причина">'.$reason.'</td><td data-label="Действия"><form method="post" style="display:inline" onsubmit="return confirm(\'Удалить период?\')">'.csrf_field().'<input type="hidden" name="action" value="remove_unavailable"><input type="hidden" name="uid" value="'.$un['id'].'"><button type="submit" class="btn ghost sm" style="color:#b23b2c;border-color:#f5c6c0">Удалить</button></form></td></tr>';
 }
 $body.='</tbody></table>';
 } else {
