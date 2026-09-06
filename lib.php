@@ -2501,7 +2501,7 @@ return $by;
 function month_stats_widget($all,$domId){
 $by=requests_month_breakdown($all);
 $opts=''; foreach(array_keys($by) as $ym) $opts.='<option value="'.esc($ym).'">'.esc(month_label($ym)).'</option>';
-$html='<div class="card pad" style="margin:14px 0"><div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><label class="lbl" style="margin:0">Показатели за месяц</label><select id="'.$domId.'_sel" onchange="'.$domId.'_upd()">'.$opts.'</select></div>'
+$html='<div class="card pad" style="margin:14px 0;background:var(--tint);border-left:4px solid var(--navy)"><div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><label class="lbl" style="margin:0">📅 Показатели за месяц <span class="muted" style="font-weight:400">(в отличие от карточек выше — не за всё время, а только за выбранный месяц)</span></label><select id="'.$domId.'_sel" onchange="'.$domId.'_upd()">'.$opts.'</select></div>'
 .'<div style="display:flex;gap:28px;margin-top:12px;flex-wrap:wrap">'
 .'<div><div class="n" id="'.$domId.'_done" style="font-size:22px;color:var(--navy)">0</div><div class="l muted">Проведено и закрыто</div></div>'
 .'<div><div class="n" id="'.$domId.'_cancel" style="font-size:22px;color:var(--navy)">0</div><div class="l muted">Не состоялось</div></div>'

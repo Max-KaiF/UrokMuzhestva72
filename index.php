@@ -1344,9 +1344,12 @@ if(!empty($_GET['from_date'])) $filters['from_date']=$_GET['from_date'];
 if(!empty($_GET['to_date'])) $filters['to_date']=$_GET['to_date'];
 $rows=get_requests_list($filters);
 if(!empty($_GET['sort'])) $rows=sort_requests($rows,$_GET['sort'],$_GET['dir']??'asc');
+else $rows=sort_requests($rows,'date','asc');
+$archivedCount=count(get_requests_list(array_merge($filters,['archived'=>1])));
+$activeFilters=(!$locked && $deptFilter!=='')+(!empty($_GET['status']))+(!empty($_GET['org']))+(!empty($_GET['from_date']))+(!empty($_GET['to_date']));
 $pendN=count(pending_applicants($u));
 $action_req = get_action_required_requests($u);
-$body = '';
+$body = '<p class="muted" style="margin:0 0 10px;font-size:12px;letter-spacing:.04em;text-transform:uppercase;font-weight:600">Кабинет оператора'.($deptFilter?' · '.esc($deptFilter==='school'?'ДО г. Тюмени (школы)':'ДОиН ТО (СПО и вузы)'):'').'</p>';
 if ($action_req) {
 $body .= '<div class="action-block"><h4>⚠️ Требует вашего действия <span class="action-badge">'.count($action_req).'</span></h4><ul class="action-list">';
 foreach ($action_req as $ar) {
@@ -1358,12 +1361,13 @@ $body .= '</ul></div>';
 }
 $k=kpis($locked?'school':($deptFilter?:null)); $kp='';
 foreach($k as $c){
-if(!empty($c[2])){ $kp.='<a class="kpi" href="'.esc($c[2]).'" style="text-decoration:none;color:inherit"><div class="n">'.esc($c[1]).'</div><div class="l">'.esc($c[0]).'</div></a>'; }
-else { $kp.='<div class="kpi"><div class="n">'.esc($c[1]).'</div><div class="l">'.esc($c[0]).'</div></div>'; }
+$cls='kpi'.(($c[0]==='Не состоялось'&&(int)$c[1]>0)?' warn':'');
+if(!empty($c[2])){ $kp.='<a class="'.$cls.'" href="'.esc($c[2]).'" style="text-decoration:none;color:inherit"><div class="n">'.esc($c[1]).'</div><div class="l">'.esc($c[0]).'</div></a>'; }
+else { $kp.='<div class="'.$cls.'"><div class="n">'.esc($c[1]).'</div><div class="l">'.esc($c[0]).'</div></div>'; }
 }
 $deptSel='';
 if(!$locked){ $deptSel='<label class="lbl" style="margin:0">Департамент</label><select name="dept"><option value="">Общие результаты</option><option value="school" '.($deptFilter==='school'?'selected':'').'>ДО г. Тюмени (школы)</option><option value="region" '.($deptFilter==='region'?'selected':'').'>ДОиН ТО (СПО и вузы)</option></select>'; }
-$body.='<details class="card pad" style="margin-bottom:14px"><summary style="cursor:pointer;font-weight:600;color:var(--rf-blue)">🔍 Фильтры и поиск</summary><div style="margin-top:12px">'.($locked?'<p class="muted" style="margin:0 0 8px">Вы видите заявки школ.</p>':'').'<form method="get" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end"><input type="hidden" name="p" value="operator"><input type="hidden" name="tab" value="list">
+$body.='<details class="card pad" style="margin-bottom:14px"'.($activeFilters?' open':'').'><summary style="cursor:pointer;font-weight:600;color:var(--rf-blue)">🔍 Фильтры и поиск'.($activeFilters?' <span class="action-badge" style="background:var(--rf-blue)">'.$activeFilters.'</span>':'').'</summary><div style="margin-top:12px">'.($locked?'<p class="muted" style="margin:0 0 8px">Вы видите заявки школ.</p>':'').'<form method="get" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end"><input type="hidden" name="p" value="operator"><input type="hidden" name="tab" value="list">
 '.$deptSel.'<label class="lbl" style="margin:0">Статус</label><select name="status"><option value="">Все</option>';
 foreach(statuses() as $s) $body.='<option value="'.$s['k'].'" '.(!empty($_GET['status'])&&$_GET['status']===$s['k']?'selected':'').'>'.$s['label'].'</option>';
 $body.='</select><label class="lbl" style="margin:0">Организация</label><input name="org" value="'.esc($_GET['org']??'').'" placeholder="Поиск">
@@ -1374,9 +1378,10 @@ $body.='<div style="margin-bottom:14px"><a class="btn ghost" href="?p=operator_t
 $labels=req_labels_bulk(array_column($rows,'id'));
 $tr=''; foreach($rows as $r){
 $urgent_tr = is_request_urgent($r) ? 'urgent' : '';
-$tr.='<tr class="'.$urgent_tr.'" onclick="location=\'?p=request&id='.$r['id'].'\'"><td class="id"><a href="?p=request&id='.$r['id'].'">'.esc($r['code']).'</a></td><td>'.esc($r['org']).'</td><td>'.dt($r).'</td><td>'.esc($labels[$r['id']]??'не выбран').'</td><td>'.pill($r['status']).'</td></tr>';
+[$turnWho,$turnWhat]=whose_turn($r);
+$tr.='<tr class="'.$urgent_tr.'" onclick="location=\'?p=request&id='.$r['id'].'\'"><td class="id"><a href="?p=request&id='.$r['id'].'">'.esc($r['code']).'</a></td><td>'.esc($r['org']).'</td><td>'.dt($r).'</td><td>'.esc($labels[$r['id']]??'не выбран').'</td><td title="'.esc($turnWho.($turnWhat?' — '.$turnWhat:'')).'">'.pill($r['status']).'</td></tr>';
 }
-$body.='<div class="head"><h2>Реестр заявок ('.count($rows).')</h2></div><div class="kpis">'.$kp.'</div>';
+$body.='<div class="head"><h2>Реестр заявок ('.count($rows).' активных'.($archivedCount?', <a href="?p=operator&tab=archive" style="font-weight:400">'.$archivedCount.' в архиве</a>':'').')</h2></div><div class="kpis">'.$kp.'</div>';
 $body.=month_stats_widget(operator_scope_requests($locked?'school':($deptFilter?:null)),'opStatMonth');
 $body.= $rows ? '<table class="card-view"><thead><tr>'.sort_th('Код','code').sort_th('Организация','org').sort_th('Дата и время','date').'<th>Спикеры</th>'.sort_th('Статус','status').'</tr></thead><tbody>'.$tr.'</tbody></table>' : '<div class="card pad muted">Заявок не найдено.</div>';
 layout('Кабинет оператора',$body); exit;

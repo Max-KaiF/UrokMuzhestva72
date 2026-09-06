@@ -81,7 +81,10 @@ tbody tr:last-child td{border-bottom:none}
 .action-badge{background:var(--amber);color:#fff;font-size:12px;padding:2px 8px;border-radius:999px;font-weight:700}
 .action-list{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:6px}
 .action-list li{font-size:14px;display:flex;justify-content:space-between;align-items:center;background:#fff;padding:8px 12px;border-radius:6px;border:1px solid #ffecb3}
-.action-list li a{font-weight:600;text-decoration:none}
+.action-list li a{font-weight:600;text-decoration:none;background:var(--navy);color:#fff!important;padding:7px 14px;border-radius:7px;font-size:13.5px;white-space:nowrap}
+.action-list li a:hover{background:var(--navy-d)}
+.action-list li{flex-wrap:wrap;gap:8px}
+.kpi.warn .n{color:#b23b2c!important}
 tbody tr.claim-light{background:#eafaf0!important}
 tbody tr.claim-light:hover{background:#d9f2e3!important}
 tbody tr.claim-confirmed{background:#c8f0d6!important}
@@ -144,8 +147,13 @@ h1,h2,h3,h4{color:var(--rf-blue) !important;}
 a{color:var(--rf-blue);}
 .btn.primary{background:var(--rf-blue) !important;border-color:var(--rf-blue) !important;color:#fff !important;}
 .kpi .n{color:var(--rf-blue) !important;}
-.pill.blue{background:#e6eefb !important;color:var(--rf-blue) !important;}
-.action-block{border-left:4px solid var(--rf-red) !important;background:#f6f9ff !important;}
+/* Статусы заявок «в процессе» (Спикеры выбраны / Состав подтверждён / Готовность подтверждена) —
+   нейтральный серо-синий, отдельно от фирменного синего (тот остаётся только за брендингом). */
+.pill.blue{background:#e7ebf0 !important;color:#465364 !important;}
+/* Блок «Требует действия» — единая красная палитра тревоги (как turn-you), без смешения с
+   янтарным цветом статуса «Проведён». */
+.action-block{border:1px solid #f5c6c0 !important;border-left:4px solid var(--rf-red) !important;background:#fdecea !important;}
+.action-block h4{color:#b23b2c !important;}
 .action-badge{background:var(--rf-red) !important;color:#fff !important;}
 .stepper{display:flex;flex-wrap:wrap;gap:14px;}
 .stepper .st{display:flex;align-items:center;gap:6px;color:#8a8f98;font-size:14px;}
