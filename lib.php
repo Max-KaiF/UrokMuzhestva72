@@ -2103,6 +2103,18 @@ if(trim((string)($r['fb_app_comment']??''))==='') return [false,'Заявка з
 if(trim((string)($r['fb_post_url']??''))==='') return [false,'Заявка закрывается после того, как заявитель укажет ссылку на пост о проведённом занятии.'];
 upd($r['id'],['status'=>'closed','closed_at'=>now()]); log_action(current_user()['id']??null,'operator','close','requests',$r['id'],"Заявка закрыта"); return [true,'Заявка закрыта.'];
 }
+// Заявки со статусом «Не состоялся» через close_request() не проходят (там нужен статус done) —
+// но и без этого зависают в активном реестре навсегда, поскольку автоархивация по расписанию
+// смотрит только на статус 'closed'. Даём оператору отдельную кнопку — переносит в архив сразу,
+// не дожидаясь общей автоархивации; статус остаётся 'cancelled' (для статистики важно отличать
+// несостоявшийся урок от проведённого и закрытого).
+function close_cancelled_request($r){
+if($r['status']!=='cancelled') return [false,'Эта заявка не отмечена как «Не состоялся».'];
+if(!empty($r['archived'])) return [false,'Заявка уже в архиве.'];
+upd($r['id'],['archived'=>1,'archived_at'=>now()]);
+log_action(current_user()['id']??null,'operator','close_cancelled','requests',$r['id'],'Заявка (урок не состоялся) закрыта и перенесена в архив');
+return [true,'Заявка закрыта и перенесена в архив.'];
+}
 function mark_not_held($r,$reason,$comment=''){
 if($r['status']!=='prep') return [false,'Отметить «не состоялся» можно на этапе «Готовность подтверждена».'];
 if(!in_array($reason,cancel_reasons())) return [false,'Укажите причину.'];
@@ -2373,7 +2385,7 @@ return date('Y-m-d H:i:s',$t);
 }
 function archive_old_requests($businessDays=5){
 $cutoff=business_days_ago(now(),$businessDays);
-$st=db()->prepare("UPDATE requests SET archived=1, archived_at=? WHERE status='closed' AND archived=0 AND COALESCE(closed_at, fb_app_at, created_at) < ?");
+$st=db()->prepare("UPDATE requests SET archived=1, archived_at=? WHERE status IN ('closed','cancelled') AND archived=0 AND COALESCE(closed_at, fb_app_at, created_at) < ?");
 $st->execute([now(),$cutoff]); return $st->rowCount();
 }
 function get_requests_list($filters=[]){

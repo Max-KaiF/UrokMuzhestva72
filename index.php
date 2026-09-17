@@ -445,6 +445,7 @@ elseif($a==='fund_briefing'){ require_role('fund'); [$ok,$msg]=fund_briefing($u,
 elseif($a==='mark_done'){ require_role('school'); if(!school_owns_request($u,$r)) exit('Нет доступа.'); [$ok,$msg]=mark_done($r); }
 elseif($a==='not_held'){ require_role('school'); if(!school_owns_request($u,$r)) exit('Нет доступа.'); $reasonRaw=$_POST['reason']??''; $reasonOther=trim($_POST['reason_comment']??''); $reason=($reasonRaw==='__other__')?$reasonOther:$reasonRaw; [$ok,$msg]=mark_not_held($r,$reason,$reasonRaw==='__other__'?'':$reasonOther); }
 elseif($a==='close'){ require_role('operator'); [$ok,$msg]=close_request($r); }
+elseif($a==='close_cancelled'){ require_role('operator'); [$ok,$msg]=close_cancelled_request($r); }
 elseif($a==='step_back'){ require_role('operator'); step_back($r); $msg='Возврат на шаг назад.'; }
 elseif($a==='fund_replace'){ require_role('fund'); $reasonRaw=$_POST['reason']??''; $reasonOther=trim($_POST['reason_other']??''); $reason=($reasonRaw==='__other__')?$reasonOther:$reasonRaw; [$ok,$msg]=fund_replace_speaker($u,$r,(int)($_POST['old_sid']??0),(int)($_POST['new_sid']??0),$reason); }
 elseif($a==='speaker_decline'){ require_role('speaker'); [$ok,$msg]=speaker_decline($r,$u['id']); }
@@ -2189,6 +2190,7 @@ $body.='<div class="block"><h4>Обратная связь</h4>'.fbline('Зая�
 $body.='<div class="block">';
 if($r['status']==='prep') $body.='<p class="muted">Ожидается отметка заявителя о проведении урока.</p>';
 if($r['status']==='done') $body.='<form method="post" class="inline">'.csrf_field().'<input type="hidden" name="action" value="close"><input type="hidden" name="id" value="'.$r['id'].'"><button class="btn primary sm">Закрыть заявку</button></form>';
+if($r['status']==='cancelled' && empty($r['archived'])) $body.='<form method="post" class="inline">'.csrf_field().'<input type="hidden" name="action" value="close_cancelled"><input type="hidden" name="id" value="'.$r['id'].'"><button class="btn primary sm">Закрыть заявку</button></form><p class="muted" style="margin-top:6px">Урок не состоялся — заявку можно сразу закрыть и перенести в архив, не дожидаясь автоматической архивации.</p>';
 if(st_index($r['status'])>0) $body.='<form method="post" class="inline">'.csrf_field().'<input type="hidden" name="action" value="step_back"><input type="hidden" name="id" value="'.$r['id'].'"><button class="btn ghost sm">Шаг назад</button></form>';
 $body.='</div>';
 }
