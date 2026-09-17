@@ -117,6 +117,27 @@ if(!$ok){ fail_redirect($res,'?p=register'); }
 flash_set($role==='speaker'?'Регистрация принята. Доступ откроется после подтверждения вашим фондом.':($role==='school'?($schoolType==='member'?'Регистрация принята. Доступ откроется после подтверждения представителем вашей организации.':'Регистрация принята. Доступ откроется после подтверждения профильным департаментом.'):($role==='fund'&&($_POST['fund_type']??'head')==='sub'?'Регистрация подразделения принята. Доступ откроется после подтверждения головным фондом.':'Регистрация успешна. Войдите.'))); redirect('?p=login');
 }
 if($a==='logout'){ session_destroy(); redirect('?p=login'); }
+if($a==='impersonate_start'){
+require_login(); $u=current_user();
+if(is_impersonating()||!can_impersonate($u)){ http_response_code(403); exit('Нет доступа.'); }
+$target=find_user_by_id((int)($_POST['target_id']??0));
+if(!$target){ flash_set('Пользователь не найден.'); redirect('?p=impersonate'); }
+if((int)$target['id']===(int)$u['id']){ flash_set('Это ваша учётная запись.'); redirect('?p=impersonate'); }
+if(can_impersonate($target)){ flash_set('Нельзя войти под другим суперпользователем.'); redirect('?p=impersonate'); }
+$_SESSION['impersonator_id']=$u['id'];
+$_SESSION['uid']=$target['id'];
+session_regenerate_id(true);
+log_action($u['id'],$u['role'],'impersonate_start','users',$target['id'],'Вход от имени пользователя: '.($target['display_name']?:$target['org_name']?:$target['login']).' ('.$target['role'].')');
+redirect(role_home($target));
+}
+if($a==='impersonate_stop'){
+if(!is_impersonating()){ redirect('?p=login'); }
+$adminId=(int)$_SESSION['impersonator_id']; $targetId=(int)($_SESSION['uid']??0);
+unset($_SESSION['impersonator_id']); $_SESSION['uid']=$adminId;
+session_regenerate_id(true);
+log_action($adminId,'operator','impersonate_stop','users',$targetId,'Возврат из режима «войти как»');
+redirect('?p=impersonate');
+}
 if($a==='update_profile'){
 require_login(); $u=current_user();
 $isSchoolMember=$u['role']==='school' && !empty($u['parent_school_id']);
@@ -509,11 +530,15 @@ function layout($title,$body){
 $u=current_user(); $c=cfg(); $sess='';
 $fullLabel='';
 if($u){ $nm=($u['role']==='school')?(school_effective($u)['org_name']?:$u['display_name']):$u['display_name']; $fullLabel=trim((string)$nm);
-$sess=($fullLabel!==''?'<span class="rolebadge" title="'.esc($fullLabel).'">'.esc($fullLabel).'</span> ':'').'<a class="rolebadge" href="?p=profile" style="text-decoration:none">Профиль</a> <form method="post" style="display:inline"><input type="hidden" name="action" value="logout">'.csrf_field().'<button class="logout">Выйти</button></form>'; }
+$sess=($fullLabel!==''?'<span class="rolebadge" title="'.esc($fullLabel).'">'.esc($fullLabel).'</span> ':'').(can_impersonate($u)&&!is_impersonating()?'<a class="rolebadge" href="?p=impersonate" style="text-decoration:none">🔑 Войти как…</a> ':'').'<a class="rolebadge" href="?p=profile" style="text-decoration:none">Профиль</a> <form method="post" style="display:inline"><input type="hidden" name="action" value="logout">'.csrf_field().'<button class="logout">Выйти</button></form>'; }
 $f=flash_get();
 $missing=profile_missing_fields($u);
 echo '<!DOCTYPE html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>'.esc($title).'</title><link rel="icon" href="favicon.ico"><link rel="icon" type="image/png" href="favicon.png"><link rel="apple-touch-icon" href="icon-192.png"><link rel="manifest" href="manifest.json"><meta name="theme-color" content="#0039A6"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="УМ 72"><link rel="stylesheet" href="style.css?v='.(file_exists(__DIR__.'/style.css')?filemtime(__DIR__.'/style.css'):time()).'"></head><body>';
 echo '<script>if("serviceWorker" in navigator){window.addEventListener("load",function(){navigator.serviceWorker.register("sw.js").catch(function(){});});}</script>';
+if(is_impersonating()){
+$admin=find_user_by_id((int)$_SESSION['impersonator_id']);
+echo '<div style="background:#b23b2c;color:#fff;text-align:center;padding:9px 14px;font-size:13.5px;position:sticky;top:0;z-index:1000">⚠ Вы вошли как <b>'.esc($u['display_name']?:$u['org_name']?:$u['login']).'</b> ('.esc($u['role']).') от имени <b>'.esc($admin['login']??'?').'</b>. <form method="post" style="display:inline;margin-left:8px">'.csrf_field().'<input type="hidden" name="action" value="impersonate_stop"><button type="submit" style="background:#fff;color:#b23b2c;border:none;border-radius:6px;padding:5px 12px;cursor:pointer;font-weight:600;font-size:13px">Вернуться к своей учётке</button></form></div>';
+}
 echo '<header class="top"><div class="topbar"><div class="mark"><img src="favicon.png" alt="" style="width:100%;height:100%;object-fit:contain"></div><div class="brand"><h1>Урок Мужества</h1><p class="brand-full">Проект разработан в рамках региональной программы «Боевой кадровый резерв Тюменской области»</p><p class="brand-short">В рамках региональной программы «БКР ТО»</p></div><div class="session">'.$sess.'</div></div>'.($fullLabel!==''?'<div class="rolebadge-full-mobile">'.esc($fullLabel).'</div>':'').'</header>';
 echo '<main class="wrap">'; if($f) echo '<div class="flash">'.esc($f).'</div>';
 if($missing) echo '<div class="hint-warn"><b>⚠ Заполните профиль:</b> не указано — '.esc(implode(', ',$missing)).'. <a class="btn primary sm" href="?p=profile" style="margin-left:8px">Перейти в профиль →</a></div>';
@@ -1152,6 +1177,31 @@ document.querySelectorAll("#groups_wrap input[type=checkbox]").forEach(function(
 layout('Регистрация',$body); exit;
 }
 require_login();
+// ========== ВОЙТИ КАК (только для суперпользователя) ==========
+if($p==='impersonate'){
+if(is_impersonating()||!can_impersonate($u)){ http_response_code(403); exit('Нет доступа.'); }
+$q=trim($_GET['q']??''); $roleFilter=$_GET['role']??'';
+$where='1=1'; $params=[];
+if($roleFilter){ $where.=' AND role=?'; $params[]=$roleFilter; }
+if($q!==''){ $where.=' AND (login LIKE ? OR display_name LIKE ? OR org_name LIKE ? OR email LIKE ?)'; $qq='%'.$q.'%'; $params=array_merge($params,[$qq,$qq,$qq,$qq]); }
+$st=db()->prepare("SELECT * FROM users WHERE $where ORDER BY role, display_name, org_name");
+$st->execute($params); $list=$st->fetchAll();
+$body='<div class="head"><h2>🔑 Войти как…</h2><a class="btn ghost" href="'.esc(role_home($u)).'">← в кабинет</a></div>';
+$body.='<p class="muted">Этот раздел виден только вам. Каждый вход от чужого имени и возврат обратно фиксируются в журнале действий.</p>';
+$body.='<form method="get" class="card pad" style="margin-bottom:14px;display:flex;gap:10px;align-items:end;flex-wrap:wrap"><input type="hidden" name="p" value="impersonate"><label class="lbl" style="margin:0">Роль</label><select name="role"><option value="">Все</option><option value="school" '.($roleFilter==='school'?'selected':'').'>Заявитель</option><option value="fund" '.($roleFilter==='fund'?'selected':'').'>Фонд</option><option value="speaker" '.($roleFilter==='speaker'?'selected':'').'>Спикер</option><option value="operator" '.($roleFilter==='operator'?'selected':'').'>Оператор</option></select><label class="lbl" style="margin:0">Поиск</label><input type="search" name="q" value="'.esc($q).'" placeholder="Логин, ФИО, организация, email"><button class="btn primary sm">Найти</button>'.(($q!==''||$roleFilter!=='')?' <a class="btn ghost sm" href="?p=impersonate">Сбросить</a>':'').'</form>';
+$body.='<div class="table-scroll"><table class="card-view resizable"><thead><tr><th>Логин</th><th>ФИО/Организация</th><th>Роль</th><th>Статус</th><th></th></tr></thead><tbody>';
+$shown=0;
+foreach($list as $x){
+if((int)$x['id']===(int)$u['id']) continue;
+if(can_impersonate($x)) continue;
+$shown++;
+$status=$x['active']?'<span class="pill green">активен</span>':'<span class="pill gray">ожидает</span>';
+$body.='<tr><td class="id">'.esc($x['login']).'</td><td data-label="ФИО/Организация">'.esc($x['display_name']?:$x['org_name']).'</td><td data-label="Роль">'.esc($x['role']).'</td><td data-label="Статус">'.$status.'</td><td data-label=""><form method="post">'.csrf_field().'<input type="hidden" name="action" value="impersonate_start"><input type="hidden" name="target_id" value="'.$x['id'].'"><button class="btn primary sm">Войти как →</button></form></td></tr>';
+}
+if(!$shown) $body.='<tr><td colspan="5" class="muted">Никого не найдено.</td></tr>';
+$body.='</tbody></table></div>';
+layout('Войти как',$body); exit;
+}
 // ========== УПРАВЛЕНИЕ ПОЛЬЗОВАТЕЛЯМИ ==========
 if($p==='users' && in_array($u['role'],['operator','fund','school'])){
 $body='<div class="head"><h2>'.($u['role']==='school'?'Сотрудники организации':'Управление пользователями').'</h2><a class="btn ghost" href="?p='.$u['role'].'">← в кабинет</a></div>';

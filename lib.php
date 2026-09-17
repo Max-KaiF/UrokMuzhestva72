@@ -347,6 +347,11 @@ function material_type_icon($type){ return ['tech_map'=>'🗂️','quiz'=>'❓',
 function csrf_token(){ if(empty($_SESSION['csrf'])) $_SESSION['csrf']=bin2hex(random_bytes(16)); return $_SESSION['csrf']; }
 function csrf_field(){ return '<input type="hidden" name="csrf" value="'.esc(csrf_token()).'">'; }
 function csrf_check(){ if(($_POST['csrf']??'')!==($_SESSION['csrf']??'-')){ http_response_code(400); exit('Ошибка безопасности (CSRF). Обновите страницу.'); } }
+// ---------- имперсонация («войти как») ----------
+// Доступно только логинам из cfg()['superuser_logins'] (задаётся на сервере переменной
+// окружения UM_SUPERUSER_LOGINS, в код/репозиторий логин не попадает).
+function can_impersonate($u){ return $u && in_array($u['login']??'',cfg()['superuser_logins'],true); }
+function is_impersonating(){ return !empty($_SESSION['impersonator_id']); }
 // ---------- пользователи / вход ----------
 function current_user(){ if(empty($_SESSION['uid'])) return null; static $u=null; if($u&&$u['id']===$_SESSION['uid']) return $u; $st=db()->prepare('SELECT * FROM users WHERE id=?'); $st->execute([$_SESSION['uid']]); $u=$st->fetch()?:null; return $u; }
 function require_login(){ if(!current_user()) redirect('?p=login'); }

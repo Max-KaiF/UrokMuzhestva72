@@ -30,6 +30,9 @@ return [
 'fund_signup_code'     => $get('UM_FUND_CODE', ''),
 'cron_key'             => $get('UM_CRON_KEY', ''),
 'support_email'        => $get('UM_SUPPORT_EMAIL', 'task@урокмужества72.рф'),
+// Логины, которым разрешено «войти как» другой пользователь без пароля (см. ?p=impersonate).
+// Список через запятую, например: UM_SUPERUSER_LOGINS=ivanov
+'superuser_logins'     => array_values(array_filter(array_map('trim', explode(',', $get('UM_SUPERUSER_LOGINS', ''))))),
 // Настройки почты (SMTP).
 'smtp' => [
 'host' => $get('UM_SMTP_HOST', 'mail.xn--72-6kchof1aqqtqmfe.xn--p1ai'),
