@@ -99,6 +99,11 @@ db()->exec("CREATE TABLE IF NOT EXISTS lesson_readiness_attempts (
 id $pk, speaker_user_id INTEGER, topic VARCHAR(255), request_id INTEGER, score INTEGER, total INTEGER,
 passed INTEGER, answers TEXT, created_at VARCHAR(40)
 )$tail");
+// Новости на публичной стартовой странице — ведёт оператор.
+db()->exec("CREATE TABLE IF NOT EXISTS news (
+id $pk, title VARCHAR(255) NOT NULL, body TEXT, image_path VARCHAR(255),
+published INTEGER DEFAULT 1, created_by INTEGER, created_at VARCHAR(40)
+)$tail");
 foreach([
 "ALTER TABLE users ADD COLUMN fund_user_id INTEGER",
 "ALTER TABLE users ADD COLUMN email VARCHAR(190)",
@@ -2242,6 +2247,56 @@ return $many;
 }
 function get_material($id){
 $st=db()->prepare("SELECT * FROM materials WHERE id=?"); $st->execute([$id]); return $st->fetch()?:null;
+}
+// ========== НОВОСТИ (стартовая страница) ==========
+function list_news($onlyPublished=true,$limit=null){
+$where=$onlyPublished?'WHERE published=1':'';
+$sql="SELECT n.*, u.display_name author FROM news n LEFT JOIN users u ON u.id=n.created_by $where ORDER BY n.created_at DESC".($limit?' LIMIT '.(int)$limit:'');
+return db()->query($sql)->fetchAll();
+}
+function get_news($id){ $st=db()->prepare("SELECT * FROM news WHERE id=?"); $st->execute([$id]); return $st->fetch()?:null; }
+function news_image_allowed_extensions(){ return ['jpg','jpeg','png','webp']; }
+function validate_uploaded_news_image($file){
+if(($file['error']??UPLOAD_ERR_NO_FILE)!==UPLOAD_ERR_OK) return [false,'Ошибка загрузки фото.',null];
+if($file['size']>PHOTO_MAX_BYTES) return [false,'Фото слишком большое (максимум 8 МБ).',null];
+$ext=strtolower(pathinfo($file['name'],PATHINFO_EXTENSION));
+if(!in_array($ext,news_image_allowed_extensions(),true)) return [false,'Фото должно быть в формате JPG, PNG или WEBP.',null];
+$info=@getimagesize($file['tmp_name']);
+if(!$info||!in_array($info['mime'],['image/jpeg','image/png','image/webp'],true)) return [false,'Файл повреждён или не является настоящим изображением.',null];
+$dir=__DIR__.'/uploads/news'; if(!is_dir($dir)) mkdir($dir,0755,true);
+$stored=bin2hex(random_bytes(16)).'.'.$ext;
+if(!move_uploaded_file($file['tmp_name'],$dir.'/'.$stored)) return [false,'Не удалось сохранить фото.',null];
+return [true,null,$stored];
+}
+function add_news($title,$body,$imagePath,$published,$actorId){
+db()->prepare("INSERT INTO news(title,body,image_path,published,created_by,created_at) VALUES(?,?,?,?,?,?)")
+->execute([$title,$body,$imagePath,$published?1:0,$actorId,now()]);
+$id=db()->lastInsertId();
+log_action($actorId,'operator','news_add','news',$id,"Добавлена новость: $title");
+return [true,$id];
+}
+function update_news($id,$title,$body,$imagePath,$published,$actorId){
+$fields=['title'=>$title,'body'=>$body,'published'=>$published?1:0];
+if($imagePath!==null) $fields['image_path']=$imagePath;
+$set=implode(',',array_map(fn($k)=>"$k=?",array_keys($fields)));
+db()->prepare("UPDATE news SET $set WHERE id=?")->execute([...array_values($fields),$id]);
+log_action($actorId,'operator','news_update','news',$id,"Изменена новость: $title");
+return [true,'Новость обновлена.'];
+}
+function delete_news($id,$actorId){
+$n=get_news($id); if(!$n) return [false,'Новость не найдена.'];
+if(!empty($n['image_path'])){ $path=__DIR__.'/uploads/news/'.$n['image_path']; if(is_file($path)) @unlink($path); }
+db()->prepare("DELETE FROM news WHERE id=?")->execute([$id]);
+log_action($actorId,'operator','news_delete','news',$id,"Удалена новость: ".$n['title']);
+return [true,'Новость удалена.'];
+}
+// Сводка для публичной стартовой страницы — уроки, которые реально состоялись, активные
+// спикеры и головные организации-заявители (без сотрудников, чтобы не считать дважды).
+function public_site_stats(){
+$lessons=(int)db()->query("SELECT COUNT(*) c FROM requests WHERE status IN ('done','closed')")->fetch()['c'];
+$speakers=(int)db()->query("SELECT COUNT(*) c FROM users WHERE role='speaker' AND active=1")->fetch()['c'];
+$schools=(int)db()->query("SELECT COUNT(*) c FROM users WHERE role='school' AND active=1 AND (parent_school_id IS NULL OR parent_school_id=0)")->fetch()['c'];
+return ['lessons'=>$lessons,'speakers'=>$speakers,'schools'=>$schools];
 }
 function delete_material($id){
 $m=get_material($id); if(!$m) return [false,'Материал не найден.'];

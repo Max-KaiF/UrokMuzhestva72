@@ -422,6 +422,40 @@ require_role('operator');
 [$ok,$msg]=delete_material((int)($_POST['id']??0));
 flash_set($msg); redirect('?p=materials');
 }
+if($a==='add_news'){
+require_role('operator'); $u=current_user();
+$title=trim($_POST['title']??''); $bodyTxt=trim($_POST['body']??'');
+if($title===''||$bodyTxt===''){ flash_set('Заполните заголовок и текст новости.'); redirect('?p=news_edit'); }
+$imgPath=null;
+if(!empty($_FILES['image']['name'])){
+[$imgOk,$imgErr,$imgStored]=validate_uploaded_news_image($_FILES['image']);
+if(!$imgOk){ flash_set($imgErr); redirect('?p=news_edit'); }
+$imgPath=$imgStored;
+}
+add_news($title,$bodyTxt,$imgPath,!empty($_POST['published']),$u['id']);
+flash_set('Новость добавлена.'); redirect('?p=news_admin');
+}
+if($a==='update_news'){
+require_role('operator'); $u=current_user();
+$id=(int)($_POST['id']??0); $n=$id?get_news($id):null;
+if(!$n){ flash_set('Новость не найдена.'); redirect('?p=news_admin'); }
+$title=trim($_POST['title']??''); $bodyTxt=trim($_POST['body']??'');
+if($title===''||$bodyTxt===''){ flash_set('Заполните заголовок и текст новости.'); redirect('?p=news_edit&id='.$id); }
+$imgPath=null;
+if(!empty($_FILES['image']['name'])){
+[$imgOk,$imgErr,$imgStored]=validate_uploaded_news_image($_FILES['image']);
+if(!$imgOk){ flash_set($imgErr); redirect('?p=news_edit&id='.$id); }
+if(!empty($n['image_path'])){ $old=__DIR__.'/uploads/news/'.$n['image_path']; if(is_file($old)) @unlink($old); }
+$imgPath=$imgStored;
+}
+update_news($id,$title,$bodyTxt,$imgPath,!empty($_POST['published']),$u['id']);
+flash_set('Новость обновлена.'); redirect('?p=news_admin');
+}
+if($a==='delete_news'){
+require_role('operator'); $u=current_user();
+[$ok,$msg]=delete_news((int)($_POST['id']??0),$u['id']);
+flash_set($msg); redirect('?p=news_admin');
+}
 if($a==='delete_request'){
 require_role('school');
 $rid=(int)($_POST['id']??0); $r=$rid?get_request($rid):null;
@@ -471,8 +505,9 @@ redirect('?p=login');
 $u=current_user();
 if(!$u && $p==='login') unset($_SESSION['pending_uid']);
 if(!$u && !empty($_SESSION['pending_uid']) && !in_array($p,['login','verify_otp'])) redirect('?p=verify_otp');
-if(!$u && !in_array($p,['login','register','reset_password','reset_request','privacy','guide','verify_otp','demo'])) $p='login';
-if($u && ($p===''||$p==='login'||$p==='register')) $p=$u['role'];
+if(!$u && $p==='') $p='home';
+if(!$u && !in_array($p,['login','register','reset_password','reset_request','privacy','guide','verify_otp','demo','home','news','news_image'])) $p='login';
+if($u && ($p===''||$p==='login'||$p==='register'||$p==='home')) $p=$u['role'];
 // Спикер, зарегистрированный до появления этого поля, обязан ответить на вопрос о судимости
 // при первом же следующем входе — до этого никакие другие страницы кабинета не открываются.
 if($u && speaker_criminal_answer_needed($u) && $p!=='speaker_criminal_check') $p='speaker_criminal_check';
@@ -530,6 +565,7 @@ redirect('?p=operator&tab=archive');
 function layout($title,$body){
 $u=current_user(); $c=cfg(); $sess='';
 $fullLabel='';
+if(!$u) $sess='<a class="btn-login-ring" href="?p=login">Вход</a>';
 if($u){ $nm=($u['role']==='school')?(school_effective($u)['org_name']?:$u['display_name']):$u['display_name']; $fullLabel=trim((string)$nm);
 $sess=($fullLabel!==''?'<span class="rolebadge" title="'.esc($fullLabel).'">'.esc($fullLabel).'</span> ':'').(can_impersonate($u)&&!is_impersonating()?'<a class="rolebadge" href="?p=impersonate" style="text-decoration:none">🔑 Войти как…</a> ':'').'<a class="rolebadge" href="?p=profile" style="text-decoration:none">Профиль</a> <form method="post" style="display:inline"><input type="hidden" name="action" value="logout">'.csrf_field().'<button class="logout">Выйти</button></form>'; }
 $f=flash_get();
@@ -886,6 +922,72 @@ $body = <<<'HTML'
 </div></div>
 HTML;
 layout('Политика обработки персональных данных',$body); exit;
+}
+// ========== СТАРТОВАЯ СТРАНИЦА (для незалогиненных) ==========
+if($p==='home'){
+$stats=public_site_stats();
+$newsItems=list_news(true,4);
+$body='<div class="pub-hero"><h1>Герои рассказывают — школьники слушают</h1><p>Ветераны специальной военной операции приходят в школы, колледжи и вузы Тюменской области, чтобы говорить с подростками о мужестве, долге и взаимовыручке. Платформа соединяет школы, фонды-координаторы и спикеров-ветеранов в одном личном кабинете.</p>'
+.'<div class="pub-stats"><div><b>'.$stats['lessons'].'</b><span>уроков проведено</span></div><div><b>'.$stats['speakers'].'</b><span>спикеров-ветеранов</span></div><div><b>'.$stats['schools'].'</b><span>школ и колледжей</span></div></div></div>';
+$body.='<div class="head"><h2>Новости</h2>'.($newsItems?'<a href="?p=news">Все новости →</a>':'').'</div>';
+if(!$newsItems) $body.='<div class="card pad muted">Новостей пока нет.</div>';
+else { $body.='<div class="news-grid">'; foreach($newsItems as $n){
+$excerpt=mb_substr(trim(preg_replace('/\s+/u',' ',(string)$n['body'])),0,120);
+$body.='<a href="?p=news" class="news-card">'.(!empty($n['image_path'])?'<img src="?p=news_image&id='.$n['id'].'" alt="">':'<div class="news-card-ph"></div>').'<div class="news-card-body"><h4>'.esc($n['title']).'</h4><p>'.esc($excerpt).(mb_strlen((string)$n['body'])>120?'…':'').'</p><time>'.esc(substr((string)$n['created_at'],0,10)).'</time></div></a>';
+} $body.='</div>'; }
+$body.='<div class="pub-cta"><h3>Хотите стать частью программы?</h3><p>Подайте заявку на урок от имени школы или колледжа — либо зарегистрируйтесь как спикер-ветеран и делитесь своим опытом с подростками.</p><a class="btn primary btn-lg" href="?p=register">Зарегистрироваться</a></div>';
+layout('Урок Мужества 72',$body); exit;
+}
+if($p==='news'){
+$items=list_news(true);
+$body='<div class="head"><h2>Новости</h2><a class="btn ghost" href="'.esc($u?role_home($u):'?p=home').'">← назад</a></div>';
+if(!$items) $body.='<div class="card pad muted">Новостей пока нет.</div>';
+foreach($items as $n){
+$body.='<div class="card pad" style="margin-bottom:16px">';
+if(!empty($n['image_path'])) $body.='<img src="?p=news_image&id='.$n['id'].'" alt="" style="width:100%;max-height:340px;object-fit:cover;border-radius:10px;margin-bottom:14px">';
+$body.='<h3 style="margin:0 0 6px">'.esc($n['title']).'</h3><p class="muted" style="margin:0 0 10px;font-size:13px">'.esc(substr((string)$n['created_at'],0,10)).($n['author']?' · '.esc($n['author']):'').'</p><div style="white-space:pre-wrap;line-height:1.6">'.nl2br(esc($n['body'])).'</div></div>';
+}
+layout('Новости',$body); exit;
+}
+if($p==='news_image'){
+$n=get_news((int)($_GET['id']??0));
+if(!$n || empty($n['image_path'])){ http_response_code(404); exit; }
+$path=__DIR__.'/uploads/news/'.$n['image_path'];
+if(!is_file($path)){ http_response_code(404); exit; }
+$ext=strtolower(pathinfo($path,PATHINFO_EXTENSION));
+header('Content-Type: '.($ext==='png'?'image/png':($ext==='webp'?'image/webp':'image/jpeg')));
+header('Cache-Control: public, max-age=86400');
+header('Content-Length: '.filesize($path));
+readfile($path); exit;
+}
+if($p==='news_admin'){
+require_role('operator');
+$items=list_news(false);
+$body='<div class="head"><h2>Новости сайта</h2><div style="display:flex;gap:8px"><a class="btn ghost" href="'.esc(role_home($u)).'">← в кабинет</a><a class="btn primary" href="?p=news_edit">+ Добавить новость</a></div></div>';
+if(!$items){
+$body.='<div class="empty-state"><div class="empty-icon">📰</div><h3>Новостей пока нет</h3><p class="muted">Добавьте первую новость кнопкой выше — она появится на стартовой странице.</p></div>';
+} else {
+$body.='<table class="card-view"><thead><tr><th>Заголовок</th><th>Статус</th><th>Дата</th><th></th></tr></thead><tbody>';
+foreach($items as $n){
+$body.='<tr><td class="id"><a href="?p=news_edit&id='.$n['id'].'">'.esc($n['title']).'</a></td><td>'.($n['published']?'<span class="pill green">опубликована</span>':'<span class="pill gray">черновик</span>').'</td><td class="muted">'.esc(substr((string)$n['created_at'],0,10)).'</td><td style="white-space:nowrap"><a class="btn ghost sm" href="?p=news_edit&id='.$n['id'].'">✏️</a> <form method="post" style="display:inline" onsubmit="return confirm(\'Удалить новость?\')">'.csrf_field().'<input type="hidden" name="action" value="delete_news"><input type="hidden" name="id" value="'.$n['id'].'"><button type="submit" class="btn-delete">Удалить</button></form></td></tr>';
+}
+$body.='</tbody></table>';
+}
+layout('Новости сайта',$body); exit;
+}
+if($p==='news_edit'){
+require_role('operator');
+$id=(int)($_GET['id']??0); $n=$id?get_news($id):null;
+if($id && !$n){ layout('Новость','<div class="card pad">Новость не найдена. <a href="?p=news_admin">Назад</a></div>'); exit; }
+$body='<div class="head"><h2>'.($n?'Редактирование новости':'Добавить новость').'</h2><a class="btn ghost" href="?p=news_admin">← к новостям</a></div>';
+$body.='<form method="post" class="upload-form" enctype="multipart/form-data">'.csrf_field().'<input type="hidden" name="action" value="'.($n?'update_news':'add_news').'">'.($n?'<input type="hidden" name="id" value="'.$n['id'].'">':'');
+$body.='<div class="form-group"><label class="form-label">Заголовок <span style="color:#d11">*</span></label><input class="form-input" name="title" required value="'.esc($n['title']??'').'"></div>';
+$body.='<div class="form-group"><label class="form-label">Текст <span style="color:#d11">*</span></label><textarea class="form-textarea" name="body" required rows="8">'.esc($n['body']??'').'</textarea></div>';
+if($n && !empty($n['image_path'])) $body.='<div class="form-group"><label class="form-label">Текущее фото</label><br><img src="?p=news_image&id='.$n['id'].'" alt="" style="max-width:260px;border-radius:10px"></div>';
+$body.='<div class="form-group"><label class="form-label">Фото'.($n&&!empty($n['image_path'])?' (заменить)':'').'</label><div class="file-upload-wrapper"><input class="file-input" type="file" name="image" id="news_image" accept="image/*" onchange="document.getElementById(\'news_image_name\').textContent=this.files.length?this.files[0].name:\'Файл не выбран\';"><label for="news_image" class="file-upload-label"><span>📎</span><span class="file-upload-text">Нажмите, чтобы выбрать фото</span><span class="file-name" id="news_image_name">Файл не выбран</span></label></div></div>';
+$body.='<div class="form-group"><label class="chk"><input type="checkbox" name="published" '.(($n['published']??1)?'checked':'').'> Опубликовано (видно на сайте)</label></div>';
+$body.='<div class="form-actions"><button class="btn primary btn-lg">Сохранить</button></div></form>';
+layout('Новость',$body); exit;
 }
 // ========== ПРОФИЛЬ СПИКЕРА (просмотр Фондом/Департаментом) ==========
 if($p==='speaker_view'){
@@ -1492,6 +1594,7 @@ $body.='<div style="display:flex;gap:8px;flex-wrap:wrap">
 <a class="btn ghost" href="?p=operator&tab=speakers">Реестр спикеров</a>
 <a class="btn ghost" href="?p=materials">🗂️ Материалы</a>
 <a class="btn ghost" href="?p=lesson_readiness_admin">📘 Проверка готовности к занятиям</a>
+<a class="btn ghost" href="?p=news_admin">📰 Новости сайта</a>
 </div>';
 layout('Инструменты',$body); exit;
 }
