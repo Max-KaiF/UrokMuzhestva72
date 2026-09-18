@@ -2255,7 +2255,7 @@ $where=$onlyPublished?'WHERE published=1':'';
 $sql="SELECT n.*, u.display_name author FROM news n LEFT JOIN users u ON u.id=n.created_by $where ORDER BY n.created_at DESC".($limit?' LIMIT '.(int)$limit:'');
 return db()->query($sql)->fetchAll();
 }
-function get_news($id){ $st=db()->prepare("SELECT * FROM news WHERE id=?"); $st->execute([$id]); return $st->fetch()?:null; }
+function get_news($id){ $st=db()->prepare("SELECT n.*, u.display_name author FROM news n LEFT JOIN users u ON u.id=n.created_by WHERE n.id=?"); $st->execute([$id]); return $st->fetch()?:null; }
 function news_image_allowed_extensions(){ return ['jpg','jpeg','png','webp']; }
 function validate_uploaded_news_image($file){
 if(($file['error']??UPLOAD_ERR_NO_FILE)!==UPLOAD_ERR_OK) return [false,'Ошибка загрузки фото.',null];

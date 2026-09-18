@@ -668,6 +668,7 @@ echo '<footer style="text-align:center;padding:20px;color:var(--muted);font-size
 echo '<script>(function(){var n=0;document.querySelectorAll("label.lbl").forEach(function(lb){if(lb.getAttribute("for")||lb.id)return;var el=lb.nextElementSibling;while(el&&!/^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName)&&!(el.tagName==="DIV"&&el.querySelector("input,select,textarea")))el=el.nextElementSibling;if(!el)return;if(/^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName)){if(!el.id)el.id="lblauto_"+(++n);lb.setAttribute("for",el.id);}else{if(!lb.id)lb.id="lblgrp_"+(++n);el.setAttribute("role","group");el.setAttribute("aria-labelledby",lb.id);}});})();</script>';
 echo '<script>(function(){function fmt(el){var d=el.value.replace(/\D+/g,"");if(d.length===11&&(d[0]==="7"||d[0]==="8"))d=d.slice(1);if(d.length===10)el.value="+7"+d;}document.querySelectorAll(\'input[name="phone"],input[name="contact_phone"]\').forEach(function(el){el.setAttribute("type","tel");el.setAttribute("placeholder","+7XXXXXXXXXX");el.setAttribute("pattern","\\\\+7[0-9]{10}");el.setAttribute("title","Формат: +7XXXXXXXXXX (10 цифр после +7)");el.setAttribute("maxlength","12");el.addEventListener("blur",function(){fmt(el);});});})();</script>';
 echo '<script>(function(){function initResizable(table){var ths=table.querySelectorAll("thead th");ths.forEach(function(th){var handle=document.createElement("span");handle.className="col-resize-handle";th.appendChild(handle);handle.addEventListener("mousedown",function(e){e.preventDefault();e.stopPropagation();if(table.style.tableLayout!=="fixed"){ths.forEach(function(t){t.style.width=t.getBoundingClientRect().width+"px";});table.style.tableLayout="fixed";}handle.classList.add("active");var startX=e.pageX;var startW=th.getBoundingClientRect().width;function onMove(ev){var w=Math.max(50,startW+(ev.pageX-startX));th.style.width=w+"px";}function onUp(){handle.classList.remove("active");document.removeEventListener("mousemove",onMove);document.removeEventListener("mouseup",onUp);}document.addEventListener("mousemove",onMove);document.addEventListener("mouseup",onUp);});});}document.querySelectorAll("table.resizable").forEach(initResizable);})();</script>';
+echo '<script>(function(){var ov=null;function open(src){if(!ov){ov=document.createElement("div");ov.id="lightbox-overlay";ov.innerHTML=\'<span class="lightbox-close">&times;</span><img>\';document.body.appendChild(ov);ov.addEventListener("click",close);}ov.querySelector("img").src=src;ov.classList.add("open");document.body.style.overflow="hidden";}function close(){if(ov){ov.classList.remove("open");document.body.style.overflow="";}}document.addEventListener("click",function(e){var t=e.target.closest(".js-lightbox");if(t){e.preventDefault();open(t.getAttribute("data-full")||t.src);}});document.addEventListener("keydown",function(e){if(e.key==="Escape")close();});})();</script>';
 if(empty($_COOKIE['um72_cookie_consent'])){
 echo '<div id="um72-cookie" role="dialog" aria-live="polite" aria-label="Уведомление об использовании файлов cookie">'
 .'<div class="um72ck-inner">'
@@ -1017,20 +1018,38 @@ $body.='<div class="head"><h2>Новости</h2>'.($newsItems?'<a href="?p=news
 if(!$newsItems) $body.='<div class="card pad muted">Новостей пока нет.</div>';
 else { $body.='<div class="news-grid">'; foreach($newsItems as $n){
 $excerpt=mb_substr(trim(preg_replace('/\s+/u',' ',(string)$n['body'])),0,120);
-$body.='<a href="?p=news" class="news-card">'.(!empty($n['image_path'])?'<img src="?p=news_image&id='.$n['id'].'" alt="">':'<div class="news-card-ph"></div>').'<div class="news-card-body"><h4>'.esc($n['title']).'</h4><p>'.esc($excerpt).(mb_strlen((string)$n['body'])>120?'…':'').'</p><time>'.esc(substr((string)$n['created_at'],0,10)).'</time></div></a>';
+$body.='<a href="?p=news&id='.$n['id'].'" class="news-card">'.(!empty($n['image_path'])?'<img src="?p=news_image&id='.$n['id'].'" alt="">':'<div class="news-card-ph"></div>').'<div class="news-card-body"><h4>'.esc($n['title']).'</h4><p>'.esc($excerpt).(mb_strlen((string)$n['body'])>120?'…':'').'</p><time>'.esc(substr((string)$n['created_at'],0,10)).'</time></div></a>';
 } $body.='</div>'; }
 $body.='<div class="pub-cta"><h3>Хотите стать частью программы?</h3><p>Подайте заявку на урок от имени школы или колледжа — либо зарегистрируйтесь как спикер-ветеран и делитесь своим опытом с подростками.</p><a class="btn primary btn-lg" href="?p=register">Зарегистрироваться</a></div>';
 layout('Урок Мужества 72',$body); exit;
 }
 if($p==='news'){
+$newsId=(int)($_GET['id']??0);
+if($newsId){
+$n=get_news($newsId);
+if(!$n || !$n['published']){ layout('Новость','<div class="card pad">Новость не найдена. <a href="?p=news">Все новости</a></div>'); exit; }
+$body='<div class="head"><h2>'.esc($n['title']).'</h2><a class="btn ghost" href="?p=news">← ко всем новостям</a></div>';
+$body.='<div class="card pad">';
+if(!empty($n['image_path'])) $body.='<img class="js-lightbox" data-full="?p=news_image&id='.$n['id'].'" src="?p=news_image&id='.$n['id'].'" alt="" style="width:100%;max-height:420px;object-fit:cover;border-radius:10px;margin-bottom:14px">';
+$body.='<p class="muted" style="margin:0 0 14px;font-size:13px">'.esc(substr((string)$n['created_at'],0,10)).($n['author']?' · '.esc($n['author']):'').'</p>';
+$body.='<div style="white-space:pre-wrap;line-height:1.7">'.nl2br(esc($n['body'])).'</div>';
+$body.='</div>';
+$others=array_values(array_filter(list_news(true),fn($x)=>(int)$x['id']!==$newsId));
+$others=array_slice($others,0,5);
+if($others){
+$body.='<div class="head" style="margin-top:28px"><h2>Другие новости</h2></div><div class="news-grid">';
+foreach($others as $o) $body.='<a href="?p=news&id='.$o['id'].'" class="news-card">'.(!empty($o['image_path'])?'<img src="?p=news_image&id='.$o['id'].'" alt="">':'<div class="news-card-ph"></div>').'<div class="news-card-body"><h4>'.esc($o['title']).'</h4><time>'.esc(substr((string)$o['created_at'],0,10)).'</time></div></a>';
+$body.='</div>';
+}
+layout($n['title'],$body); exit;
+}
 $items=list_news(true);
 $body='<div class="head"><h2>Новости</h2><a class="btn ghost" href="'.esc($u?role_home($u):'?p=home').'">← назад</a></div>';
 if(!$items) $body.='<div class="card pad muted">Новостей пока нет.</div>';
-foreach($items as $n){
-$body.='<div class="card pad" style="margin-bottom:16px">';
-if(!empty($n['image_path'])) $body.='<img src="?p=news_image&id='.$n['id'].'" alt="" style="width:100%;max-height:340px;object-fit:cover;border-radius:10px;margin-bottom:14px">';
-$body.='<h3 style="margin:0 0 6px">'.esc($n['title']).'</h3><p class="muted" style="margin:0 0 10px;font-size:13px">'.esc(substr((string)$n['created_at'],0,10)).($n['author']?' · '.esc($n['author']):'').'</p><div style="white-space:pre-wrap;line-height:1.6">'.nl2br(esc($n['body'])).'</div></div>';
-}
+else { $body.='<div class="news-grid">'; foreach($items as $n){
+$excerpt=mb_substr(trim(preg_replace('/\s+/u',' ',(string)$n['body'])),0,120);
+$body.='<a href="?p=news&id='.$n['id'].'" class="news-card">'.(!empty($n['image_path'])?'<img src="?p=news_image&id='.$n['id'].'" alt="">':'<div class="news-card-ph"></div>').'<div class="news-card-body"><h4>'.esc($n['title']).'</h4><p>'.esc($excerpt).(mb_strlen((string)$n['body'])>120?'…':'').'</p><time>'.esc(substr((string)$n['created_at'],0,10)).'</time></div></a>';
+} $body.='</div>'; }
 layout('Новости',$body); exit;
 }
 if($p==='news_image'){
