@@ -104,6 +104,10 @@ db()->exec("CREATE TABLE IF NOT EXISTS news (
 id $pk, title VARCHAR(255) NOT NULL, body TEXT, image_path VARCHAR(255),
 published INTEGER DEFAULT 1, created_by INTEGER, created_at VARCHAR(40)
 )$tail");
+// Несколько фотографий на одну новость.
+db()->exec("CREATE TABLE IF NOT EXISTS news_images (
+id $pk, news_id INTEGER, image_path VARCHAR(255), sort_order INTEGER DEFAULT 0, created_at VARCHAR(40)
+)$tail");
 foreach([
 "ALTER TABLE users ADD COLUMN fund_user_id INTEGER",
 "ALTER TABLE users ADD COLUMN email VARCHAR(190)",
@@ -149,6 +153,8 @@ foreach([
 "ALTER TABLE users ADD COLUMN criminal_record_set_at VARCHAR(40)",
 "ALTER TABLE users ADD COLUMN criminal_cert_path VARCHAR(255)",
 "ALTER TABLE users ADD COLUMN criminal_cert_date VARCHAR(20)",
+"ALTER TABLE news ADD COLUMN school_post_url VARCHAR(500)",
+"CREATE INDEX idx_news_images_news ON news_images(news_id)",
 "CREATE INDEX idx_requests_status ON requests(status)",
 "CREATE INDEX idx_requests_school ON requests(school_user_id)",
 "CREATE INDEX idx_requests_fund ON requests(claimed_fund_id)",
@@ -163,6 +169,13 @@ foreach([
 ] as $sql){ try{ db()->exec($sql); }catch(Throwable $e){} }
 try{ db()->exec("UPDATE requests SET speakers_needed=1 WHERE speakers_needed IS NULL"); }catch(Throwable $e){}
 try{ db()->exec("UPDATE requests SET lessons_per_speaker=1 WHERE lessons_per_speaker IS NULL OR lessons_per_speaker<1"); }catch(Throwable $e){}
+// Разовый перенос старых одиночных фото новостей (image_path) в news_images — до перехода на несколько фото.
+try{
+foreach(db()->query("SELECT id,image_path FROM news WHERE image_path IS NOT NULL AND image_path<>''")->fetchAll() as $nr){
+$c=db()->prepare("SELECT COUNT(*) c FROM news_images WHERE news_id=?"); $c->execute([$nr['id']]);
+if((int)$c->fetch()['c']===0) db()->prepare("INSERT INTO news_images(news_id,image_path,sort_order,created_at) VALUES(?,?,0,?)")->execute([$nr['id'],$nr['image_path'],now()]);
+}
+}catch(Throwable $e){}
 // Тестирование по возрастным группам вводится не с нуля: спикерам, зарегистрированным
 // ДО этой доработки, самозаявленные группы сохраняются как допуск без пересдачи.
 // Важно: рубеж по дате регистрации, а не просто «допуск ещё не проставлен» — иначе
@@ -2256,7 +2269,39 @@ $sql="SELECT n.*, u.display_name author FROM news n LEFT JOIN users u ON u.id=n.
 return db()->query($sql)->fetchAll();
 }
 function get_news($id){ $st=db()->prepare("SELECT n.*, u.display_name author FROM news n LEFT JOIN users u ON u.id=n.created_by WHERE n.id=?"); $st->execute([$id]); return $st->fetch()?:null; }
+function list_news_images($newsId){ $st=db()->prepare("SELECT * FROM news_images WHERE news_id=? ORDER BY sort_order,id"); $st->execute([$newsId]); return $st->fetchAll(); }
+// Первое фото каждой новости — для превью в карточках (одним запросом на список).
+function news_cover_images($newsIds){
+$newsIds=array_values(array_unique(array_map('intval',$newsIds)));
+if(!$newsIds) return [];
+$in=implode(',',array_fill(0,count($newsIds),'?'));
+$st=db()->prepare("SELECT * FROM news_images WHERE news_id IN ($in) ORDER BY news_id,sort_order,id");
+$st->execute($newsIds);
+$out=[];
+foreach($st->fetchAll() as $row){ $nid=(int)$row['news_id']; if(!isset($out[$nid])) $out[$nid]=$row; }
+return $out;
+}
+function get_news_image($imageId){ $st=db()->prepare("SELECT * FROM news_images WHERE id=?"); $st->execute([$imageId]); return $st->fetch()?:null; }
+function news_image_counts($newsIds){
+$newsIds=array_values(array_unique(array_map('intval',$newsIds)));
+if(!$newsIds) return [];
+$in=implode(',',array_fill(0,count($newsIds),'?'));
+$st=db()->prepare("SELECT news_id,COUNT(*) c FROM news_images WHERE news_id IN ($in) GROUP BY news_id");
+$st->execute($newsIds);
+$out=[]; foreach($st->fetchAll() as $row) $out[(int)$row['news_id']]=(int)$row['c'];
+return $out;
+}
 function news_image_allowed_extensions(){ return ['jpg','jpeg','png','webp']; }
+// Разбирает $_FILES['имя'] с multiple-загрузкой (несколько файлов под одним именем поля) на отдельные записи файла.
+function normalize_multi_files($filesField){
+if(empty($filesField['name'])) return [];
+$out=[];
+foreach((array)$filesField['name'] as $i=>$name){
+if($name==='') continue;
+$out[]=['name'=>$name,'type'=>$filesField['type'][$i],'tmp_name'=>$filesField['tmp_name'][$i],'error'=>$filesField['error'][$i],'size'=>$filesField['size'][$i]];
+}
+return $out;
+}
 function validate_uploaded_news_image($file){
 if(($file['error']??UPLOAD_ERR_NO_FILE)!==UPLOAD_ERR_OK) return [false,'Ошибка загрузки фото.',null];
 if($file['size']>PHOTO_MAX_BYTES) return [false,'Фото слишком большое (максимум 8 МБ).',null];
@@ -2269,23 +2314,36 @@ $stored=bin2hex(random_bytes(16)).'.'.$ext;
 if(!move_uploaded_file($file['tmp_name'],$dir.'/'.$stored)) return [false,'Не удалось сохранить фото.',null];
 return [true,null,$stored];
 }
-function add_news($title,$body,$imagePath,$published,$actorId){
-db()->prepare("INSERT INTO news(title,body,image_path,published,created_by,created_at) VALUES(?,?,?,?,?,?)")
-->execute([$title,$body,$imagePath,$published?1:0,$actorId,now()]);
+function add_news_image($newsId,$imagePath){
+$st=db()->prepare("SELECT COALESCE(MAX(sort_order),-1) m FROM news_images WHERE news_id=?"); $st->execute([$newsId]);
+$next=(int)$st->fetch()['m']+1;
+db()->prepare("INSERT INTO news_images(news_id,image_path,sort_order,created_at) VALUES(?,?,?,?)")->execute([$newsId,$imagePath,$next,now()]);
+return db()->lastInsertId();
+}
+function delete_news_image($imageId,$actorId){
+$img=get_news_image($imageId); if(!$img) return [false,'Фото не найдено.'];
+$path=__DIR__.'/uploads/news/'.$img['image_path']; if(is_file($path)) @unlink($path);
+db()->prepare("DELETE FROM news_images WHERE id=?")->execute([$imageId]);
+log_action($actorId,current_user()['role']??'operator','news_image_delete','news_images',$imageId,'Удалено фото новости #'.$img['news_id']);
+return [true,'Фото удалено.'];
+}
+function add_news($title,$body,$schoolPostUrl,$published,$actorId){
+db()->prepare("INSERT INTO news(title,body,school_post_url,published,created_by,created_at) VALUES(?,?,?,?,?,?)")
+->execute([$title,$body,$schoolPostUrl?:null,$published?1:0,$actorId,now()]);
 $id=db()->lastInsertId();
 log_action($actorId,current_user()['role']??'operator','news_add','news',$id,"Добавлена новость: $title");
 return [true,$id];
 }
-function update_news($id,$title,$body,$imagePath,$published,$actorId){
-$fields=['title'=>$title,'body'=>$body,'published'=>$published?1:0];
-if($imagePath!==null) $fields['image_path']=$imagePath;
-$set=implode(',',array_map(fn($k)=>"$k=?",array_keys($fields)));
-db()->prepare("UPDATE news SET $set WHERE id=?")->execute([...array_values($fields),$id]);
+function update_news($id,$title,$body,$schoolPostUrl,$published,$actorId){
+db()->prepare("UPDATE news SET title=?,body=?,school_post_url=?,published=? WHERE id=?")
+->execute([$title,$body,$schoolPostUrl?:null,$published?1:0,$id]);
 log_action($actorId,current_user()['role']??'operator','news_update','news',$id,"Изменена новость: $title");
 return [true,'Новость обновлена.'];
 }
 function delete_news($id,$actorId){
 $n=get_news($id); if(!$n) return [false,'Новость не найдена.'];
+foreach(list_news_images($id) as $img){ $path=__DIR__.'/uploads/news/'.$img['image_path']; if(is_file($path)) @unlink($path); }
+db()->prepare("DELETE FROM news_images WHERE news_id=?")->execute([$id]);
 if(!empty($n['image_path'])){ $path=__DIR__.'/uploads/news/'.$n['image_path']; if(is_file($path)) @unlink($path); }
 db()->prepare("DELETE FROM news WHERE id=?")->execute([$id]);
 log_action($actorId,current_user()['role']??'operator','news_delete','news',$id,"Удалена новость: ".$n['title']);

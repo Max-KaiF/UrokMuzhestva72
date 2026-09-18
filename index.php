@@ -506,13 +506,17 @@ if($a==='add_news'){
 require_role(['operator','admin']); $u=current_user();
 $title=trim($_POST['title']??''); $bodyTxt=trim($_POST['body']??'');
 if($title===''||$bodyTxt===''){ flash_set('Заполните заголовок и текст новости.'); redirect('?p=news_edit'); }
-$imgPath=null;
-if(!empty($_FILES['image']['name'])){
-[$imgOk,$imgErr,$imgStored]=validate_uploaded_news_image($_FILES['image']);
+$schoolPostUrl=trim($_POST['school_post_url']??'');
+if($schoolPostUrl!==''&&!preg_match('~^https?://~i',$schoolPostUrl)){ flash_set('Ссылка на публикацию школы должна начинаться с http:// или https://.'); redirect('?p=news_edit'); }
+$newImages=normalize_multi_files($_FILES['images']??[]);
+$stored=[];
+foreach($newImages as $f){
+[$imgOk,$imgErr,$imgStored]=validate_uploaded_news_image($f);
 if(!$imgOk){ flash_set($imgErr); redirect('?p=news_edit'); }
-$imgPath=$imgStored;
+$stored[]=$imgStored;
 }
-add_news($title,$bodyTxt,$imgPath,!empty($_POST['published']),$u['id']);
+[$ok,$newId]=add_news($title,$bodyTxt,$schoolPostUrl,!empty($_POST['published']),$u['id']);
+foreach($stored as $path) add_news_image($newId,$path);
 flash_set('Новость добавлена.'); redirect('?p=news_admin');
 }
 if($a==='update_news'){
@@ -521,14 +525,18 @@ $id=(int)($_POST['id']??0); $n=$id?get_news($id):null;
 if(!$n){ flash_set('Новость не найдена.'); redirect('?p=news_admin'); }
 $title=trim($_POST['title']??''); $bodyTxt=trim($_POST['body']??'');
 if($title===''||$bodyTxt===''){ flash_set('Заполните заголовок и текст новости.'); redirect('?p=news_edit&id='.$id); }
-$imgPath=null;
-if(!empty($_FILES['image']['name'])){
-[$imgOk,$imgErr,$imgStored]=validate_uploaded_news_image($_FILES['image']);
+$schoolPostUrl=trim($_POST['school_post_url']??'');
+if($schoolPostUrl!==''&&!preg_match('~^https?://~i',$schoolPostUrl)){ flash_set('Ссылка на публикацию школы должна начинаться с http:// или https://.'); redirect('?p=news_edit&id='.$id); }
+foreach((array)($_POST['delete_image']??[]) as $imgId) delete_news_image((int)$imgId,$u['id']);
+$newImages=normalize_multi_files($_FILES['images']??[]);
+$stored=[];
+foreach($newImages as $f){
+[$imgOk,$imgErr,$imgStored]=validate_uploaded_news_image($f);
 if(!$imgOk){ flash_set($imgErr); redirect('?p=news_edit&id='.$id); }
-if(!empty($n['image_path'])){ $old=__DIR__.'/uploads/news/'.$n['image_path']; if(is_file($old)) @unlink($old); }
-$imgPath=$imgStored;
+$stored[]=$imgStored;
 }
-update_news($id,$title,$bodyTxt,$imgPath,!empty($_POST['published']),$u['id']);
+foreach($stored as $path) add_news_image($id,$path);
+update_news($id,$title,$bodyTxt,$schoolPostUrl,!empty($_POST['published']),$u['id']);
 flash_set('Новость обновлена.'); redirect('?p=news_admin');
 }
 if($a==='delete_news'){
@@ -1011,13 +1019,15 @@ layout('Политика обработки персональных данны�
 if($p==='home'){
 $stats=public_site_stats();
 $newsItems=list_news(true,4);
+$covers=news_cover_images(array_column($newsItems,'id'));
 $body='<div class="pub-hero"><h1>Герои рассказывают — школьники слушают</h1><p>Ветераны специальной военной операции приходят в школы, колледжи и вузы Тюменской области, чтобы говорить с подростками о мужестве, долге и взаимовыручке. Платформа соединяет школы, фонды-координаторы и спикеров-ветеранов на одной платформе.</p>'
 .'<div class="pub-stats"><div><b>'.$stats['lessons'].'</b> <span>уроков проведено</span></div><div><b>'.$stats['speakers'].'</b> <span>спикеров-ветеранов</span></div><div><b>'.$stats['schools'].'</b> <span>школ и колледжей</span></div></div></div>';
 $body.='<div class="head"><h2>Новости</h2>'.($newsItems?'<a href="?p=news">Все новости →</a>':'').'</div>';
 if(!$newsItems) $body.='<div class="card pad muted">Новостей пока нет.</div>';
 else { $body.='<div class="news-grid">'; foreach($newsItems as $n){
 $excerpt=mb_substr(trim(preg_replace('/\s+/u',' ',(string)$n['body'])),0,120);
-$body.='<a href="?p=news&id='.$n['id'].'" class="news-card">'.(!empty($n['image_path'])?'<img src="?p=news_image&id='.$n['id'].'" alt="">':'<div class="news-card-ph"></div>').'<div class="news-card-body"><h4>'.esc($n['title']).'</h4><p>'.esc($excerpt).(mb_strlen((string)$n['body'])>120?'…':'').'</p><time>'.esc(substr((string)$n['created_at'],0,10)).'</time></div></a>';
+$cov=$covers[$n['id']]??null;
+$body.='<a href="?p=news&id='.$n['id'].'" class="news-card">'.($cov?'<img src="?p=news_image&id='.$cov['id'].'" alt="">':'<div class="news-card-ph"></div>').'<div class="news-card-body"><h4>'.esc($n['title']).'</h4><p>'.esc($excerpt).(mb_strlen((string)$n['body'])>120?'…':'').'</p><time>'.esc(substr((string)$n['created_at'],0,10)).'</time></div></a>';
 } $body.='</div>'; }
 $body.='<div class="pub-cta"><h3>Хотите стать частью программы?</h3><p>Подайте заявку на урок от имени школы или колледжа — либо зарегистрируйтесь как спикер-ветеран и делитесь своим опытом с подростками.</p><a class="btn primary btn-lg" href="?p=register">Зарегистрироваться</a></div>';
 layout('Урок Мужества 72',$body); exit;
@@ -1029,32 +1039,37 @@ $n=get_news($newsId);
 if(!$n || !$n['published']){ layout('Новость','<div class="card pad">Новость не найдена. <a href="?p=news">Все новости</a></div>'); exit; }
 $body='<div class="head"><h2>'.esc($n['title']).'</h2><a class="btn ghost" href="?p=news">← ко всем новостям</a></div>';
 $body.='<div class="card pad">';
-if(!empty($n['image_path'])) $body.='<img src="?p=news_image&id='.$n['id'].'" alt="" style="display:block;width:100%;max-height:70vh;object-fit:contain;background:var(--bg);border-radius:10px;margin-bottom:14px">';
+$imgs=list_news_images($newsId);
+foreach($imgs as $img) $body.='<img src="?p=news_image&id='.$img['id'].'" alt="" style="display:block;width:100%;max-height:70vh;object-fit:contain;background:var(--bg);border-radius:10px;margin-bottom:14px">';
 $body.='<p class="muted" style="margin:0 0 14px;font-size:13px">'.esc(substr((string)$n['created_at'],0,10)).($n['author']?' · '.esc($n['author']):'').'</p>';
 $body.='<div style="white-space:pre-wrap;line-height:1.7">'.nl2br(esc($n['body'])).'</div>';
+if(!empty($n['school_post_url'])) $body.='<p style="margin-top:14px"><a class="btn ghost sm" href="'.esc($n['school_post_url']).'" target="_blank" rel="noopener">🔗 Публикация школы</a></p>';
 $body.='</div>';
 $others=array_values(array_filter(list_news(true),fn($x)=>(int)$x['id']!==$newsId));
 $others=array_slice($others,0,5);
 if($others){
+$oCovers=news_cover_images(array_column($others,'id'));
 $body.='<div class="head" style="margin-top:28px"><h2>Другие новости</h2></div><div class="news-grid">';
-foreach($others as $o) $body.='<a href="?p=news&id='.$o['id'].'" class="news-card">'.(!empty($o['image_path'])?'<img src="?p=news_image&id='.$o['id'].'" alt="">':'<div class="news-card-ph"></div>').'<div class="news-card-body"><h4>'.esc($o['title']).'</h4><time>'.esc(substr((string)$o['created_at'],0,10)).'</time></div></a>';
+foreach($others as $o){ $oc=$oCovers[$o['id']]??null; $body.='<a href="?p=news&id='.$o['id'].'" class="news-card">'.($oc?'<img src="?p=news_image&id='.$oc['id'].'" alt="">':'<div class="news-card-ph"></div>').'<div class="news-card-body"><h4>'.esc($o['title']).'</h4><time>'.esc(substr((string)$o['created_at'],0,10)).'</time></div></a>'; }
 $body.='</div>';
 }
 layout($n['title'],$body); exit;
 }
 $items=list_news(true);
+$covers=news_cover_images(array_column($items,'id'));
 $body='<div class="head"><h2>Новости</h2><a class="btn ghost" href="'.esc($u?role_home($u):'?p=home').'">← назад</a></div>';
 if(!$items) $body.='<div class="card pad muted">Новостей пока нет.</div>';
 else { $body.='<div class="news-grid">'; foreach($items as $n){
 $excerpt=mb_substr(trim(preg_replace('/\s+/u',' ',(string)$n['body'])),0,120);
-$body.='<a href="?p=news&id='.$n['id'].'" class="news-card">'.(!empty($n['image_path'])?'<img src="?p=news_image&id='.$n['id'].'" alt="">':'<div class="news-card-ph"></div>').'<div class="news-card-body"><h4>'.esc($n['title']).'</h4><p>'.esc($excerpt).(mb_strlen((string)$n['body'])>120?'…':'').'</p><time>'.esc(substr((string)$n['created_at'],0,10)).'</time></div></a>';
+$cov=$covers[$n['id']]??null;
+$body.='<a href="?p=news&id='.$n['id'].'" class="news-card">'.($cov?'<img src="?p=news_image&id='.$cov['id'].'" alt="">':'<div class="news-card-ph"></div>').'<div class="news-card-body"><h4>'.esc($n['title']).'</h4><p>'.esc($excerpt).(mb_strlen((string)$n['body'])>120?'…':'').'</p><time>'.esc(substr((string)$n['created_at'],0,10)).'</time></div></a>';
 } $body.='</div>'; }
 layout('Новости',$body); exit;
 }
 if($p==='news_image'){
-$n=get_news((int)($_GET['id']??0));
-if(!$n || empty($n['image_path'])){ http_response_code(404); exit; }
-$path=__DIR__.'/uploads/news/'.$n['image_path'];
+$img=get_news_image((int)($_GET['id']??0));
+if(!$img){ http_response_code(404); exit; }
+$path=__DIR__.'/uploads/news/'.$img['image_path'];
 if(!is_file($path)){ http_response_code(404); exit; }
 $ext=strtolower(pathinfo($path,PATHINFO_EXTENSION));
 header('Content-Type: '.($ext==='png'?'image/png':($ext==='webp'?'image/webp':'image/jpeg')));
@@ -1105,13 +1120,17 @@ layout('Контакты',$body); exit;
 if($p==='news_admin'){
 require_role(['operator','admin']);
 $items=list_news(false);
+$covers=news_cover_images(array_column($items,'id'));
+$counts=news_image_counts(array_column($items,'id'));
 $body='<div class="head"><h2>Новости сайта</h2><div style="display:flex;gap:8px">'.($u['role']==='operator'?'<a class="btn ghost" href="'.esc(role_home($u)).'">← в кабинет</a>':'').'<a class="btn primary" href="?p=news_edit">+ Добавить новость</a></div></div>';
 if(!$items){
 $body.='<div class="empty-state"><div class="empty-icon">📰</div><h3>Новостей пока нет</h3><p class="muted">Добавьте первую новость кнопкой выше — она появится на стартовой странице.</p></div>';
 } else {
-$body.='<table class="card-view"><thead><tr><th>Заголовок</th><th>Статус</th><th>Дата</th><th></th></tr></thead><tbody>';
+$body.='<table class="card-view"><thead><tr><th>Фото</th><th>Заголовок</th><th>Статус</th><th>Дата</th><th></th></tr></thead><tbody>';
 foreach($items as $n){
-$body.='<tr><td class="id"><a href="?p=news_edit&id='.$n['id'].'">'.esc($n['title']).'</a></td><td>'.($n['published']?'<span class="pill green">опубликована</span>':'<span class="pill gray">черновик</span>').'</td><td class="muted">'.esc(substr((string)$n['created_at'],0,10)).'</td><td style="white-space:nowrap"><a class="btn ghost sm" href="?p=news_edit&id='.$n['id'].'">✏️</a> <form method="post" style="display:inline" onsubmit="return confirm(\'Удалить новость?\')">'.csrf_field().'<input type="hidden" name="action" value="delete_news"><input type="hidden" name="id" value="'.$n['id'].'"><button type="submit" class="btn-delete">Удалить</button></form></td></tr>';
+$cov=$covers[$n['id']]??null; $cnt=$counts[$n['id']]??0;
+$thumb=$cov?'<img src="?p=news_image&id='.$cov['id'].'" alt="" style="width:56px;height:56px;object-fit:cover;border-radius:6px">'.($cnt>1?' <span class="muted" style="font-size:11px">+'.($cnt-1).'</span>':''):'<span class="muted">—</span>';
+$body.='<tr><td data-label="Фото">'.$thumb.'</td><td class="id"><a href="?p=news_edit&id='.$n['id'].'">'.esc($n['title']).'</a></td><td>'.($n['published']?'<span class="pill green">опубликована</span>':'<span class="pill gray">черновик</span>').'</td><td class="muted">'.esc(substr((string)$n['created_at'],0,10)).'</td><td style="white-space:nowrap"><a class="btn ghost sm" href="?p=news_edit&id='.$n['id'].'">✏️</a> <form method="post" style="display:inline" onsubmit="return confirm(\'Удалить новость?\')">'.csrf_field().'<input type="hidden" name="action" value="delete_news"><input type="hidden" name="id" value="'.$n['id'].'"><button type="submit" class="btn-delete">Удалить</button></form></td></tr>';
 }
 $body.='</tbody></table>';
 }
@@ -1121,12 +1140,18 @@ if($p==='news_edit'){
 require_role(['operator','admin']);
 $id=(int)($_GET['id']??0); $n=$id?get_news($id):null;
 if($id && !$n){ layout('Новость','<div class="card pad">Новость не найдена. <a href="?p=news_admin">Назад</a></div>'); exit; }
+$existingImages=$id?list_news_images($id):[];
 $body='<div class="head"><h2>'.($n?'Редактирование новости':'Добавить новость').'</h2><a class="btn ghost" href="?p=news_admin">← к новостям</a></div>';
 $body.='<form method="post" class="upload-form" enctype="multipart/form-data">'.csrf_field().'<input type="hidden" name="action" value="'.($n?'update_news':'add_news').'">'.($n?'<input type="hidden" name="id" value="'.$n['id'].'">':'');
 $body.='<div class="form-group"><label class="form-label">Заголовок <span style="color:#d11">*</span></label><input class="form-input" name="title" required value="'.esc($n['title']??'').'"></div>';
 $body.='<div class="form-group"><label class="form-label">Текст <span style="color:#d11">*</span></label><textarea class="form-textarea" name="body" required rows="8">'.esc($n['body']??'').'</textarea></div>';
-if($n && !empty($n['image_path'])) $body.='<div class="form-group"><label class="form-label">Текущее фото</label><br><img src="?p=news_image&id='.$n['id'].'" alt="" style="max-width:260px;border-radius:10px"></div>';
-$body.='<div class="form-group"><label class="form-label">Фото'.($n&&!empty($n['image_path'])?' (заменить)':'').'</label><div class="file-upload-wrapper"><input class="file-input" type="file" name="image" id="news_image" accept="image/*" onchange="document.getElementById(\'news_image_name\').textContent=this.files.length?this.files[0].name:\'Файл не выбран\';"><label for="news_image" class="file-upload-label"><span>📎</span><span class="file-upload-text">Нажмите, чтобы выбрать фото</span><span class="file-name" id="news_image_name">Файл не выбран</span></label></div></div>';
+if($existingImages){
+$body.='<div class="form-group"><label class="form-label">Текущие фото</label><div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:6px">';
+foreach($existingImages as $img) $body.='<div style="text-align:center"><img src="?p=news_image&id='.$img['id'].'" alt="" style="width:120px;height:120px;object-fit:cover;border-radius:8px;display:block;margin-bottom:4px"><label class="chk" style="font-size:12px"><input type="checkbox" name="delete_image[]" value="'.$img['id'].'"> удалить</label></div>';
+$body.='</div></div>';
+}
+$body.='<div class="form-group"><label class="form-label">Добавить фото (можно выбрать несколько)</label><div class="file-upload-wrapper"><input class="file-input" type="file" name="images[]" id="news_images" accept="image/*" multiple onchange="document.getElementById(\'news_images_name\').textContent=this.files.length?this.files.length+\' файл(ов) выбрано\':\'Файлы не выбраны\';"><label for="news_images" class="file-upload-label"><span>📎</span><span class="file-upload-text">Нажмите, чтобы выбрать фото</span><span class="file-name" id="news_images_name">Файлы не выбраны</span></label></div></div>';
+$body.='<div class="form-group"><label class="form-label">Ссылка на публикацию школы</label><input class="form-input" type="url" name="school_post_url" value="'.esc($n['school_post_url']??'').'" placeholder="https://..."><p class="form-hint">Необязательно — например, ссылка на пост школы в соцсети об этом событии.</p></div>';
 $body.='<div class="form-group"><label class="chk"><input type="checkbox" name="published" '.(($n['published']??1)?'checked':'').'> Опубликовано (видно на сайте)</label></div>';
 $body.='<div class="form-actions"><button class="btn primary btn-lg">Сохранить</button></div></form>';
 layout('Новость',$body); exit;
