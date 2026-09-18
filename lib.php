@@ -1900,7 +1900,7 @@ function is_candidate($rid,$sid){ $st=db()->prepare("SELECT id FROM request_spea
 function get_rs_row($rid,$sid){ $st=db()->prepare("SELECT * FROM request_speakers WHERE request_id=? AND speaker_user_id=?"); $st->execute([$rid,$sid]); return $st->fetch()?:null; }
 function req_label($rid){ $rows=req_speaker_rows($rid); $conf=array_filter($rows,fn($x)=>$x['confirmed']); if($conf) return implode(', ',array_map(function($x){ $org=speaker_org_name($x['speaker_user_id']); return $x['display_name'].($org!==''?' ('.$org.')':''); },$conf)); if($rows) return 'кандидатов: '.count($rows); return 'не выбран'; }
 // Пакетная версия req_label() для таблиц из многих строк — один запрос вместо одного на строку.
-function req_labels_bulk($requestIds){
+function req_labels_bulk($requestIds,$withOrg=true){
 $requestIds=array_values(array_unique(array_map('intval',$requestIds)));
 if(!$requestIds) return [];
 $in=implode(',',array_fill(0,count($requestIds),'?'));
@@ -1915,6 +1915,7 @@ $conf=array_filter($rows,fn($x)=>$x['confirmed']);
 if($conf){
 $parts=[];
 foreach($conf as $x){
+if(!$withOrg){ $parts[]=$x['display_name']; continue; }
 $sid=(int)$x['speaker_id'];
 if(!array_key_exists($sid,$fundCache)) $fundCache[$sid]=speaker_org_name($sid);
 $org=$fundCache[$sid];

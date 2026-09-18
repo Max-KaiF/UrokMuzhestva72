@@ -534,7 +534,7 @@ if($u){ $nm=($u['role']==='school')?(school_effective($u)['org_name']?:$u['displ
 $sess=($fullLabel!==''?'<span class="rolebadge" title="'.esc($fullLabel).'">'.esc($fullLabel).'</span> ':'').(can_impersonate($u)&&!is_impersonating()?'<a class="rolebadge" href="?p=impersonate" style="text-decoration:none">🔑 Войти как…</a> ':'').'<a class="rolebadge" href="?p=profile" style="text-decoration:none">Профиль</a> <form method="post" style="display:inline"><input type="hidden" name="action" value="logout">'.csrf_field().'<button class="logout">Выйти</button></form>'; }
 $f=flash_get();
 $missing=profile_missing_fields($u);
-echo '<!DOCTYPE html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>'.esc($title).'</title><link rel="icon" href="favicon.ico"><link rel="icon" type="image/png" href="favicon.png"><link rel="apple-touch-icon" href="icon-192.png"><link rel="manifest" href="manifest.json"><meta name="theme-color" content="#0039A6"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="УМ 72"><link rel="stylesheet" href="style.css?v='.(file_exists(__DIR__.'/style.css')?filemtime(__DIR__.'/style.css'):time()).'"></head><body>';
+echo '<!DOCTYPE html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>'.esc($title).'</title><link rel="icon" href="favicon.ico"><link rel="icon" type="image/png" href="favicon.png"><link rel="apple-touch-icon" href="icon-192.png"><link rel="manifest" href="manifest.json"><meta name="theme-color" content="#1A56C4"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="УМ 72"><link rel="stylesheet" href="style.css?v='.(file_exists(__DIR__.'/style.css')?filemtime(__DIR__.'/style.css'):time()).'"></head><body>';
 echo '<script>if("serviceWorker" in navigator){window.addEventListener("load",function(){navigator.serviceWorker.register("sw.js").catch(function(){});});}</script>';
 if(is_impersonating()){
 $admin=find_user_by_id((int)$_SESSION['impersonator_id']);
@@ -555,12 +555,12 @@ echo '<div id="um72-cookie" role="dialog" aria-live="polite" aria-label="Уве�
 .'<div class="um72ck-act"><button type="button" id="um72ck-ok" class="um72ck-btn">Принять</button></div>'
 .'</div></div>'
 .'<style>'
-.'#um72-cookie{position:fixed;right:16px;bottom:16px;left:auto;z-index:9999;max-width:320px;background:#0039A6;color:#fff;border-radius:10px;box-shadow:0 4px 20px rgba(0,0,0,.25);animation:um72ckUp .35s ease}'
+.'#um72-cookie{position:fixed;right:16px;bottom:16px;left:auto;z-index:9999;max-width:320px;background:#1A56C4;color:#fff;border-radius:10px;box-shadow:0 4px 20px rgba(0,0,0,.25);animation:um72ckUp .35s ease}'
 .'@keyframes um72ckUp{from{transform:translateY(12px);opacity:0}to{transform:translateY(0);opacity:1}}'
 .'.um72ck-inner{padding:14px 16px;display:flex;flex-direction:column;gap:10px}'
 .'.um72ck-text{margin:0;font-size:13px;line-height:1.45;color:#fff}'
 .'.um72ck-text a{color:#cfe0f3;text-decoration:underline}'
-.'.um72ck-btn{background:#fff;color:#0039A6;border:0;cursor:pointer;font-weight:600;font-size:14px;padding:13px 18px;border-radius:6px;align-self:flex-start;min-height:44px}'
+.'.um72ck-btn{background:#fff;color:#1A56C4;border:0;cursor:pointer;font-weight:600;font-size:14px;padding:13px 18px;border-radius:6px;align-self:flex-start;min-height:44px}'
 .'.um72ck-btn:hover{background:#e8eef6}'
 .'@media(max-width:520px){#um72-cookie{left:12px;right:12px;bottom:12px;max-width:none}.um72ck-btn{width:100%;padding:11px;align-self:stretch}}'
 .'</style>'
@@ -822,7 +822,7 @@ $body = <<<'HTML'
 .pdoc li{margin:4px 0}
 .pdoc table{width:100%;border-collapse:collapse;margin:10px 0;font-size:14px}
 .pdoc th,.pdoc td{border:1px solid #d8dee8;padding:7px 9px;text-align:left;vertical-align:top}
-.pdoc th{background:#0039A6;color:#fff}
+.pdoc th{background:#1A56C4;color:#fff}
 .pdoc .ph{color:#b23b2c;font-weight:600}
 </style>
 <div class="pdoc">
@@ -1616,7 +1616,7 @@ $body.='<form method="get" class="card pad" style="margin-bottom:14px;display:fl
 .'<label class="lbl" style="margin:0">С</label><input type="date" name="from_date" value="'.esc($_GET['from_date']??'').'">'
 .'<label class="lbl" style="margin:0">По</label><input type="date" name="to_date" value="'.esc($_GET['to_date']??'').'">'
 .'<button class="btn primary sm">Фильтр</button> <a class="btn ghost sm" href="?p=fund&tab=archive">Сбросить</a></form>';
-$labels=req_labels_bulk(array_column($rows,'id'));
+$labels=req_labels_bulk(array_column($rows,'id'),false);
 $tr=''; foreach($rows as $r){ $tr.='<tr onclick="location=\'?p=request&id='.$r['id'].'\'"><td class="id"><a href="?p=request&id='.$r['id'].'">'.esc($r['code']).'</a></td><td>'.esc($r['org']).'</td><td>'.dt($r).'</td><td>'.esc($labels[$r['id']]??'не выбран').'</td><td>'.pill($r['status']).'</td><td class="muted">'.esc($r['archived_at']??'').'</td></tr>'; }
 $hasFilter=!empty($_GET['org'])||!empty($_GET['from_date'])||!empty($_GET['to_date']);
 $body.= $rows ? '<table class="card-view"><thead><tr>'.sort_th('Код','code').sort_th('Организация','org').sort_th('Дата','date').'<th>Спикеры</th>'.sort_th('Статус','status').'<th>Архивировано</th></tr></thead><tbody>'.$tr.'</tbody></table>' : '<div class="card pad muted">'.($hasFilter?'По заданным фильтрам ничего не найдено.':'Архив пуст.').'</div>';
@@ -1647,21 +1647,20 @@ $body .= '<li><span>'.esc($ar['code']).' — '.esc($ar['org']).' <span class="mu
 }
 $body .= '</ul></div>';
 }
-$labels=req_labels_bulk(array_column($rows,'id'));
+$labels=req_labels_bulk(array_column($rows,'id'),false);
 $confirmedCounts=count_confirmed_bulk(array_column($rows,'id'));
 $tr=''; foreach($rows as $r){
 $mine=!empty($r['claimed_fund_id']) && in_array((int)$r['claimed_fund_id'],$myScope,true);
 $rowCls=is_request_urgent($r)?'urgent':'';
 $claimBadge=$mine?((($confirmedCounts[$r['id']]??0)>=1)?' <span class="pill green">✓ подтверждён</span>':' <span class="pill gray">🔧 в обработке</span>'):'';
 $need=in_array($r['status'],['chosen','confirmed'])?' <span class="pill amber">нужно действие</span>':'';
-$fundName=($r['claimed_fund_id']?esc(fund_name_by_id($r['claimed_fund_id'])):'<span class="muted">свободна</span>').$claimBadge;
 [$turnWho,$turnWhat]=whose_turn($r);
-$tr.='<tr class="'.$rowCls.'" onclick="location=\'?p=request&id='.$r['id'].'\'"><td class="id"><a href="?p=request&id='.$r['id'].'">'.esc($r['code']).'</a></td><td>'.esc($r['org']).'</td><td>'.dt($r).'</td><td>'.$fundName.'</td><td>'.esc($labels[$r['id']]??'не выбран').'</td><td title="'.esc($turnWho.($turnWhat?' — '.$turnWhat:'')).'">'.pill($r['status']).$need.'</td></tr>';
+$tr.='<tr class="'.$rowCls.'" onclick="location=\'?p=request&id='.$r['id'].'\'"><td class="id"><a href="?p=request&id='.$r['id'].'">'.esc($r['code']).'</a></td><td>'.esc($r['org']).'</td><td>'.dt($r).'</td><td>'.esc($labels[$r['id']]??'не выбран').'</td><td title="'.esc($turnWho.($turnWhat?' — '.$turnWhat:'')).'">'.pill($r['status']).$need.$claimBadge.'</td></tr>';
 }
 $body.='<div class="head"><h2>Реестр заявок</h2><div><a class="btn ghost" href="?p=fund&tab=speakers">👥 Спикеры Фонда</a> <a class="btn ghost" href="?p=calendar">📅 Календарь</a> <a class="btn ghost" href="?p=materials">🗂️ Материалы</a> <a class="btn ghost" href="?p=export">⬇ Экспорт в CSV</a></div></div>';
 $body.='<div class="guide-tabs" style="margin:-6px 0 14px"><a class="guide-tab active" href="?p=fund">Активные ('.count($rows).')</a> <a class="guide-tab" href="?p=fund&tab=archive">Архив'.($archivedCount?' ('.$archivedCount.')':'').'</a></div>';
-$body.='<p class="muted">Новые заявки без спикера доступны всем фондам. Пометка <span class="pill gray">🔧 в обработке</span> / <span class="pill green">✓ подтверждён</span> у графы «Фонд» — заявки, которые взял в работу ваш фонд. <span style="background:#fff3e0;padding:2px 8px;border-radius:6px">Персиковым фоном</span> подсвечены заявки со скорым сроком урока.</p>';
-$body.= $rows ? '<table class="card-view"><thead><tr>'.sort_th('Код','code').sort_th('Организация','org').sort_th('Дата и время','date').sort_th('Фонд','fund').sort_th('Спикеры','speakers').sort_th('Статус','status').'</tr></thead><tbody>'.$tr.'</tbody></table>' : '<div class="card pad muted">Заявок пока нет.</div>';
+$body.='<p class="muted">Новые заявки без спикера доступны всем фондам (в статусе — «свободна», не закреплена). Пометка <span class="pill gray">🔧 в обработке</span> / <span class="pill green">✓ подтверждён</span> — заявки, взятые в работу вашим фондом. <span style="background:#fff3e0;padding:2px 8px;border-radius:6px">Персиковым фоном</span> подсвечены заявки со скорым сроком урока.</p>';
+$body.= $rows ? '<table class="card-view"><thead><tr>'.sort_th('Код','code').sort_th('Организация','org').sort_th('Дата и время','date').sort_th('Спикеры','speakers').sort_th('Статус','status').'</tr></thead><tbody>'.$tr.'</tbody></table>' : '<div class="card pad muted">Заявок пока нет.</div>';
 layout('Кабинет Фонда',$body); exit;
 }
 // ========== КАБИНЕТ ЗАЯВИТЕЛЯ ==========
@@ -1678,7 +1677,7 @@ if($old) $src=array_merge($src?:[],$old);
 $sg=$src['age_group']??''; $opt=''; foreach(level_ages($eff['level']) as $g) $opt.='<option value="'.esc($g).'" '.($sg===$g?'selected':'').'>'.esc(ages()[$g]).'</option>';
 $sn=(int)($src['speakers_needed']??0); $nopt=''; for($i=1;$i<=5;$i++) $nopt.='<option value="'.$i.'" '.($sn===$i?'selected':'').'>'.$i.'</option>';
 $body='<div class="head"><h2>Подать заявку</h2><a class="btn ghost" href="?p=school&tab=mine">Мои заявки</a></div>
-'.(!empty($src['code'])?'<div class="card pad" style="margin-bottom:10px;border-left:4px solid var(--rf-blue,#0039A6)">Поля заполнены по образцу заявки <b>'.esc($src['code']).'</b>. Проверьте данные и укажите новую дату.</div>':'').'
+'.(!empty($src['code'])?'<div class="card pad" style="margin-bottom:10px;border-left:4px solid var(--rf-blue,#1A56C4)">Поля заполнены по образцу заявки <b>'.esc($src['code']).'</b>. Проверьте данные и укажите новую дату.</div>':'').'
 <form method="post" class="card pad">'.csrf_field().'<input type="hidden" name="action" value="submit_request">
 <p class="muted">Организация: <b>'.esc($eff['org_name']).'</b> · оператор: '.esc(operator_of($eff['level'])).'</p>
 <p class="muted">После отправки заявка сразу станет доступна всем фондам — они сами подберут и назначат спикера(ов). Вы можете указать желаемого спикера ниже — это пожелание, окончательное решение за фондом.</p>

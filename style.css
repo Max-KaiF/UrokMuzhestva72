@@ -44,7 +44,7 @@ table.resizable th{position:relative}
 table.resizable .col-resize-handle{position:absolute;right:0;top:0;bottom:0;width:7px;cursor:col-resize;user-select:none;touch-action:none}
 table.resizable .col-resize-handle:hover,table.resizable .col-resize-handle.active{background:rgba(22,48,91,.2)}
 a.sort-th{color:inherit;text-decoration:none;white-space:nowrap}
-a.sort-th:hover{color:#0039A6;text-decoration:underline}
+a.sort-th:hover{color:#1A56C4;text-decoration:underline}
 tbody td{padding:11px 13px;border-bottom:1px solid var(--line);font-size:14px}
 tbody tr{cursor:pointer}
 tbody tr:hover{background:#f7f9fc}
@@ -134,7 +134,7 @@ tbody tr.urgent:hover{background:#ffe0b2!important}
 .folder-count{color:var(--muted);font-size:13px;margin-top:4px}
 @media(max-width:768px){.folders-grid{grid-template-columns:1fr}}
 /* ===== фирменная тема (флаг РФ) ===== */
-:root{--rf-blue:#0039A6;--rf-red:#D52B1E;}
+:root{--rf-blue:#1A56C4;--rf-red:#D52B1E;}
 body{background:linear-gradient(rgba(255,255,255,.78),rgba(255,255,255,.78)), url(flag-russia.jpg) center center / cover no-repeat fixed !important;color:#1a1a1a;}
 @media(max-width:768px){body{background-attachment:scroll !important}}
 header.top{background:var(--rf-blue) !important;}
@@ -161,7 +161,7 @@ a{color:var(--rf-blue);}
 .stepper .st.cur .mk{background:var(--rf-red) !important;color:#fff !important;}
 .turn-banner{border-radius:10px;padding:12px 14px;margin:0 0 14px;font-size:15px;}
 .turn-you{background:#fdecea;border:1px solid #f5c6c0;color:#b23b2c;}
-.turn-other{background:#eef3fb;border:1px solid #d4e0f3;color:#0039A6;}
+.turn-other{background:#eef3fb;border:1px solid #d4e0f3;color:#1A56C4;}
 .hint-warn{background:#fff8e1;border:1px solid #ffe082;border-left:4px solid #C77700;border-radius:8px;padding:10px 14px;margin:10px 0;color:#7a5200;font-size:14px}
 .hint-warn b{color:#9a6000}
 .hint-ok{background:#e8f5e9;border:1px solid #a5d6a7;border-left:4px solid #2e7d32;border-radius:8px;padding:10px 14px;margin:10px 0;color:#1b5e20;font-size:14px}
