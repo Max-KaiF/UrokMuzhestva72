@@ -35,10 +35,10 @@ return [
 }
 if($u['role']==='admin') return [['Новости сайта','?p=news_admin']];
 if($u['role']==='operator') return [
-['Кабинет','?p=operator'],
+['Активные','?p=operator'],
+['Архив','?p=operator&tab=archive'],
 ['Модерация заявителей','?p=operator&tab=moderation'],
 ['Реестр спикеров','?p=operator&tab=speakers'],
-['Архив заявок','?p=operator&tab=archive'],
 ['Пользователи','?p=users'],
 ['Районы','?p=districts'],
 ['Календарь','?p=calendar'],
@@ -51,10 +51,10 @@ if($u['role']==='operator') return [
 ['Отчёт для департамента (CSV)','?p=export&type=report'],
 ];
 if($u['role']==='fund') return [
-['Кабинет','?p=fund'],
+['Активные','?p=fund'],
+['Архив','?p=fund&tab=archive'],
 ['Спикеры Фонда','?p=fund&tab=speakers'],
 ['Управление спикерами','?p=users&role=speaker'],
-['Архив заявок','?p=fund&tab=archive'],
 ['Календарь','?p=calendar'],
 ['Материалы','?p=materials'],
 ['Журнал действий','?p=audit&user_role=speaker'],
@@ -322,7 +322,6 @@ flash_set($msg); redirect('?p=users');
 }
 if($a==='create_admin_account'){
 require_role('operator'); $u=current_user();
-if(($u['op_group']??'')!==''){ flash_set('Нет доступа.'); redirect('?p=users'); }
 $login=trim($_POST['login']??''); $pass=$_POST['pass']??''; $dn=trim($_POST['display_name']??''); $email=trim($_POST['email']??'');
 if(strlen($login)<3||strlen($pass)<10){ flash_set('Логин от 3 символов, пароль от 10 символов.'); redirect('?p=users'); }
 if($dn===''){ flash_set('Укажите ФИО.'); redirect('?p=users'); }
@@ -1439,7 +1438,7 @@ if($u['role']==='fund'){ $where.=" AND role='speaker' AND fund_user_id=?"; $para
 elseif($u['role']==='school'){ $schRoot=school_root_row($u); $where.=" AND role='school' AND parent_school_id=?"; $params[]=$schRoot['id']; $scopeNote='Сотрудники, зарегистрированные как участники организации «'.esc($schRoot['org_name']).'».'; }
 else { $og=$u['op_group']??'';
 if($og===''){ $superAdmin=true; if($role_filter){ $where.=" AND role=?"; $params[]=$role_filter; } }
-else { $where.=" AND (role='fund' OR (role='school' AND (op_group=? OR (op_group IS NULL OR op_group='') AND level IN (".implode(',',array_fill(0,count(applicant_group_levels($og)),'?')).'))))'; $params[]=$og; $params=array_merge($params,applicant_group_levels($og)); $scopeNote='Ваши организации, а также фонды — для сброса пароля.'; }
+else { $where.=" AND (role='fund' OR role='admin' OR (role='school' AND (op_group=? OR (op_group IS NULL OR op_group='') AND level IN (".implode(',',array_fill(0,count(applicant_group_levels($og)),'?')).'))))'; $params[]=$og; $params=array_merge($params,applicant_group_levels($og)); $scopeNote='Ваши организации, а также фонды и администраторы сайта — для сброса пароля.'; }
 }
 $q=trim($_GET['q']??'');
 if($q!==''){ $where.=" AND (login LIKE ? OR display_name LIKE ? OR org_name LIKE ? OR email LIKE ?)"; $qq='%'.$q.'%'; $params=array_merge($params,[$qq,$qq,$qq,$qq]); }
@@ -1448,17 +1447,15 @@ $st->execute($params); $users=$st->fetchAll();
 if(!empty($_GET['sort'])) $users=sort_users_rows($users,$_GET['sort'],$_GET['dir']??'asc');
 $schoolIsRoot = $u['role']!=='school' || empty($u['parent_school_id']);
 if($superAdmin) $body.='<div class="card pad"><form method="get" style="display:flex;gap:10px;align-items:end;flex-wrap:wrap"><input type="hidden" name="p" value="users"><label class="lbl" style="margin:0">Фильтр по роли</label><select name="role" onchange="this.form.submit()"><option value="">Все</option><option value="school" '.($role_filter==='school'?'selected':'').'>Заявители</option><option value="speaker" '.($role_filter==='speaker'?'selected':'').'>Спикеры</option><option value="fund" '.($role_filter==='fund'?'selected':'').'>Фонд</option><option value="operator" '.($role_filter==='operator'?'selected':'').'>Оператор</option><option value="admin" '.($role_filter==='admin'?'selected':'').'>Администратор сайта</option></select><label class="lbl" style="margin:0">Поиск</label><input type="search" name="q" value="'.esc($q).'" placeholder="Логин, ФИО, организация, email"><button class="btn primary sm">Найти</button>'.($q!==''?' <a class="btn ghost sm" href="?p=users'.($role_filter?'&role='.esc($role_filter):'').'">Сбросить</a>':'').'</form></div>';
-if($superAdmin){
-$body.='<details class="card pad" style="margin-top:12px"><summary style="cursor:pointer;font-weight:600">+ Создать учётную запись администратора сайта (новости)</summary>';
-$body.='<p class="muted" style="margin-top:8px">Отдельная ограниченная учётная запись — доступ только к разделу «Новости сайта», без доступа к заявкам и данным пользователей.</p>';
-$body.='<form method="post" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-top:8px">'.csrf_field().'<input type="hidden" name="action" value="create_admin_account">';
+if(!$superAdmin){ if($scopeNote) $body.='<p class="muted">'.$scopeNote.'</p>'; $body.='<form method="get" class="card pad" style="margin-bottom:14px;display:flex;gap:10px;align-items:end;flex-wrap:wrap"><input type="hidden" name="p" value="users"><label class="lbl" style="margin:0">Поиск</label><input type="search" name="q" value="'.esc($q).'" placeholder="Логин, ФИО, организация, email"><button class="btn primary sm">Найти</button>'.($q!==''?' <a class="btn ghost sm" href="?p=users">Сбросить</a>':'').'</form>'; }
+$body.='<div class="card pad" style="margin-top:12px;border-left:4px solid var(--rf-blue,var(--navy))"><h4 style="margin:0 0 4px">+ Создать учётную запись администратора сайта (новости)</h4>';
+$body.='<p class="muted" style="margin:0 0 10px">Отдельная ограниченная учётная запись — доступ только к разделу «Новости сайта», без доступа к заявкам и данным пользователей.</p>';
+$body.='<form method="post" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end">'.csrf_field().'<input type="hidden" name="action" value="create_admin_account">';
 $body.='<div><label class="lbl">Логин</label><input name="login" required minlength="3"></div>';
 $body.='<div><label class="lbl">Пароль</label><input type="password" name="pass" required minlength="10"></div>';
 $body.='<div><label class="lbl">ФИО</label><input name="display_name" required></div>';
 $body.='<div><label class="lbl">Email</label><input type="email" name="email" required></div>';
-$body.='<button class="btn primary sm">Создать</button></form></details>';
-}
-else { if($scopeNote) $body.='<p class="muted">'.$scopeNote.'</p>'; $body.='<form method="get" class="card pad" style="margin-bottom:14px;display:flex;gap:10px;align-items:end;flex-wrap:wrap"><input type="hidden" name="p" value="users"><label class="lbl" style="margin:0">Поиск</label><input type="search" name="q" value="'.esc($q).'" placeholder="Логин, ФИО, организация, email"><button class="btn primary sm">Найти</button>'.($q!==''?' <a class="btn ghost sm" href="?p=users">Сбросить</a>':'').'</form>'; }
+$body.='<button class="btn primary sm">Создать</button></form></div>';
 $body.='<div class="table-scroll"><table class="card-view resizable"><thead><tr><th>Логин</th>'.sort_th('ФИО/Орг','name').sort_th('Роль','role').sort_th('Email','email').sort_th('ФИО контактного лица','contact_name').sort_th('Должность','position').sort_th('Телефон','phone').sort_th('Адрес местонахождения','address').sort_th('№ корпуса','building').sort_th('Статус','status').'<th>Действия</th></tr></thead><tbody>';
 foreach($users as $x){
 $status=$x['active']?'<span class="pill green">активен</span>':'<span class="pill gray">ожидает</span>';

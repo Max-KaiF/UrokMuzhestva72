@@ -658,6 +658,7 @@ if(!$target) return false;
 if($actor['role']==='operator'){
 $og=$actor['op_group']??'';
 if($og==='') return true;
+if($target['role']==='admin') return true;
 if($target['role']!=='school') return false;
 return school_dept_group($target)===$og;
 }
