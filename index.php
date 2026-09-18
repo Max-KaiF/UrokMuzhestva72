@@ -676,6 +676,7 @@ echo '<footer style="text-align:center;padding:20px;color:var(--muted);font-size
 echo '<script>(function(){var n=0;document.querySelectorAll("label.lbl").forEach(function(lb){if(lb.getAttribute("for")||lb.id)return;var el=lb.nextElementSibling;while(el&&!/^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName)&&!(el.tagName==="DIV"&&el.querySelector("input,select,textarea")))el=el.nextElementSibling;if(!el)return;if(/^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName)){if(!el.id)el.id="lblauto_"+(++n);lb.setAttribute("for",el.id);}else{if(!lb.id)lb.id="lblgrp_"+(++n);el.setAttribute("role","group");el.setAttribute("aria-labelledby",lb.id);}});})();</script>';
 echo '<script>(function(){function fmt(el){var d=el.value.replace(/\D+/g,"");if(d.length===11&&(d[0]==="7"||d[0]==="8"))d=d.slice(1);if(d.length===10)el.value="+7"+d;}document.querySelectorAll(\'input[name="phone"],input[name="contact_phone"]\').forEach(function(el){el.setAttribute("type","tel");el.setAttribute("placeholder","+7XXXXXXXXXX");el.setAttribute("pattern","\\\\+7[0-9]{10}");el.setAttribute("title","Формат: +7XXXXXXXXXX (10 цифр после +7)");el.setAttribute("maxlength","12");el.addEventListener("blur",function(){fmt(el);});});})();</script>';
 echo '<script>(function(){function initResizable(table){var ths=table.querySelectorAll("thead th");ths.forEach(function(th){var handle=document.createElement("span");handle.className="col-resize-handle";th.appendChild(handle);handle.addEventListener("mousedown",function(e){e.preventDefault();e.stopPropagation();if(table.style.tableLayout!=="fixed"){ths.forEach(function(t){t.style.width=t.getBoundingClientRect().width+"px";});table.style.tableLayout="fixed";}handle.classList.add("active");var startX=e.pageX;var startW=th.getBoundingClientRect().width;function onMove(ev){var w=Math.max(50,startW+(ev.pageX-startX));th.style.width=w+"px";}function onUp(){handle.classList.remove("active");document.removeEventListener("mousemove",onMove);document.removeEventListener("mouseup",onUp);}document.addEventListener("mousemove",onMove);document.addEventListener("mouseup",onUp);});});}document.querySelectorAll("table.resizable").forEach(initResizable);})();</script>';
+echo '<script>(function(){document.addEventListener("click",function(e){var gal=e.target.closest(".news-gallery");if(!gal)return;var prev=e.target.closest(".gallery-prev"),next=e.target.closest(".gallery-next"),dot=e.target.closest(".dot");if(!prev&&!next&&!dot)return;var imgs=gal.querySelectorAll(".news-gallery-img"),dots=gal.querySelectorAll(".dot"),n=imgs.length,cur=parseInt(gal.getAttribute("data-current")||"0",10);if(prev)cur=(cur-1+n)%n;else if(next)cur=(cur+1)%n;else if(dot)cur=parseInt(dot.getAttribute("data-index"),10);gal.setAttribute("data-current",cur);imgs.forEach(function(img,i){img.classList.toggle("active",i===cur);});dots.forEach(function(d,i){d.classList.toggle("active",i===cur);});});})();</script>';
 if(empty($_COOKIE['um72_cookie_consent'])){
 echo '<div id="um72-cookie" role="dialog" aria-live="polite" aria-label="Уведомление об использовании файлов cookie">'
 .'<div class="um72ck-inner">'
@@ -1040,7 +1041,18 @@ if(!$n || !$n['published']){ layout('Новость','<div class="card pad">Но
 $body='<div class="head"><h2>'.esc($n['title']).'</h2><a class="btn ghost" href="?p=news">← ко всем новостям</a></div>';
 $body.='<div class="card pad">';
 $imgs=list_news_images($newsId);
-foreach($imgs as $img) $body.='<img src="?p=news_image&id='.$img['id'].'" alt="" style="display:block;width:100%;max-height:70vh;object-fit:contain;background:var(--bg);border-radius:10px;margin-bottom:14px">';
+if(count($imgs)===1){
+$body.='<img src="?p=news_image&id='.$imgs[0]['id'].'" alt="" style="display:block;width:100%;max-height:70vh;object-fit:contain;background:var(--bg);border-radius:10px;margin-bottom:14px">';
+} elseif(count($imgs)>1){
+$body.='<div class="news-gallery" data-current="0">';
+$body.='<div class="news-gallery-track">';
+foreach($imgs as $i=>$img) $body.='<img class="news-gallery-img'.($i===0?' active':'').'" src="?p=news_image&id='.$img['id'].'" alt="">';
+$body.='</div>';
+$body.='<button type="button" class="gallery-arrow gallery-prev" aria-label="Предыдущее фото">‹</button>';
+$body.='<button type="button" class="gallery-arrow gallery-next" aria-label="Следующее фото">›</button>';
+$body.='<div class="gallery-dots">'; foreach($imgs as $i=>$img) $body.='<span class="dot'.($i===0?' active':'').'" data-index="'.$i.'"></span>'; $body.='</div>';
+$body.='</div>';
+}
 $body.='<p class="muted" style="margin:0 0 14px;font-size:13px">'.esc(substr((string)$n['created_at'],0,10)).($n['author']?' · '.esc($n['author']):'').'</p>';
 $body.='<div style="white-space:pre-wrap;line-height:1.7">'.nl2br(esc($n['body'])).'</div>';
 if(!empty($n['school_post_url'])) $body.='<p style="margin-top:14px"><a class="btn ghost sm" href="'.esc($n['school_post_url']).'" target="_blank" rel="noopener">🔗 Публикация школы</a></p>';
