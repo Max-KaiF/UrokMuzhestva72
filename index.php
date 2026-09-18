@@ -19,7 +19,77 @@ throw new ErrorException($errstr,0,$errno,$errfile,$errline);
 });
 init_schema();
 $p=$_GET['p']??''; $method=$_SERVER['REQUEST_METHOD'];
-function role_home($u){ return '?p='.$u['role']; }
+function role_home($u){ return $u['role']==='admin' ? '?p=news_admin' : '?p='.$u['role']; }
+// ========== БОКОВАЯ ПАНЕЛЬ БЫСТРОГО ДОСТУПА ==========
+function sidebar_items($u){
+if(!$u){
+return [
+['О нас','?p=about'],
+['Новости','?p=news'],
+['Вопросы и ответы','?p=faq'],
+['Материалы','?p=materials'],
+['Контакты','?p=contacts'],
+['Регистрация','?p=register'],
+['Вход','?p=login'],
+];
+}
+if($u['role']==='admin') return [['Новости сайта','?p=news_admin']];
+if($u['role']==='operator') return [
+['Кабинет','?p=operator'],
+['Модерация заявителей','?p=operator&tab=moderation'],
+['Реестр спикеров','?p=operator&tab=speakers'],
+['Архив заявок','?p=operator&tab=archive'],
+['Пользователи','?p=users'],
+['Районы','?p=districts'],
+['Календарь','?p=calendar'],
+['Материалы','?p=materials'],
+['Проверка готовности к занятиям','?p=lesson_readiness_admin'],
+['Новости сайта','?p=news_admin'],
+['Журнал действий','?p=audit'],
+['Экспорт заявок (CSV)','?p=export&type=requests'],
+['Экспорт спикеров (CSV)','?p=export&type=speakers'],
+['Отчёт для департамента (CSV)','?p=export&type=report'],
+];
+if($u['role']==='fund') return [
+['Кабинет','?p=fund'],
+['Спикеры Фонда','?p=fund&tab=speakers'],
+['Управление спикерами','?p=users&role=speaker'],
+['Архив заявок','?p=fund&tab=archive'],
+['Календарь','?p=calendar'],
+['Материалы','?p=materials'],
+['Журнал действий','?p=audit&user_role=speaker'],
+['Экспорт в CSV','?p=export'],
+];
+if($u['role']==='school') return [
+['Кабинет','?p=school'],
+['Подать заявку','?p=school&tab=new'],
+['Сотрудники','?p=users&role=school'],
+['Календарь','?p=calendar'],
+['Материалы','?p=materials'],
+['Экспорт в CSV','?p=export'],
+];
+if($u['role']==='speaker') return [
+['Кабинет','?p=speaker'],
+['Анкеты','?p=speaker_anketas'],
+['Моя статистика','?p=speaker_stats'],
+['Календарь','?p=calendar'],
+['Материалы','?p=materials'],
+];
+return [];
+}
+function render_sidebar($u){
+$items=sidebar_items($u);
+if(!$items) return '';
+$curP=$_GET['p']??''; $curTab=$_GET['tab']??'';
+$html='<nav class="sidebar-nav">';
+foreach($items as [$label,$href]){
+parse_str(parse_url($href,PHP_URL_QUERY)?:'',$hq);
+$active=(($hq['p']??'')===$curP) && (($hq['tab']??'')===$curTab);
+$html.='<a href="'.esc($href).'"'.($active?' class="active"':'').'>'.esc($label).'</a>';
+}
+$html.='</nav>';
+return $html;
+}
 // ========== ОБРАБОТЧИКИ ДЕЙСТВИЙ ==========
 if($method==='POST'){
 csrf_check(); $a=$_POST['action']??'';
@@ -250,6 +320,17 @@ require_login(); $u=current_user();
 [$ok,$msg]=delete_user($u,(int)($_POST['target_id']??0));
 flash_set($msg); redirect('?p=users');
 }
+if($a==='create_admin_account'){
+require_role('operator'); $u=current_user();
+if(($u['op_group']??'')!==''){ flash_set('Нет доступа.'); redirect('?p=users'); }
+$login=trim($_POST['login']??''); $pass=$_POST['pass']??''; $dn=trim($_POST['display_name']??''); $email=trim($_POST['email']??'');
+if(strlen($login)<3||strlen($pass)<10){ flash_set('Логин от 3 символов, пароль от 10 символов.'); redirect('?p=users'); }
+if($dn===''){ flash_set('Укажите ФИО.'); redirect('?p=users'); }
+if(!filter_var($email,FILTER_VALIDATE_EMAIL)){ flash_set('Укажите корректный email.'); redirect('?p=users'); }
+[$ok,$res]=create_user('admin',$login,$pass,['display_name'=>$dn,'email'=>$email,'active'=>1]);
+if(!$ok){ flash_set($res); redirect('?p=users'); }
+flash_set('Учётная запись администратора сайта создана.'); redirect('?p=users&role=admin');
+}
 if($a==='save_district_neighbors'){ require_role('operator'); update_district_neighbors(trim($_POST['name']??''), explode(',',$_POST['neighbors']??'')); flash_set('Соседние районы сохранены.'); redirect('?p=districts'); }
 if($a==='add_district_admin'){ require_role('operator'); $n=ensure_district(trim($_POST['name']??'')); flash_set($n?('Район добавлен: '.$n):'Укажите название района.'); redirect('?p=districts'); }
 require_login(); $u=current_user();
@@ -423,7 +504,7 @@ require_role('operator');
 flash_set($msg); redirect('?p=materials');
 }
 if($a==='add_news'){
-require_role('operator'); $u=current_user();
+require_role(['operator','admin']); $u=current_user();
 $title=trim($_POST['title']??''); $bodyTxt=trim($_POST['body']??'');
 if($title===''||$bodyTxt===''){ flash_set('Заполните заголовок и текст новости.'); redirect('?p=news_edit'); }
 $imgPath=null;
@@ -436,7 +517,7 @@ add_news($title,$bodyTxt,$imgPath,!empty($_POST['published']),$u['id']);
 flash_set('Новость добавлена.'); redirect('?p=news_admin');
 }
 if($a==='update_news'){
-require_role('operator'); $u=current_user();
+require_role(['operator','admin']); $u=current_user();
 $id=(int)($_POST['id']??0); $n=$id?get_news($id):null;
 if(!$n){ flash_set('Новость не найдена.'); redirect('?p=news_admin'); }
 $title=trim($_POST['title']??''); $bodyTxt=trim($_POST['body']??'');
@@ -452,7 +533,7 @@ update_news($id,$title,$bodyTxt,$imgPath,!empty($_POST['published']),$u['id']);
 flash_set('Новость обновлена.'); redirect('?p=news_admin');
 }
 if($a==='delete_news'){
-require_role('operator'); $u=current_user();
+require_role(['operator','admin']); $u=current_user();
 [$ok,$msg]=delete_news((int)($_POST['id']??0),$u['id']);
 flash_set($msg); redirect('?p=news_admin');
 }
@@ -506,8 +587,8 @@ $u=current_user();
 if(!$u && $p==='login') unset($_SESSION['pending_uid']);
 if(!$u && !empty($_SESSION['pending_uid']) && !in_array($p,['login','verify_otp'])) redirect('?p=verify_otp');
 if(!$u && $p==='') $p='home';
-if(!$u && !in_array($p,['login','register','reset_password','reset_request','privacy','guide','verify_otp','demo','home','news','news_image'])) $p='login';
-if($u && ($p===''||$p==='login'||$p==='register'||$p==='home')) $p=$u['role'];
+if(!$u && !in_array($p,['login','register','reset_password','reset_request','privacy','guide','verify_otp','demo','home','news','news_image','about','faq','contacts'])) $p='login';
+if($u && ($p===''||$p==='login'||$p==='register'||$p==='home')) $p=($u['role']==='admin')?'news_admin':$u['role'];
 // Спикер, зарегистрированный до появления этого поля, обязан ответить на вопрос о судимости
 // при первом же следующем входе — до этого никакие другие страницы кабинета не открываются.
 if($u && speaker_criminal_answer_needed($u) && $p!=='speaker_criminal_check') $p='speaker_criminal_check';
@@ -577,9 +658,13 @@ $admin=find_user_by_id((int)$_SESSION['impersonator_id']);
 echo '<div style="background:#b23b2c;color:#fff;text-align:center;padding:9px 14px;font-size:13.5px;position:sticky;top:0;z-index:1000">⚠ Вы вошли как <b>'.esc($u['display_name']?:$u['org_name']?:$u['login']).'</b> ('.esc($u['role']).') от имени <b>'.esc($admin['login']??'?').'</b>. <form method="post" style="display:inline;margin-left:8px">'.csrf_field().'<input type="hidden" name="action" value="impersonate_stop"><button type="submit" style="background:#fff;color:#b23b2c;border:none;border-radius:6px;padding:5px 12px;cursor:pointer;font-weight:600;font-size:13px">Вернуться к своей учётке</button></form></div>';
 }
 echo '<header class="top"><div class="topbar"><div class="mark"><img src="favicon.png" alt="" style="width:100%;height:100%;object-fit:contain"></div><div class="brand"><h1>Урок Мужества</h1><p class="brand-full">Проект разработан в рамках региональной программы «Боевой кадровый резерв Тюменской области»</p><p class="brand-short">В рамках региональной программы «БКР ТО»</p></div><div class="session">'.$sess.'</div></div>'.($fullLabel!==''?'<div class="rolebadge-full-mobile">'.esc($fullLabel).'</div>':'').'</header>';
+$sideNav=render_sidebar($u);
+echo '<div class="shell">';
+if($sideNav) echo '<aside class="sidebar">'.$sideNav.'</aside>';
 echo '<main class="wrap">'; if($f) echo '<div class="flash">'.esc($f).'</div>';
 if($missing) echo '<div class="hint-warn"><b>⚠ Заполните профиль:</b> не указано — '.esc(implode(', ',$missing)).'. <a class="btn primary sm" href="?p=profile" style="margin-left:8px">Перейти в профиль →</a></div>';
 echo $body.'</main>';
+echo '</div>';
 echo '<footer style="text-align:center;padding:20px;color:var(--muted);font-size:12px"><a href="?p=privacy">Политика обработки персональных данных (152-ФЗ)</a></footer>';
 echo '<script>(function(){var n=0;document.querySelectorAll("label.lbl").forEach(function(lb){if(lb.getAttribute("for")||lb.id)return;var el=lb.nextElementSibling;while(el&&!/^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName)&&!(el.tagName==="DIV"&&el.querySelector("input,select,textarea")))el=el.nextElementSibling;if(!el)return;if(/^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName)){if(!el.id)el.id="lblauto_"+(++n);lb.setAttribute("for",el.id);}else{if(!lb.id)lb.id="lblgrp_"+(++n);el.setAttribute("role","group");el.setAttribute("aria-labelledby",lb.id);}});})();</script>';
 echo '<script>(function(){function fmt(el){var d=el.value.replace(/\D+/g,"");if(d.length===11&&(d[0]==="7"||d[0]==="8"))d=d.slice(1);if(d.length===10)el.value="+7"+d;}document.querySelectorAll(\'input[name="phone"],input[name="contact_phone"]\').forEach(function(el){el.setAttribute("type","tel");el.setAttribute("placeholder","+7XXXXXXXXXX");el.setAttribute("pattern","\\\\+7[0-9]{10}");el.setAttribute("title","Формат: +7XXXXXXXXXX (10 цифр после +7)");el.setAttribute("maxlength","12");el.addEventListener("blur",function(){fmt(el);});});})();</script>';
@@ -927,8 +1012,8 @@ layout('Политика обработки персональных данны�
 if($p==='home'){
 $stats=public_site_stats();
 $newsItems=list_news(true,4);
-$body='<div class="pub-hero"><h1>Герои рассказывают — школьники слушают</h1><p>Ветераны специальной военной операции приходят в школы, колледжи и вузы Тюменской области, чтобы говорить с подростками о мужестве, долге и взаимовыручке. Платформа соединяет школы, фонды-координаторы и спикеров-ветеранов в одном личном кабинете.</p>'
-.'<div class="pub-stats"><div><b>'.$stats['lessons'].'</b><span>уроков проведено</span></div><div><b>'.$stats['speakers'].'</b><span>спикеров-ветеранов</span></div><div><b>'.$stats['schools'].'</b><span>школ и колледжей</span></div></div></div>';
+$body='<div class="pub-hero"><h1>Герои рассказывают — школьники слушают</h1><p>Ветераны специальной военной операции приходят в школы, колледжи и вузы Тюменской области, чтобы говорить с подростками о мужестве, долге и взаимовыручке. Платформа соединяет школы, фонды-координаторы и спикеров-ветеранов на одной платформе.</p>'
+.'<div class="pub-stats"><div><b>'.$stats['lessons'].'</b> <span>уроков проведено</span></div><div><b>'.$stats['speakers'].'</b> <span>спикеров-ветеранов</span></div><div><b>'.$stats['schools'].'</b> <span>школ и колледжей</span></div></div></div>';
 $body.='<div class="head"><h2>Новости</h2>'.($newsItems?'<a href="?p=news">Все новости →</a>':'').'</div>';
 if(!$newsItems) $body.='<div class="card pad muted">Новостей пока нет.</div>';
 else { $body.='<div class="news-grid">'; foreach($newsItems as $n){
@@ -960,10 +1045,50 @@ header('Cache-Control: public, max-age=86400');
 header('Content-Length: '.filesize($path));
 readfile($path); exit;
 }
+if($p==='about'){
+$body='<div class="head"><h2>О проекте</h2><a class="btn ghost" href="'.esc($u?role_home($u):'?p=home').'">← назад</a></div>';
+$body.='<div class="card pad" style="line-height:1.7">';
+$body.='<p>«Урок Мужества» — платформа, которая соединяет школы и колледжи Тюменской области, фонды-координаторы и спикеров-ветеранов специальной военной операции для проведения уроков мужества.</p>';
+$body.='<p>Проект реализуется в рамках региональной программы «Боевой кадровый резерв Тюменской области» при участии филиала Государственного фонда поддержки участников СВО «Защитники Отечества» в Тюменской области, ТРОО «Держава», Департамента образования Администрации города Тюмени и Департамента образования и науки Тюменской области.</p>';
+$body.='<p>Как это работает: школа или колледж подаёт заявку на сайте — фонд-координатор подбирает и назначает спикера-ветерана с учётом района и возрастной группы аудитории — после урока школа и спикер оставляют отзывы о занятии.</p>';
+$body.='<p>Цель проекта — живое общение подростков с ветеранами СВО: рассказы о мужестве, воинском долге и взаимовыручке, которые формируют уважение к защитникам Отечества.</p>';
+$body.='</div>';
+$body.='<div class="pub-cta" style="margin-top:20px"><h3>Хотите стать частью программы?</h3><p>Подайте заявку на урок от имени школы или колледжа — либо зарегистрируйтесь как спикер-ветеран.</p><a class="btn primary btn-lg" href="?p=register">Зарегистрироваться</a></div>';
+layout('О проекте',$body); exit;
+}
+if($p==='faq'){
+$faq=[
+['Кто может подать заявку на Урок Мужества?','Школы, колледжи и вузы Тюменской области — заявку подаёт представитель организации после регистрации на сайте и подтверждения профильным департаментом образования.'],
+['Как стать спикером-ветераном?','Зарегистрируйтесь на сайте с ролью «спикер», выберите фонд-координатор — он проверит и подтвердит вашу регистрацию, после чего вы сможете получать приглашения на уроки.'],
+['Сколько стоит участие в программе?','Участие бесплатно для школ, колледжей и спикеров-ветеранов.'],
+['Как быстро назначат спикера на заявку?','Заявка сразу становится видна всем фондам региона — как только один из них подберёт и назначит спикера, статус заявки обновится, а заявитель получит уведомление.'],
+['Что делать, если по заявке долго нет ответа?','Обратитесь в фонд, который работает с вашим районом, либо напишите нам на '.esc(cfg()['support_email']).'.'],
+['Как обрабатываются персональные данные?','В соответствии с 152-ФЗ — подробности в <a href="?p=privacy">Политике обработки персональных данных</a>.'],
+['Куда обращаться по техническим вопросам?','Напишите на '.esc(cfg()['support_email']).' — опишите проблему и укажите номер заявки, если он есть.'],
+];
+$body='<div class="head"><h2>Вопросы и ответы</h2><a class="btn ghost" href="'.esc($u?role_home($u):'?p=home').'">← назад</a></div>';
+foreach($faq as [$q,$a]) $body.='<details class="card pad" style="margin-bottom:10px"><summary style="cursor:pointer;font-weight:600">'.esc($q).'</summary><p style="margin:10px 0 0;color:var(--muted);line-height:1.6">'.$a.'</p></details>';
+layout('Вопросы и ответы',$body); exit;
+}
+if($p==='contacts'){
+$body='<div class="head"><h2>Контакты</h2><a class="btn ghost" href="'.esc($u?role_home($u):'?p=home').'">← назад</a></div>';
+$body.='<div class="card pad" style="line-height:1.7">';
+$body.='<p>По общим и техническим вопросам работы сайта — <a href="mailto:'.esc(cfg()['support_email']).'">'.esc(cfg()['support_email']).'</a>.</p>';
+$body.='<p>По вопросам конкретной заявки — обратитесь к фонду или департаменту, который её обрабатывает (указан в карточке заявки).</p>';
+$body.='<table><thead><tr><th>Оператор</th><th>Контакт</th></tr></thead><tbody>';
+$body.='<tr><td>Филиал Государственного фонда поддержки участников СВО «Защитники Отечества» в Тюменской области</td><td>+7 (3452) 69-69-02, rf72@fzo.gov.ru</td></tr>';
+$body.='<tr><td>ТРОО участников СВО «Держава»</td><td>powerltd@mail.ru</td></tr>';
+$body.='<tr><td>ДОА г. Тюмени (Департамент образования Администрации города Тюмени)</td><td>+7 (3452) 56-13-40, education@tyumen-city.ru</td></tr>';
+$body.='<tr><td>ДОиН ТО (Департамент образования и науки Тюменской области)</td><td>+7 (3452) 56-93-00, dep_obraz@72to.ru</td></tr>';
+$body.='</tbody></table>';
+$body.='<p class="muted" style="margin-top:14px">Полные реквизиты операторов — в <a href="?p=privacy">Политике обработки персональных данных</a>.</p>';
+$body.='</div>';
+layout('Контакты',$body); exit;
+}
 if($p==='news_admin'){
-require_role('operator');
+require_role(['operator','admin']);
 $items=list_news(false);
-$body='<div class="head"><h2>Новости сайта</h2><div style="display:flex;gap:8px"><a class="btn ghost" href="'.esc(role_home($u)).'">← в кабинет</a><a class="btn primary" href="?p=news_edit">+ Добавить новость</a></div></div>';
+$body='<div class="head"><h2>Новости сайта</h2><div style="display:flex;gap:8px">'.($u['role']==='operator'?'<a class="btn ghost" href="'.esc(role_home($u)).'">← в кабинет</a>':'').'<a class="btn primary" href="?p=news_edit">+ Добавить новость</a></div></div>';
 if(!$items){
 $body.='<div class="empty-state"><div class="empty-icon">📰</div><h3>Новостей пока нет</h3><p class="muted">Добавьте первую новость кнопкой выше — она появится на стартовой странице.</p></div>';
 } else {
@@ -976,7 +1101,7 @@ $body.='</tbody></table>';
 layout('Новости сайта',$body); exit;
 }
 if($p==='news_edit'){
-require_role('operator');
+require_role(['operator','admin']);
 $id=(int)($_GET['id']??0); $n=$id?get_news($id):null;
 if($id && !$n){ layout('Новость','<div class="card pad">Новость не найдена. <a href="?p=news_admin">Назад</a></div>'); exit; }
 $body='<div class="head"><h2>'.($n?'Редактирование новости':'Добавить новость').'</h2><a class="btn ghost" href="?p=news_admin">← к новостям</a></div>';
@@ -1322,7 +1447,17 @@ $st=db()->prepare("SELECT * FROM users $where ORDER BY role, display_name");
 $st->execute($params); $users=$st->fetchAll();
 if(!empty($_GET['sort'])) $users=sort_users_rows($users,$_GET['sort'],$_GET['dir']??'asc');
 $schoolIsRoot = $u['role']!=='school' || empty($u['parent_school_id']);
-if($superAdmin) $body.='<div class="card pad"><form method="get" style="display:flex;gap:10px;align-items:end;flex-wrap:wrap"><input type="hidden" name="p" value="users"><label class="lbl" style="margin:0">Фильтр по роли</label><select name="role" onchange="this.form.submit()"><option value="">Все</option><option value="school" '.($role_filter==='school'?'selected':'').'>Заявители</option><option value="speaker" '.($role_filter==='speaker'?'selected':'').'>Спикеры</option><option value="fund" '.($role_filter==='fund'?'selected':'').'>Фонд</option><option value="operator" '.($role_filter==='operator'?'selected':'').'>Оператор</option></select><label class="lbl" style="margin:0">Поиск</label><input type="search" name="q" value="'.esc($q).'" placeholder="Логин, ФИО, организация, email"><button class="btn primary sm">Найти</button>'.($q!==''?' <a class="btn ghost sm" href="?p=users'.($role_filter?'&role='.esc($role_filter):'').'">Сбросить</a>':'').'</form></div>';
+if($superAdmin) $body.='<div class="card pad"><form method="get" style="display:flex;gap:10px;align-items:end;flex-wrap:wrap"><input type="hidden" name="p" value="users"><label class="lbl" style="margin:0">Фильтр по роли</label><select name="role" onchange="this.form.submit()"><option value="">Все</option><option value="school" '.($role_filter==='school'?'selected':'').'>Заявители</option><option value="speaker" '.($role_filter==='speaker'?'selected':'').'>Спикеры</option><option value="fund" '.($role_filter==='fund'?'selected':'').'>Фонд</option><option value="operator" '.($role_filter==='operator'?'selected':'').'>Оператор</option><option value="admin" '.($role_filter==='admin'?'selected':'').'>Администратор сайта</option></select><label class="lbl" style="margin:0">Поиск</label><input type="search" name="q" value="'.esc($q).'" placeholder="Логин, ФИО, организация, email"><button class="btn primary sm">Найти</button>'.($q!==''?' <a class="btn ghost sm" href="?p=users'.($role_filter?'&role='.esc($role_filter):'').'">Сбросить</a>':'').'</form></div>';
+if($superAdmin){
+$body.='<details class="card pad" style="margin-top:12px"><summary style="cursor:pointer;font-weight:600">+ Создать учётную запись администратора сайта (новости)</summary>';
+$body.='<p class="muted" style="margin-top:8px">Отдельная ограниченная учётная запись — доступ только к разделу «Новости сайта», без доступа к заявкам и данным пользователей.</p>';
+$body.='<form method="post" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-top:8px">'.csrf_field().'<input type="hidden" name="action" value="create_admin_account">';
+$body.='<div><label class="lbl">Логин</label><input name="login" required minlength="3"></div>';
+$body.='<div><label class="lbl">Пароль</label><input type="password" name="pass" required minlength="10"></div>';
+$body.='<div><label class="lbl">ФИО</label><input name="display_name" required></div>';
+$body.='<div><label class="lbl">Email</label><input type="email" name="email" required></div>';
+$body.='<button class="btn primary sm">Создать</button></form></details>';
+}
 else { if($scopeNote) $body.='<p class="muted">'.$scopeNote.'</p>'; $body.='<form method="get" class="card pad" style="margin-bottom:14px;display:flex;gap:10px;align-items:end;flex-wrap:wrap"><input type="hidden" name="p" value="users"><label class="lbl" style="margin:0">Поиск</label><input type="search" name="q" value="'.esc($q).'" placeholder="Логин, ФИО, организация, email"><button class="btn primary sm">Найти</button>'.($q!==''?' <a class="btn ghost sm" href="?p=users">Сбросить</a>':'').'</form>'; }
 $body.='<div class="table-scroll"><table class="card-view resizable"><thead><tr><th>Логин</th>'.sort_th('ФИО/Орг','name').sort_th('Роль','role').sort_th('Email','email').sort_th('ФИО контактного лица','contact_name').sort_th('Должность','position').sort_th('Телефон','phone').sort_th('Адрес местонахождения','address').sort_th('№ корпуса','building').sort_th('Статус','status').'<th>Действия</th></tr></thead><tbody>';
 foreach($users as $x){

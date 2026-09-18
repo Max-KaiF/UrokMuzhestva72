@@ -2272,7 +2272,7 @@ function add_news($title,$body,$imagePath,$published,$actorId){
 db()->prepare("INSERT INTO news(title,body,image_path,published,created_by,created_at) VALUES(?,?,?,?,?,?)")
 ->execute([$title,$body,$imagePath,$published?1:0,$actorId,now()]);
 $id=db()->lastInsertId();
-log_action($actorId,'operator','news_add','news',$id,"Добавлена новость: $title");
+log_action($actorId,current_user()['role']??'operator','news_add','news',$id,"Добавлена новость: $title");
 return [true,$id];
 }
 function update_news($id,$title,$body,$imagePath,$published,$actorId){
@@ -2280,14 +2280,14 @@ $fields=['title'=>$title,'body'=>$body,'published'=>$published?1:0];
 if($imagePath!==null) $fields['image_path']=$imagePath;
 $set=implode(',',array_map(fn($k)=>"$k=?",array_keys($fields)));
 db()->prepare("UPDATE news SET $set WHERE id=?")->execute([...array_values($fields),$id]);
-log_action($actorId,'operator','news_update','news',$id,"Изменена новость: $title");
+log_action($actorId,current_user()['role']??'operator','news_update','news',$id,"Изменена новость: $title");
 return [true,'Новость обновлена.'];
 }
 function delete_news($id,$actorId){
 $n=get_news($id); if(!$n) return [false,'Новость не найдена.'];
 if(!empty($n['image_path'])){ $path=__DIR__.'/uploads/news/'.$n['image_path']; if(is_file($path)) @unlink($path); }
 db()->prepare("DELETE FROM news WHERE id=?")->execute([$id]);
-log_action($actorId,'operator','news_delete','news',$id,"Удалена новость: ".$n['title']);
+log_action($actorId,current_user()['role']??'operator','news_delete','news',$id,"Удалена новость: ".$n['title']);
 return [true,'Новость удалена.'];
 }
 // Сводка для публичной стартовой страницы — уроки, которые реально состоялись, активные
