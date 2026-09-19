@@ -1028,8 +1028,9 @@ if(!$newsItems) $body.='<div class="card pad muted">Новостей пока н
 else { $body.='<div class="news-grid">'; foreach($newsItems as $n){
 $excerpt=mb_substr(trim(preg_replace('/\s+/u',' ',(string)$n['body'])),0,120);
 $cov=$covers[$n['id']]??null;
-$body.='<a href="?p=news&id='.$n['id'].'" class="news-card">'.($cov?'<img src="?p=news_image&id='.$cov['id'].'" alt="">':'<div class="news-card-ph"></div>').'<div class="news-card-body"><h4>'.esc($n['title']).'</h4><p>'.esc($excerpt).(mb_strlen((string)$n['body'])>120?'…':'').'</p><time>'.esc(substr((string)$n['created_at'],0,10)).'</time></div></a>';
+$body.='<a href="?p=news&id='.$n['id'].'" class="news-card">'.($cov?'<img src="?p=news_image&id='.$cov['id'].'" alt="">':'<div class="news-card-ph"></div>').'<div class="news-card-body"><h4>'.esc($n['title']).'</h4><p>'.esc($excerpt).(mb_strlen((string)$n['body'])>120?'…':'').'</p></div></a>';
 } $body.='</div>'; }
+$body.='<div class="card pad" style="margin-bottom:24px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap"><span>Больше новостей о патриотическом воспитании — на сайте Роспатриотцентра.</span><a class="btn ghost sm" href="https://rospatriotcentr.ru/news/" target="_blank" rel="noopener">На сайт Роспатриотцентра →</a></div>';
 $body.='<div class="pub-cta"><h3>Хотите стать частью программы?</h3><p>Подайте заявку на урок от имени школы или колледжа — либо зарегистрируйтесь как спикер-ветеран и делитесь своим опытом с подростками.</p><a class="btn primary btn-lg" href="?p=register">Зарегистрироваться</a></div>';
 layout('Урок Мужества 72',$body); exit;
 }
