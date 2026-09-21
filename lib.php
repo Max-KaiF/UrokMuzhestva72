@@ -2349,14 +2349,6 @@ db()->prepare("DELETE FROM news WHERE id=?")->execute([$id]);
 log_action($actorId,current_user()['role']??'operator','news_delete','news',$id,"Удалена новость: ".$n['title']);
 return [true,'Новость удалена.'];
 }
-// Сводка для публичной стартовой страницы — уроки, которые реально состоялись, активные
-// спикеры и головные организации-заявители (без сотрудников, чтобы не считать дважды).
-function public_site_stats(){
-$lessons=(int)db()->query("SELECT COUNT(*) c FROM requests WHERE status IN ('done','closed')")->fetch()['c'];
-$speakers=(int)db()->query("SELECT COUNT(*) c FROM users WHERE role='speaker' AND active=1")->fetch()['c'];
-$schools=(int)db()->query("SELECT COUNT(*) c FROM users WHERE role='school' AND active=1 AND (parent_school_id IS NULL OR parent_school_id=0)")->fetch()['c'];
-return ['lessons'=>$lessons,'speakers'=>$speakers,'schools'=>$schools];
-}
 function delete_material($id){
 $m=get_material($id); if(!$m) return [false,'Материал не найден.'];
 if(!empty($m['file_path'])){ $path=__DIR__.'/uploads/materials/'.$m['file_path']; if(is_file($path)) @unlink($path); }

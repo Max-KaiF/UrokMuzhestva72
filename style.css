@@ -278,3 +278,10 @@ table.card-view td:before{content:attr(data-label);display:block;font-size:11px;
 .dot{width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,.55);cursor:pointer;border:1px solid rgba(0,0,0,.15)}
 .dot.active{background:#fff}
 @media(hover:none){.gallery-arrow{opacity:1}}
+.pub-quote{background:var(--tint);border-left:4px solid var(--rf-blue,var(--navy));border-radius:12px;padding:22px 26px;margin-bottom:24px;position:relative;overflow:hidden}
+.pub-quote:before{content:'\201C';font-family:Georgia,'Times New Roman',serif;font-size:72px;line-height:1;color:var(--rf-blue,var(--navy));opacity:.15;position:absolute;top:-6px;left:14px}
+.pub-quote blockquote{margin:0 0 10px;padding-left:36px;font-size:17px;line-height:1.6;color:var(--ink);font-style:italic}
+.pub-quote footer{padding-left:36px;font-size:13.5px;color:var(--muted)}
+.pub-quote footer a{color:var(--rf-blue,var(--navy));font-weight:600;text-decoration:none}
+.pub-quote footer a:hover{text-decoration:underline}
+@media(max-width:600px){.pub-quote{padding:18px 18px 18px 22px}.pub-quote blockquote,.pub-quote footer{padding-left:0}}

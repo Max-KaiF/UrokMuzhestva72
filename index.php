@@ -90,6 +90,9 @@ $html.='<a href="'.esc($href).'"'.($active?' class="active"':'').'>'.esc($label)
 $html.='</nav>';
 return $html;
 }
+function rospatriot_banner(){
+return '<div class="card pad" style="margin-bottom:24px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap"><span>Больше новостей о патриотическом воспитании — на сайте Роспатриотцентра.</span><a class="btn ghost sm" href="https://rospatriotcentr.ru/news/" target="_blank" rel="noopener">На сайт Роспатриотцентра →</a></div>';
+}
 // ========== ОБРАБОТЧИКИ ДЕЙСТВИЙ ==========
 if($method==='POST'){
 csrf_check(); $a=$_POST['action']??'';
@@ -1018,11 +1021,19 @@ layout('Политика обработки персональных данны�
 }
 // ========== СТАРТОВАЯ СТРАНИЦА (для незалогиненных) ==========
 if($p==='home'){
-$stats=public_site_stats();
 $newsItems=list_news(true,4);
 $covers=news_cover_images(array_column($newsItems,'id'));
-$body='<div class="pub-hero"><h1>Герои рассказывают — школьники слушают</h1><p>Ветераны специальной военной операции приходят в школы, колледжи и вузы Тюменской области, чтобы говорить с подростками о мужестве, долге и взаимовыручке. Платформа соединяет школы, фонды-координаторы и спикеров-ветеранов на одной платформе.</p>'
-.'<div class="pub-stats"><div><b>'.$stats['lessons'].'</b> <span>уроков проведено</span></div><div><b>'.$stats['speakers'].'</b> <span>спикеров-ветеранов</span></div><div><b>'.$stats['schools'].'</b> <span>школ и колледжей</span></div></div></div>';
+$body='<div class="pub-hero"><h1>Герои рассказывают — школьники слушают</h1><p>Ветераны специальной военной операции приходят в школы, колледжи и вузы Тюменской области, чтобы говорить с подростками о мужестве, долге и взаимовыручке. Платформа соединяет школы, фонды-координаторы и спикеров-ветеранов на одной платформе.</p></div>';
+$quoteItem=$newsItems[0]??null;
+if($quoteItem){
+$qtext=trim(preg_replace('/\s+/u',' ',(string)$quoteItem['body']));
+if(mb_strlen($qtext)>220){ $cut=mb_substr($qtext,0,220); $sp=mb_strrpos($cut,' '); $qtext=($sp!==false?mb_substr($cut,0,$sp):$cut).'…'; }
+$body.='<div class="pub-quote"><blockquote>'.esc($qtext).'</blockquote><footer>из новости «<a href="?p=news&id='.$quoteItem['id'].'">'.esc($quoteItem['title']).'</a>»</footer></div>';
+}
+$kpiRows=kpis(null);
+$body.='<div class="head"><h2>Статистика проекта</h2></div><div class="kpis">';
+foreach($kpiRows as $row) $body.='<div class="kpi"><div class="n">'.$row[1].'</div><div class="l">'.esc($row[0]).'</div></div>';
+$body.='</div>';
 $body.='<div class="head"><h2>Новости</h2>'.($newsItems?'<a href="?p=news">Все новости →</a>':'').'</div>';
 if(!$newsItems) $body.='<div class="card pad muted">Новостей пока нет.</div>';
 else { $body.='<div class="news-grid">'; foreach($newsItems as $n){
@@ -1030,7 +1041,7 @@ $excerpt=mb_substr(trim(preg_replace('/\s+/u',' ',(string)$n['body'])),0,120);
 $cov=$covers[$n['id']]??null;
 $body.='<a href="?p=news&id='.$n['id'].'" class="news-card">'.($cov?'<img src="?p=news_image&id='.$cov['id'].'" alt="">':'<div class="news-card-ph"></div>').'<div class="news-card-body"><h4>'.esc($n['title']).'</h4><p>'.esc($excerpt).(mb_strlen((string)$n['body'])>120?'…':'').'</p></div></a>';
 } $body.='</div>'; }
-$body.='<div class="card pad" style="margin-bottom:24px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap"><span>Больше новостей о патриотическом воспитании — на сайте Роспатриотцентра.</span><a class="btn ghost sm" href="https://rospatriotcentr.ru/news/" target="_blank" rel="noopener">На сайт Роспатриотцентра →</a></div>';
+$body.=rospatriot_banner();
 $body.='<div class="pub-cta"><h3>Хотите стать частью программы?</h3><p>Подайте заявку на урок от имени школы или колледжа — либо зарегистрируйтесь как спикер-ветеран и делитесь своим опытом с подростками.</p><a class="btn primary btn-lg" href="?p=register">Зарегистрироваться</a></div>';
 layout('Урок Мужества 72',$body); exit;
 }
@@ -1054,7 +1065,7 @@ $body.='<button type="button" class="gallery-arrow gallery-next" aria-label="С�
 $body.='<div class="gallery-dots">'; foreach($imgs as $i=>$img) $body.='<span class="dot'.($i===0?' active':'').'" data-index="'.$i.'"></span>'; $body.='</div>';
 $body.='</div>';
 }
-$body.='<p class="muted" style="margin:0 0 14px;font-size:13px">'.esc(substr((string)$n['created_at'],0,10)).($n['author']?' · '.esc($n['author']):'').'</p>';
+if($n['author']) $body.='<p class="muted" style="margin:0 0 14px;font-size:13px">'.esc($n['author']).'</p>';
 $body.='<div style="white-space:pre-wrap;line-height:1.7">'.nl2br(esc($n['body'])).'</div>';
 if(!empty($n['school_post_url'])) $body.='<p style="margin-top:14px"><a class="btn ghost sm" href="'.esc($n['school_post_url']).'" target="_blank" rel="noopener">🔗 Публикация школы</a></p>';
 $body.='</div>';
@@ -1063,9 +1074,10 @@ $others=array_slice($others,0,5);
 if($others){
 $oCovers=news_cover_images(array_column($others,'id'));
 $body.='<div class="head" style="margin-top:28px"><h2>Другие новости</h2></div><div class="news-grid">';
-foreach($others as $o){ $oc=$oCovers[$o['id']]??null; $body.='<a href="?p=news&id='.$o['id'].'" class="news-card">'.($oc?'<img src="?p=news_image&id='.$oc['id'].'" alt="">':'<div class="news-card-ph"></div>').'<div class="news-card-body"><h4>'.esc($o['title']).'</h4><time>'.esc(substr((string)$o['created_at'],0,10)).'</time></div></a>'; }
+foreach($others as $o){ $oc=$oCovers[$o['id']]??null; $body.='<a href="?p=news&id='.$o['id'].'" class="news-card">'.($oc?'<img src="?p=news_image&id='.$oc['id'].'" alt="">':'<div class="news-card-ph"></div>').'<div class="news-card-body"><h4>'.esc($o['title']).'</h4></div></a>'; }
 $body.='</div>';
 }
+$body.=rospatriot_banner();
 layout($n['title'],$body); exit;
 }
 $items=list_news(true);
@@ -1075,8 +1087,9 @@ if(!$items) $body.='<div class="card pad muted">Новостей пока нет
 else { $body.='<div class="news-grid">'; foreach($items as $n){
 $excerpt=mb_substr(trim(preg_replace('/\s+/u',' ',(string)$n['body'])),0,120);
 $cov=$covers[$n['id']]??null;
-$body.='<a href="?p=news&id='.$n['id'].'" class="news-card">'.($cov?'<img src="?p=news_image&id='.$cov['id'].'" alt="">':'<div class="news-card-ph"></div>').'<div class="news-card-body"><h4>'.esc($n['title']).'</h4><p>'.esc($excerpt).(mb_strlen((string)$n['body'])>120?'…':'').'</p><time>'.esc(substr((string)$n['created_at'],0,10)).'</time></div></a>';
+$body.='<a href="?p=news&id='.$n['id'].'" class="news-card">'.($cov?'<img src="?p=news_image&id='.$cov['id'].'" alt="">':'<div class="news-card-ph"></div>').'<div class="news-card-body"><h4>'.esc($n['title']).'</h4><p>'.esc($excerpt).(mb_strlen((string)$n['body'])>120?'…':'').'</p></div></a>';
 } $body.='</div>'; }
+$body.=rospatriot_banner();
 layout('Новости',$body); exit;
 }
 if($p==='news_image'){
