@@ -6,14 +6,15 @@ button,input,select,textarea{font-family:inherit}
 .wrap{margin:0 auto;padding:24px 38px calc(28px + env(safe-area-inset-bottom,0));flex:1;min-width:0}
 .sidebar{flex:0 0 216px;padding:20px 10px;position:sticky;top:0;align-self:flex-start;max-height:100vh;overflow-y:auto}
 .sidebar-nav{display:flex;flex-direction:column;gap:2px}
-.sidebar-nav a{display:block;padding:8px 12px;border-radius:8px;color:var(--ink);text-decoration:none;font-size:13.5px;line-height:1.35}
-.sidebar-nav a:hover{background:var(--tint)}
+.sidebar-nav a{display:block;padding:8px 12px;border-radius:8px;color:var(--ink);text-decoration:none;font-size:13.5px;line-height:1.35;border:1px solid transparent;transition:font-size .12s,border-color .12s,background .12s}
+.sidebar-nav a:hover{background:var(--tint);font-size:14.5px;border-color:#8EC6F5}
 .sidebar-nav a.active{background:var(--rf-blue,var(--navy));color:#fff;font-weight:600}
 @media(max-width:960px){
 .shell{flex-direction:column}
 .sidebar{flex:none;position:static;width:100%;max-height:none;overflow:visible;padding:10px 12px 0}
 .sidebar-nav{flex-direction:row;flex-wrap:nowrap;overflow-x:auto;gap:8px;padding-bottom:4px;-webkit-overflow-scrolling:touch}
 .sidebar-nav a{flex:none;white-space:nowrap;border:1px solid var(--line);padding:7px 13px;border-radius:999px}
+.sidebar-nav a:hover{border-color:#8EC6F5}
 }
 .top{background:var(--navy);color:#fff;border-bottom:3px solid var(--amber);padding-top:env(safe-area-inset-top,0)}
 .topbar{display:flex;align-items:center;gap:13px;margin:0 auto;padding:13px calc(38px + env(safe-area-inset-right,0)) 13px calc(38px + env(safe-area-inset-left,0))}

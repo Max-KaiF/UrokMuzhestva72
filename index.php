@@ -34,22 +34,24 @@ return [
 ];
 }
 if($u['role']==='admin') return [['Новости сайта','?p=news_admin']];
-if($u['role']==='operator') return [
+if($u['role']==='operator'){
+$pendN=count(pending_applicants($u));
+return [
 ['Активные','?p=operator'],
 ['Архив','?p=operator&tab=archive'],
-['Модерация заявителей','?p=operator&tab=moderation'],
+['Модерация заявителей'.($pendN?' ('.$pendN.')':''),'?p=operator&tab=moderation'],
 ['Реестр спикеров','?p=operator&tab=speakers'],
 ['Пользователи','?p=users'],
 ['Районы','?p=districts'],
 ['Календарь','?p=calendar'],
 ['Материалы','?p=materials'],
 ['Проверка готовности к занятиям','?p=lesson_readiness_admin'],
-['Новости сайта','?p=news_admin'],
 ['Журнал действий','?p=audit'],
 ['Экспорт заявок (CSV)','?p=export&type=requests'],
 ['Экспорт спикеров (CSV)','?p=export&type=speakers'],
 ['Отчёт для департамента (CSV)','?p=export&type=report'],
 ];
+}
 if($u['role']==='fund') return [
 ['Активные','?p=fund'],
 ['Архив','?p=fund&tab=archive'],
@@ -506,7 +508,7 @@ require_role('operator');
 flash_set($msg); redirect('?p=materials');
 }
 if($a==='add_news'){
-require_role(['operator','admin']); $u=current_user();
+require_role('admin'); $u=current_user();
 $title=trim($_POST['title']??''); $bodyTxt=trim($_POST['body']??'');
 if($title===''||$bodyTxt===''){ flash_set('Заполните заголовок и текст новости.'); redirect('?p=news_edit'); }
 $schoolPostUrl=trim($_POST['school_post_url']??'');
@@ -523,7 +525,7 @@ foreach($stored as $path) add_news_image($newId,$path);
 flash_set('Новость добавлена.'); redirect('?p=news_admin');
 }
 if($a==='update_news'){
-require_role(['operator','admin']); $u=current_user();
+require_role('admin'); $u=current_user();
 $id=(int)($_POST['id']??0); $n=$id?get_news($id):null;
 if(!$n){ flash_set('Новость не найдена.'); redirect('?p=news_admin'); }
 $title=trim($_POST['title']??''); $bodyTxt=trim($_POST['body']??'');
@@ -543,7 +545,7 @@ update_news($id,$title,$bodyTxt,$schoolPostUrl,!empty($_POST['published']),$u['i
 flash_set('Новость обновлена.'); redirect('?p=news_admin');
 }
 if($a==='delete_news'){
-require_role(['operator','admin']); $u=current_user();
+require_role('admin'); $u=current_user();
 [$ok,$msg]=delete_news((int)($_POST['id']??0),$u['id']);
 flash_set($msg); redirect('?p=news_admin');
 }
@@ -1144,11 +1146,11 @@ $body.='</div>';
 layout('Контакты',$body); exit;
 }
 if($p==='news_admin'){
-require_role(['operator','admin']);
+require_role('admin');
 $items=list_news(false);
 $covers=news_cover_images(array_column($items,'id'));
 $counts=news_image_counts(array_column($items,'id'));
-$body='<div class="head"><h2>Новости сайта</h2><div style="display:flex;gap:8px">'.($u['role']==='operator'?'<a class="btn ghost" href="'.esc(role_home($u)).'">← в кабинет</a>':'').'<a class="btn primary" href="?p=news_edit">+ Добавить новость</a></div></div>';
+$body='<div class="head"><h2>Новости сайта</h2><div style="display:flex;gap:8px"><a class="btn primary" href="?p=news_edit">+ Добавить новость</a></div></div>';
 if(!$items){
 $body.='<div class="empty-state"><div class="empty-icon">📰</div><h3>Новостей пока нет</h3><p class="muted">Добавьте первую новость кнопкой выше — она появится на стартовой странице.</p></div>';
 } else {
@@ -1163,7 +1165,7 @@ $body.='</tbody></table>';
 layout('Новости сайта',$body); exit;
 }
 if($p==='news_edit'){
-require_role(['operator','admin']);
+require_role('admin');
 $id=(int)($_GET['id']??0); $n=$id?get_news($id):null;
 if($id && !$n){ layout('Новость','<div class="card pad">Новость не найдена. <a href="?p=news_admin">Назад</a></div>'); exit; }
 $existingImages=$id?list_news_images($id):[];
@@ -1709,7 +1711,6 @@ if(!empty($_GET['to_date'])) $afil['to_date']=$_GET['to_date'];
 $rows=get_requests_list($afil);
 if(!empty($_GET['sort'])) $rows=sort_requests($rows,$_GET['sort'],$_GET['dir']??'asc');
 $body='<div class="head"><h2>Архив заявок</h2><a class="btn ghost" href="?p=operator">← в кабинет</a></div>';
-$body.='<div class="guide-tabs" style="margin:-6px 0 14px"><a class="guide-tab" href="?p=operator">Активные</a> <a class="guide-tab active" href="?p=operator&tab=archive">Архив</a></div>';
 $body.='<p class="muted">Закрытые заявки автоматически переносятся в архив через 5 рабочих дней после закрытия.</p>';
 $body.='<form method="get" class="card pad" style="margin-bottom:14px;display:flex;gap:10px;flex-wrap:wrap;align-items:end"><input type="hidden" name="p" value="operator"><input type="hidden" name="tab" value="archive">'
 .'<label class="lbl" style="margin:0">Организация</label><input name="org" value="'.esc($_GET['org']??'').'" placeholder="Поиск">'
@@ -1757,9 +1758,7 @@ if(!empty($_GET['to_date'])) $filters['to_date']=$_GET['to_date'];
 $rows=get_requests_list($filters);
 if(!empty($_GET['sort'])) $rows=sort_requests($rows,$_GET['sort'],$_GET['dir']??'asc');
 else $rows=sort_requests($rows,'date','asc');
-$archivedCount=count(get_requests_list(array_merge($filters,['archived'=>1])));
 $activeFilters=(!$locked && $deptFilter!=='')+(!empty($_GET['status']))+(!empty($_GET['org']))+(!empty($_GET['from_date']))+(!empty($_GET['to_date']));
-$pendN=count(pending_applicants($u));
 $action_req = get_action_required_requests($u);
 $body = '';
 if ($action_req) {
@@ -1786,7 +1785,6 @@ $body.='</select><label class="lbl" style="margin:0">Организация</lab
 <label class="lbl" style="margin:0">С</label><input type="date" name="from_date" value="'.esc($_GET['from_date']??'').'">
 <label class="lbl" style="margin:0">По</label><input type="date" name="to_date" value="'.esc($_GET['to_date']??'').'">
 <button class="btn primary sm">Фильтр</button> <a class="btn ghost sm" href="?p=operator">Сбросить</a></form></div></details>';
-$body.='<div style="margin-bottom:14px"><a class="btn ghost" href="?p=operator_tools">🛠️ Инструменты'.($pendN?' <span class="pill" style="background:#fdecea;color:#b23b2c">'.$pendN.'</span>':'').'</a></div>';
 $labels=req_labels_bulk(array_column($rows,'id'));
 $tr=''; foreach($rows as $r){
 $urgent_tr = is_request_urgent($r) ? 'urgent' : '';
@@ -1794,7 +1792,6 @@ $urgent_tr = is_request_urgent($r) ? 'urgent' : '';
 $tr.='<tr class="'.$urgent_tr.'" onclick="location=\'?p=request&id='.$r['id'].'\'"><td class="id"><a href="?p=request&id='.$r['id'].'">'.esc($r['code']).'</a></td><td>'.esc($r['org']).'</td><td>'.dt($r).'</td><td>'.esc($labels[$r['id']]??'не выбран').'</td><td title="'.esc($turnWho.($turnWhat?' — '.$turnWhat:'')).'">'.pill($r['status']).'</td></tr>';
 }
 $body.='<div class="head"><h2>Реестр заявок</h2></div>';
-$body.='<div class="guide-tabs" style="margin:-6px 0 14px"><a class="guide-tab active" href="?p=operator">Активные ('.count($rows).')</a> <a class="guide-tab" href="?p=operator&tab=archive">Архив'.($archivedCount?' ('.$archivedCount.')':'').'</a></div>';
 $body.='<div class="kpis">'.$kp.'</div>';
 $body.=month_stats_widget(operator_scope_requests($locked?'school':($deptFilter?:null)),'opStatMonth');
 $body.= $rows ? '<table class="card-view"><thead><tr>'.sort_th('Код','code').sort_th('Организация','org').sort_th('Дата и время','date').'<th>Спикеры</th>'.sort_th('Статус','status').'</tr></thead><tbody>'.$tr.'</tbody></table>' : '<div class="card pad muted">Заявок не найдено.</div>';
@@ -1852,7 +1849,6 @@ $body.='<div style="display:flex;gap:8px;flex-wrap:wrap">
 <a class="btn ghost" href="?p=operator&tab=speakers">Реестр спикеров</a>
 <a class="btn ghost" href="?p=materials">🗂️ Материалы</a>
 <a class="btn ghost" href="?p=lesson_readiness_admin">📘 Проверка готовности к занятиям</a>
-<a class="btn ghost" href="?p=news_admin">📰 Новости сайта</a>
 </div>';
 layout('Инструменты',$body); exit;
 }
@@ -1914,7 +1910,6 @@ if(!empty($_GET['to_date'])) $afil['to_date']=$_GET['to_date'];
 $rows=get_requests_list($afil);
 if(!empty($_GET['sort'])) $rows=sort_requests($rows,$_GET['sort'],$_GET['dir']??'asc');
 $body='<div class="head"><h2>Архив заявок</h2></div>';
-$body.='<div class="guide-tabs" style="margin:-6px 0 14px"><a class="guide-tab" href="?p=fund">Активные</a> <a class="guide-tab active" href="?p=fund&tab=archive">Архив</a></div>';
 $body.='<p class="muted">Закрытые заявки автоматически переносятся сюда через 5 рабочих дней после закрытия.</p>';
 $body.='<form method="get" class="card pad" style="margin-bottom:14px;display:flex;gap:10px;flex-wrap:wrap;align-items:end"><input type="hidden" name="p" value="fund"><input type="hidden" name="tab" value="archive">'
 .'<label class="lbl" style="margin:0">Организация</label><input name="org" value="'.esc($_GET['org']??'').'" placeholder="Поиск">'
@@ -1930,7 +1925,6 @@ layout('Архив заявок',$body); exit;
 $rows=fund_dashboard_requests($u);
 if(!empty($_GET['sort'])) $rows=sort_requests($rows,$_GET['sort'],$_GET['dir']??'asc');
 else $rows=sort_requests($rows,'date','asc');
-$archivedCount=fund_archived_count($u);
 $myScope=fund_scope_ids($u);
 $action_req = get_action_required_requests($u);
 $k=fund_kpis($u); $kp='';
@@ -1963,7 +1957,6 @@ $need=in_array($r['status'],['chosen','confirmed'])?' <span class="pill amber">�
 $tr.='<tr class="'.$rowCls.'" onclick="location=\'?p=request&id='.$r['id'].'\'"><td class="id"><a href="?p=request&id='.$r['id'].'">'.esc($r['code']).'</a></td><td>'.esc($r['org']).'</td><td>'.dt($r).'</td><td>'.esc($labels[$r['id']]??'не выбран').'</td><td title="'.esc($turnWho.($turnWhat?' — '.$turnWhat:'')).'">'.pill($r['status']).$need.$claimBadge.'</td></tr>';
 }
 $body.='<div class="head"><h2>Реестр заявок</h2><div><a class="btn ghost" href="?p=fund&tab=speakers">👥 Спикеры Фонда</a> <a class="btn ghost" href="?p=calendar">📅 Календарь</a> <a class="btn ghost" href="?p=materials">🗂️ Материалы</a> <a class="btn ghost" href="?p=export">⬇ Экспорт в CSV</a></div></div>';
-$body.='<div class="guide-tabs" style="margin:-6px 0 14px"><a class="guide-tab active" href="?p=fund">Активные ('.count($rows).')</a> <a class="guide-tab" href="?p=fund&tab=archive">Архив'.($archivedCount?' ('.$archivedCount.')':'').'</a></div>';
 $body.='<p class="muted">Новые заявки без спикера доступны всем фондам (в статусе — «свободна», не закреплена). Пометка <span class="pill gray">🔧 в обработке</span> / <span class="pill green">✓ подтверждён</span> — заявки, взятые в работу вашим фондом. <span style="background:#fff3e0;padding:2px 8px;border-radius:6px">Персиковым фоном</span> подсвечены заявки со скорым сроком урока.</p>';
 $body.= $rows ? '<table class="card-view"><thead><tr>'.sort_th('Код','code').sort_th('Организация','org').sort_th('Дата и время','date').sort_th('Спикеры','speakers').sort_th('Статус','status').'</tr></thead><tbody>'.$tr.'</tbody></table>' : '<div class="card pad muted">Заявок пока нет.</div>';
 layout('Кабинет Фонда',$body); exit;
