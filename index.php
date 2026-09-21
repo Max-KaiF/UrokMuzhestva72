@@ -404,19 +404,26 @@ $meta=psych_readiness_status_meta($res['status']);
 flash_set('Анкета отправлена: '.$res['score'].' из 60 — «'.esc($meta['label']).'». Результат виден фонду как ориентир, решение о допуске остаётся за ним.');
 redirect('?p=speaker');
 }
-if($a==='save_lesson_readiness_question'){
+if($a==='save_lesson_readiness_questions'){
 require_role('operator');
-$topic=trim($_POST['topic']??''); $dimension=$_POST['dimension']??'';
-$question=trim($_POST['question']??'');
-$opts=['a'=>trim($_POST['option_a']??''),'b'=>trim($_POST['option_b']??''),'c'=>trim($_POST['option_c']??''),'d'=>trim($_POST['option_d']??'')];
-$correct=$_POST['correct_option']??'';
-$back='?p=lesson_readiness_admin&topic='.urlencode($topic);
+$topic=trim($_POST['topic']??'');
 if($topic===''){ flash_set('Укажите тему.'); redirect('?p=lesson_readiness_admin'); }
-if($question===''){ flash_set('Укажите текст вопроса.'); redirect($back); }
-if($opts['a']===''||$opts['b']===''||$opts['c']===''||$opts['d']===''){ flash_set('Заполните все 4 варианта ответа.'); redirect($back); }
-if(!in_array($correct,['a','b','c','d'],true)){ flash_set('Отметьте правильный вариант ответа.'); redirect($back); }
-[$ok,$msg]=set_lesson_readiness_question($topic,$dimension,$question,$opts,$correct,$u['id']);
-flash_set($msg); redirect($back);
+$back='?p=lesson_readiness_admin&topic='.urlencode($topic);
+$fields=$_POST['fields']??[];
+foreach(lesson_readiness_dimensions() as $dk=>$dl){
+$f=$fields[$dk]??[];
+$question=trim($f['question']??'');
+$opts=['a'=>trim($f['option_a']??''),'b'=>trim($f['option_b']??''),'c'=>trim($f['option_c']??''),'d'=>trim($f['option_d']??'')];
+$correct=$f['correct']??'';
+if($question===''||$opts['a']===''||$opts['b']===''||$opts['c']===''||$opts['d']===''){ flash_set('Заполните вопрос и все 4 варианта ответа в разделе «'.esc($dl).'».'); redirect($back); }
+if(!in_array($correct,['a','b','c','d'],true)){ flash_set('Отметьте правильный вариант ответа в разделе «'.esc($dl).'».'); redirect($back); }
+}
+foreach(lesson_readiness_dimensions() as $dk=>$dl){
+$f=$fields[$dk];
+$question=trim($f['question']); $opts=['a'=>trim($f['option_a']),'b'=>trim($f['option_b']),'c'=>trim($f['option_c']),'d'=>trim($f['option_d'])]; $correct=$f['correct'];
+set_lesson_readiness_question($topic,$dk,$question,$opts,$correct,$u['id']);
+}
+flash_set('Вопросы по теме «'.esc($topic).'» сохранены.'); redirect($back);
 }
 if($a==='submit_lesson_readiness'){
 require_role('speaker');
@@ -1954,7 +1961,7 @@ $need=in_array($r['status'],['chosen','confirmed'])?' <span class="pill amber">�
 [$turnWho,$turnWhat]=whose_turn($r);
 $tr.='<tr class="'.$rowCls.'" onclick="location=\'?p=request&id='.$r['id'].'\'"><td class="id"><a href="?p=request&id='.$r['id'].'">'.esc($r['code']).'</a></td><td>'.esc($r['org']).'</td><td>'.dt($r).'</td><td>'.esc($labels[$r['id']]??'не выбран').'</td><td title="'.esc($turnWho.($turnWhat?' — '.$turnWhat:'')).'">'.pill($r['status']).$need.$claimBadge.'</td></tr>';
 }
-$body.='<div class="head"><h2>Реестр заявок</h2><div><a class="btn ghost" href="?p=fund&tab=speakers">👥 Спикеры Фонда</a> <a class="btn ghost" href="?p=calendar">📅 Календарь</a> <a class="btn ghost" href="?p=materials">🗂️ Материалы</a> <a class="btn ghost" href="?p=export">⬇ Экспорт в CSV</a></div></div>';
+$body.='<div class="head"><h2>Реестр заявок</h2></div>';
 $body.='<p class="muted">Новые заявки без спикера доступны всем фондам (в статусе — «свободна», не закреплена). Пометка <span class="pill gray">🔧 в обработке</span> / <span class="pill green">✓ подтверждён</span> — заявки, взятые в работу вашим фондом. <span style="background:#fff3e0;padding:2px 8px;border-radius:6px">Персиковым фоном</span> подсвечены заявки со скорым сроком урока.</p>';
 $body.= $rows ? '<table class="card-view"><thead><tr>'.sort_th('Код','code').sort_th('Организация','org').sort_th('Дата и время','date').sort_th('Спикеры','speakers').sort_th('Статус','status').'</tr></thead><tbody>'.$tr.'</tbody></table>' : '<div class="card pad muted">Заявок пока нет.</div>';
 layout('Кабинет Фонда',$body); exit;
@@ -2045,7 +2052,7 @@ $urgent_tr = is_request_urgent($r) ? 'urgent' : '';
 [$turnWho,$turnWhat]=whose_turn($r);
 $tr.='<tr class="'.$urgent_tr.'" onclick="location=\'?p=request&id='.$r['id'].'\'"><td class="id"><a href="?p=request&id='.$r['id'].'">'.esc($r['code']).'</a></td><td>'.dt($r).'</td><td>'.esc(ages()[$r['age_group']]??'').'</td><td>'.esc($labels[$r['id']]??'не выбран').'</td><td title="'.esc($turnWho.($turnWhat?' — '.$turnWhat:'')).'">'.pill($r['status']).'</td></tr>';
 }
-$body.='<div class="head"><h2>'.esc($eff['org_name']).'</h2><div><a class="btn primary" href="?p=school&tab=new">+ Подать заявку</a> <a class="btn ghost" href="?p=calendar">📅 Календарь</a> <a class="btn ghost" href="?p=materials">🗂️ Материалы</a> <a class="btn ghost" href="?p=users&role=school">👥 Сотрудники</a> <a class="btn ghost" href="?p=export">⬇ Экспорт в CSV</a></div></div>';
+$body.='<div class="head"><h2>'.esc($eff['org_name']).'</h2></div>';
 $sch_total=count($rows);
 $sch_waiting=count(array_filter($rows,fn($r)=>$r['status']==='new'));
 $sch_inwork=count(array_filter($rows,fn($r)=>in_array($r['status'],['chosen','confirmed','prep'],true)));
@@ -2065,7 +2072,7 @@ else $rows=sort_requests($rows,'date','asc');
 $daily=speaker_daily_count($u['id'],date('Y-m-d'));
 $weekly=speaker_weekly_count($u['id'],date('Y-m-d'));
 $tr=''; foreach($rows as $r){ $mark=$r['cfd']?'<span style="color:var(--green);font-weight:600">в составе</span>':(st_index($r['status'])>=st_index('confirmed')?'<span class="muted">не выбран</span>':'<span class="muted">кандидат</span>'); [$turnWho,$turnWhat]=whose_turn($r); $tr.='<tr onclick="location=\'?p=request&id='.$r['id'].'\'"><td class="id"><a href="?p=request&id='.$r['id'].'">'.esc($r['code']).'</a></td><td>'.esc($r['org']).'</td><td>'.dt($r).'</td><td>'.$mark.'</td><td title="'.esc($turnWho.($turnWhat?' — '.$turnWhat:'')).'">'.pill($r['status']).'</td></tr>'; }
-$body='<div class="head"><h2>Мои уроки</h2><div><a class="btn ghost" href="?p=speaker_anketas">📋 Анкеты</a> <a class="btn ghost" href="?p=speaker_stats">📊 Моя статистика</a> <a class="btn ghost" href="?p=calendar">📅 Календарь</a> <a class="btn ghost" href="?p=materials">🗂️ Материалы</a></div></div>';
+$body='<div class="head"><h2>Мои уроки</h2></div>';
 if(speaker_has_criminal_record($u)) $body.='<div class="hint-warn">'.nl2br(esc(criminal_record_notice())).'</div>';
 $dPct=$daily/2; $wPct=$weekly/7;
 $dCls='kpi'.($dPct>=1?' warn':($dPct>=0.8?' caution':''));
@@ -2238,7 +2245,7 @@ if($p==='lesson_readiness_admin'){
 require_role('operator');
 $topics=lesson_readiness_all_topics();
 $cur=trim($_GET['topic']??''); if($cur===''&&$topics) $cur=$topics[0];
-$body='<div class="head"><h2>Проверка готовности к занятиям</h2><a class="btn ghost" href="?p=operator_tools">← в инструменты</a></div>';
+$body='<div class="head"><h2>Проверка готовности к занятиям</h2></div>';
 $body.='<p class="muted">Банк вопросов по темам занятий — 4 вопроса на тему (тема, цели урока, материальная база, методика проведения). Пока по теме не заполнены все 4 — проверка для неё не запрашивается у спикеров.</p>';
 if($topics){
 $body.='<div class="guide-tabs" style="margin:14px 0">';
@@ -2249,18 +2256,22 @@ $body.='<form method="get" class="card pad" style="max-width:480px;margin-bottom
 if($cur!==''){
 $qs=lesson_readiness_questions_for_topic($cur);
 $body.='<h3>Тема: «'.esc($cur).'»</h3>';
-foreach(lesson_readiness_dimensions() as $dk=>$dl){
+$body.='<form method="post" class="card pad" style="max-width:640px">'.csrf_field().'<input type="hidden" name="action" value="save_lesson_readiness_questions"><input type="hidden" name="topic" value="'.esc($cur).'">';
+$dims=lesson_readiness_dimensions(); $i=0; $last=count($dims)-1;
+foreach($dims as $dk=>$dl){
 $q=$qs[$dk]??null;
-$body.='<form method="post" class="card pad" style="max-width:640px;margin-bottom:14px">'.csrf_field().'<input type="hidden" name="action" value="save_lesson_readiness_question"><input type="hidden" name="topic" value="'.esc($cur).'"><input type="hidden" name="dimension" value="'.esc($dk).'">';
+$body.='<div style="margin-bottom:20px'.($i<$last?';padding-bottom:18px;border-bottom:1px solid var(--line)':'').'">';
 $body.='<h4 style="margin-top:0">'.esc($dl).'</h4>';
-$body.='<label class="lbl">Текст вопроса <span style="color:#d11">*</span></label><textarea name="question" required>'.esc($q['question']??'').'</textarea>';
+$body.='<label class="lbl">Текст вопроса <span style="color:#d11">*</span></label><textarea name="fields['.$dk.'][question]" required>'.esc($q['question']??'').'</textarea>';
 foreach(['a'=>'А','b'=>'Б','c'=>'В','d'=>'Г'] as $ok=>$ol){
 $checked=($q&&$q['correct_option']===$ok)?'checked':'';
-$body.='<label class="lbl" style="margin-top:10px">Вариант '.$ol.' <span style="color:#d11">*</span></label><div style="display:flex;gap:8px;align-items:center"><input type="radio" name="correct_option" value="'.$ok.'" '.$checked.' required style="width:auto;flex:none"><input name="option_'.$ok.'" required value="'.esc($q['option_'.$ok]??'').'" style="flex:1"></div>';
+$body.='<label class="lbl" style="margin-top:10px">Вариант '.$ol.' <span style="color:#d11">*</span></label><div style="display:flex;gap:8px;align-items:center"><input type="radio" name="fields['.$dk.'][correct]" value="'.$ok.'" '.$checked.' required style="width:auto;flex:none"><input name="fields['.$dk.'][option_'.$ok.']" required value="'.esc($q['option_'.$ok]??'').'" style="flex:1"></div>';
 }
 $body.='<p class="muted" style="margin-top:6px;font-size:12.5px">Отметьте радиокнопкой правильный вариант.</p>';
-$body.='<button class="btn primary sm" style="margin-top:10px">Сохранить</button></form>';
+$body.='</div>';
+$i++;
 }
+$body.='<button class="btn primary">Сохранить всё</button></form>';
 }
 layout('Проверка готовности к занятиям',$body); exit;
 }
