@@ -68,6 +68,7 @@ if($u['role']==='school') return [
 ['Сотрудники','?p=users&role=school'],
 ['Календарь','?p=calendar'],
 ['Материалы','?p=materials'],
+['Журнал действий','?p=audit'],
 ['Экспорт в CSV','?p=export'],
 ];
 if($u['role']==='speaker') return [
@@ -76,17 +77,19 @@ if($u['role']==='speaker') return [
 ['Моя статистика','?p=speaker_stats'],
 ['Календарь','?p=calendar'],
 ['Материалы','?p=materials'],
+['Журнал действий','?p=audit'],
 ];
 return [];
 }
 function render_sidebar($u){
 $items=sidebar_items($u);
-if(!$items) return '';
 $curP=$_GET['p']??''; $curTab=$_GET['tab']??'';
+if($u && $curP==='request' && !empty($_GET['id'])) $items[]=['История заявки','?p=audit&target_type=requests&target_id='.(int)$_GET['id']];
+if(!$items) return '';
 $html='<nav class="sidebar-nav">';
 foreach($items as [$label,$href]){
 parse_str(parse_url($href,PHP_URL_QUERY)?:'',$hq);
-$active=(($hq['p']??'')===$curP) && (($hq['tab']??'')===$curTab);
+$active=(($hq['p']??'')===$curP) && (($hq['tab']??'')===$curTab) && (($hq['target_id']??'')===($_GET['target_id']??''));
 $html.='<a href="'.esc($href).'"'.($active?' class="active"':'').'>'.esc($label).'</a>';
 }
 $html.='</nav>';
@@ -1291,7 +1294,7 @@ require_login(); $u=current_user();
 $isMember=$u['role']==='school' && !empty($u['parent_school_id']);
 $dnLabel=['school'=>'Наименование организации','speaker'=>'ФИО','fund'=>'Название Фонда','operator'=>'Наименование (оператор / департамент)'][$u['role']]??'Отображаемое имя';
 $cur=($u['role']==='school')?($u['org_name']?:$u['display_name']):$u['display_name'];
-$body='<div class="head"><h2>Профиль</h2><a class="btn ghost" href="?p='.esc($u['role']).'">← в кабинет</a></div>';
+$body='<div class="head"><h2>Профиль</h2></div>';
 if($isMember){ $effP=school_effective($u); $body.='<div class="card pad" style="max-width:560px;margin-bottom:12px"><p class="muted" style="margin:0">Вы — сотрудник организации</p><h3 style="margin:4px 0">'.esc($effP['org_name']).'</h3><p class="muted" style="margin:0">'.esc(level_label($effP['level'])).(!empty($effP['district'])?', '.esc($effP['district']):'').'</p><p class="muted" style="margin:8px 0 0">Название и адрес организации редактирует представитель, зарегистрировавший её.</p></div>'; }
 $body.='<form method="post" enctype="multipart/form-data" class="card pad" style="max-width:560px">'.csrf_field().'<input type="hidden" name="action" value="update_profile">';
 $body.='<p class="muted">Логин: <b>'.esc($u['login']).'</b> (не меняется).</p>';
@@ -1495,7 +1498,7 @@ if($p==='materials'){
 $typeFilter=$_GET['type']??''; $topicParam=$_GET['topic']??null;
 $addHref='?p=material_edit'.($topicParam?'&topic='.urlencode($topicParam):'');
 $isOperator=$u && $u['role']==='operator';
-$body='<div class="head"><h2>Материалы</h2><div style="display:flex;gap:8px"><a class="btn ghost" href="'.esc($u?role_home($u):'?p=home').'">← '.($u?'в кабинет':'на главную').'</a>'.($isOperator?'<a class="btn primary" href="'.esc($addHref).'">+ Добавить материал</a>':'').'</div></div>';
+$body='<div class="head"><h2>Материалы</h2><div style="display:flex;gap:8px">'.(!$u?'<a class="btn ghost" href="?p=home">← на главную</a>':'').($isOperator?'<a class="btn primary" href="'.esc($addHref).'">+ Добавить материал</a>':'').'</div></div>';
 if($topicParam===null && $typeFilter==='' && empty($_GET['all'])){
 // ---- Папки по темам: техкарты, ролики и документы по одной теме лежат вместе ----
 $counts=material_topic_counts(); $topics=material_topics_all();
@@ -1546,7 +1549,7 @@ if($roleFilter){ $where.=' AND role=?'; $params[]=$roleFilter; }
 if($q!==''){ $where.=' AND (login LIKE ? OR display_name LIKE ? OR org_name LIKE ? OR email LIKE ?)'; $qq='%'.$q.'%'; $params=array_merge($params,[$qq,$qq,$qq,$qq]); }
 $st=db()->prepare("SELECT * FROM users WHERE $where ORDER BY role, display_name, org_name");
 $st->execute($params); $list=$st->fetchAll();
-$body='<div class="head"><h2>🔑 Войти как…</h2><a class="btn ghost" href="'.esc(role_home($u)).'">← в кабинет</a></div>';
+$body='<div class="head"><h2>🔑 Войти как…</h2></div>';
 $body.='<p class="muted">Этот раздел виден только вам. Каждый вход от чужого имени и возврат обратно фиксируются в журнале действий.</p>';
 $body.='<form method="get" class="card pad" style="margin-bottom:14px;display:flex;gap:10px;align-items:end;flex-wrap:wrap"><input type="hidden" name="p" value="impersonate"><label class="lbl" style="margin:0">Роль</label><select name="role"><option value="">Все</option><option value="school" '.($roleFilter==='school'?'selected':'').'>Заявитель</option><option value="fund" '.($roleFilter==='fund'?'selected':'').'>Фонд</option><option value="speaker" '.($roleFilter==='speaker'?'selected':'').'>Спикер</option><option value="operator" '.($roleFilter==='operator'?'selected':'').'>Оператор</option></select><label class="lbl" style="margin:0">Поиск</label><input type="search" name="q" value="'.esc($q).'" placeholder="Логин, ФИО, организация, email"><button class="btn primary sm">Найти</button>'.(($q!==''||$roleFilter!=='')?' <a class="btn ghost sm" href="?p=impersonate">Сбросить</a>':'').'</form>';
 $body.='<div class="table-scroll"><table class="card-view resizable"><thead><tr><th>Логин</th><th>ФИО/Организация</th><th>Роль</th><th>Статус</th><th></th></tr></thead><tbody>';
@@ -1564,7 +1567,7 @@ layout('Войти как',$body); exit;
 }
 // ========== УПРАВЛЕНИЕ ПОЛЬЗОВАТЕЛЯМИ ==========
 if($p==='users' && in_array($u['role'],['operator','fund','school'])){
-$body='<div class="head"><h2>'.($u['role']==='school'?'Сотрудники организации':'Управление пользователями').'</h2><a class="btn ghost" href="?p='.$u['role'].'">← в кабинет</a></div>';
+$body='<div class="head"><h2>'.($u['role']==='school'?'Сотрудники организации':'Управление пользователями').'</h2></div>';
 $role_filter=$_GET['role']??'';
 $where="WHERE 1=1"; $params=[]; $superAdmin=false; $scopeNote='';
 if($u['role']==='fund'){ $where.=" AND role='speaker' AND fund_user_id=?"; $params[]=$u['id']; $scopeNote='Только ваши спикеры.'; }
@@ -1604,7 +1607,7 @@ $body.='</tbody></table></div>';
 layout('Пользователи',$body); exit;
 }
 if($p==='districts' && $u['role']==='operator'){
-$body='<div class="head"><h2>Районы и соседства</h2><a class="btn ghost" href="?p=operator">← в кабинет</a></div>';
+$body='<div class="head"><h2>Районы и соседства</h2></div>';
 $body.='<p class="muted">Подбор спикеров идёт из района заявителя и соседних районов.</p>';
 $body.='<form method="post" class="card pad" style="margin-bottom:12px">'.csrf_field().'<input type="hidden" name="action" value="add_district_admin"><label class="lbl">Новый район</label><input name="name" placeholder="название района"> <button class="btn primary sm" style="margin-top:8px">Добавить район</button></form>';
 $body.='<table><thead><tr><th>Район</th><th>Соседние районы (через запятую)</th></tr></thead><tbody>';
@@ -1632,7 +1635,7 @@ $body.='</tbody></table>';
 layout('История заявки',$body); exit;
 }
 if($u['role']==='operator'){
-$body='<div class="head"><h2>Журнал действий</h2><a class="btn ghost" href="?p='.$u['role'].'">← в кабинет</a></div>';
+$body='<div class="head"><h2>Журнал действий</h2></div>';
 $filters=[];
 if(!empty($_GET['target_type'])) $filters['target_type']=$_GET['target_type'];
 if(!empty($_GET['target_id'])) $filters['target_id']=(int)$_GET['target_id'];
@@ -1661,12 +1664,37 @@ $spSt=db()->prepare("SELECT id FROM users WHERE role='speaker' AND fund_user_id 
 $scopeIds=array_merge($scope,$spSt->fetchAll(PDO::FETCH_COLUMN));
 $filters=[]; if(!empty($_GET['from_date'])) $filters['from_date']=$_GET['from_date']; if(!empty($_GET['to_date'])) $filters['to_date']=$_GET['to_date'];
 $logs=get_audit_log($filters,$scopeIds);
-$body='<div class="head"><h2>Журнал действий</h2><a class="btn ghost" href="?p=fund">← в кабинет</a></div><p class="muted">Действия вашего фонда и ваших спикеров.</p>';
+$body='<div class="head"><h2>Журнал действий</h2></div><p class="muted">Действия вашего фонда и ваших спикеров.</p>';
 $body.='<table class="card-view"><thead><tr><th>Время</th><th>Пользователь</th><th>Действие</th><th>Объект</th><th>Детали</th></tr></thead><tbody>';
 foreach($logs as $l){
 $body.='<tr><td class="id" data-label="Время">'.esc($l['created_at']).'</td><td data-label="Пользователь">'.esc($l['display_name']?:$l['login']?:'система').' <span class="muted">('.esc($l['user_role']).')</span></td><td data-label="Действие">'.esc($l['action']).'</td><td data-label="Объект">'.esc($l['target_type']).'#'.$l['target_id'].'</td><td data-label="Детали">'.esc($l['details']).'</td></tr>';
 }
 if(!$logs) $body.='<tr><td colspan="5" class="muted">Записей не найдено</td></tr>';
+$body.='</tbody></table>';
+layout('Журнал действий',$body); exit;
+}
+if($u['role']==='school'){
+$scopeIds=school_scope_ids($u);
+$filters=[]; if(!empty($_GET['from_date'])) $filters['from_date']=$_GET['from_date']; if(!empty($_GET['to_date'])) $filters['to_date']=$_GET['to_date'];
+$logs=get_audit_log($filters,$scopeIds);
+$body='<div class="head"><h2>Журнал действий</h2></div><p class="muted">Действия вашей организации.</p>';
+$body.='<table class="card-view"><thead><tr><th>Время</th><th>Пользователь</th><th>Действие</th><th>Объект</th><th>Детали</th></tr></thead><tbody>';
+foreach($logs as $l){
+$body.='<tr><td class="id" data-label="Время">'.esc($l['created_at']).'</td><td data-label="Пользователь">'.esc($l['display_name']?:$l['login']?:'система').' <span class="muted">('.esc($l['user_role']).')</span></td><td data-label="Действие">'.esc($l['action']).'</td><td data-label="Объект">'.esc($l['target_type']).'#'.$l['target_id'].'</td><td data-label="Детали">'.esc($l['details']).'</td></tr>';
+}
+if(!$logs) $body.='<tr><td colspan="5" class="muted">Записей не найдено</td></tr>';
+$body.='</tbody></table>';
+layout('Журнал действий',$body); exit;
+}
+if($u['role']==='speaker'){
+$filters=[]; if(!empty($_GET['from_date'])) $filters['from_date']=$_GET['from_date']; if(!empty($_GET['to_date'])) $filters['to_date']=$_GET['to_date'];
+$logs=get_audit_log($filters,[$u['id']]);
+$body='<div class="head"><h2>Журнал действий</h2></div><p class="muted">Ваши действия.</p>';
+$body.='<table class="card-view"><thead><tr><th>Время</th><th>Действие</th><th>Объект</th><th>Детали</th></tr></thead><tbody>';
+foreach($logs as $l){
+$body.='<tr><td class="id" data-label="Время">'.esc($l['created_at']).'</td><td data-label="Действие">'.esc($l['action']).'</td><td data-label="Объект">'.esc($l['target_type']).'#'.$l['target_id'].'</td><td data-label="Детали">'.esc($l['details']).'</td></tr>';
+}
+if(!$logs) $body.='<tr><td colspan="4" class="muted">Записей не найдено</td></tr>';
 $body.='</tbody></table>';
 layout('Журнал действий',$body); exit;
 }
@@ -1676,7 +1704,7 @@ if($p==='calendar' && $u){
 $month=$_GET['month']??date('m'); $year=$_GET['year']??date('Y');
 $events=get_calendar_events($month,$year,$u);
 $month_name=['','Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'][(int)$month];
-$body='<div class="head"><h2>Календарь: '.$month_name.' '.$year.'</h2><div><a class="btn ghost" href="?p=calendar&month='.str_pad($month-1,2,'0',STR_PAD_LEFT).'&year='.$year.'">← Пред.</a> <a class="btn ghost" href="?p=calendar">Сегодня</a> <a class="btn ghost" href="?p=calendar&month='.str_pad($month+1,2,'0',STR_PAD_LEFT).'&year='.($month==12?$year+1:$year).'">След. →</a> <a class="btn ghost" href="?p='.$u['role'].'">← в кабинет</a></div></div>';
+$body='<div class="head"><h2>Календарь: '.$month_name.' '.$year.'</h2><div><a class="btn ghost" href="?p=calendar&month='.str_pad($month-1,2,'0',STR_PAD_LEFT).'&year='.$year.'">← Пред.</a> <a class="btn ghost" href="?p=calendar">Сегодня</a> <a class="btn ghost" href="?p=calendar&month='.str_pad($month+1,2,'0',STR_PAD_LEFT).'&year='.($month==12?$year+1:$year).'">След. →</a></div></div>';
 if(!$events){ $body.='<div class="card pad muted">В этом месяце уроков нет.</div>'; }
 else {
 $by_date=[];
@@ -1699,7 +1727,7 @@ layout('Календарь',$body); exit;
 if($p==='operator'){
 require_role('operator'); $tab=$_GET['tab']??'list';
 if($tab==='speakers'){
-$body='<div class="head"><h2>Реестр спикеров</h2><a class="btn ghost" href="?p=operator">← в кабинет</a></div>';
+$body='<div class="head"><h2>Реестр спикеров</h2></div>';
 $allsp=db()->query("SELECT * FROM users WHERE role='speaker' ORDER BY display_name")->fetchAll();
 if(!empty($_GET['sort'])) $allsp=sort_users_rows($allsp,$_GET['sort'],$_GET['dir']??'asc');
 $body.='<div class="table-scroll"><table class="card-view resizable"><thead><tr>'.sort_th('Спикер','name').sort_th('Организация','fund_name').sort_th('Район','district').'<th>Возрастные группы</th>'.sort_th('Телефон','phone').sort_th('Статус','status').'</tr></thead><tbody>';
@@ -1715,7 +1743,7 @@ if(!empty($_GET['from_date'])) $afil['from_date']=$_GET['from_date'];
 if(!empty($_GET['to_date'])) $afil['to_date']=$_GET['to_date'];
 $rows=get_requests_list($afil);
 if(!empty($_GET['sort'])) $rows=sort_requests($rows,$_GET['sort'],$_GET['dir']??'asc');
-$body='<div class="head"><h2>Архив заявок</h2><a class="btn ghost" href="?p=operator">← в кабинет</a></div>';
+$body='<div class="head"><h2>Архив заявок</h2></div>';
 $body.='<p class="muted">Закрытые заявки автоматически переносятся в архив через 5 рабочих дней после закрытия.</p>';
 $body.='<form method="get" class="card pad" style="margin-bottom:14px;display:flex;gap:10px;flex-wrap:wrap;align-items:end"><input type="hidden" name="p" value="operator"><input type="hidden" name="tab" value="archive">'
 .'<label class="lbl" style="margin:0">Организация</label><input name="org" value="'.esc($_GET['org']??'').'" placeholder="Поиск">'
@@ -1731,7 +1759,7 @@ layout('Архив заявок',$body); exit;
 if($tab==='moderation'){
 $pend=pending_applicants($u);
 $dept=($u['op_group']??'')==='' ? 'Вы видите всех заявителей.' : 'Ваш департамент: '.esc(operator_label_for_group($u['op_group'])).'.';
-$body='<div class="head"><h2>Модерация заявителей ('.count($pend).')</h2><a class="btn ghost" href="?p=operator">← в кабинет</a></div>';
+$body='<div class="head"><h2>Модерация заявителей ('.count($pend).')</h2></div>';
 $body.='<p class="muted">Подтвердите организации, которым открыть доступ к подаче заявок. '.$dept.'</p>';
 if(!$pend) $body.='<div class="card pad muted">Новых заявок на регистрацию заявителей нет.</div>';
 foreach($pend as $ap){
@@ -1809,7 +1837,7 @@ $type=($_GET['type']??'')==='speaker'?'speaker':'app';
 $isFund=$u['role']==='fund';
 $opg=$u['op_group']??''; $dept=$opg==='school'?'school':(in_array($_GET['dept']??'',['school','region'])?$_GET['dept']:'');
 $scopeOg=$opg==='school'?'school':($dept?:null);
-$body='<div class="head"><h2>'.($type==='app'?'Отзывы заявителей':'Отзывы спикеров').'</h2><a class="btn ghost" href="?p='.esc($u['role']).'">← в кабинет</a></div>';
+$body='<div class="head"><h2>'.($type==='app'?'Отзывы заявителей':'Отзывы спикеров').'</h2></div>';
 if($type==='app'){
 $rows=$isFund?list_app_reviews_for_fund($u):list_app_reviews($scopeOg);
 $body.='<table class="card-view"><thead><tr><th>Заявитель</th><th>Спикеры</th><th>Тема урока</th><th>Дата отзыва</th><th>Отзыв</th><th>Пост</th></tr></thead><tbody>';
@@ -1839,7 +1867,7 @@ if($p==='operator_tools'){
 require_role('operator');
 $pendN=count(pending_applicants($u));
 $deptFilter=(($u['op_group']??'')==='school')?'school':'';
-$body='<div class="head"><h2>Инструменты</h2><a class="btn ghost" href="?p=operator">← в кабинет</a></div>';
+$body='<div class="head"><h2>Инструменты</h2></div>';
 $body.='<div style="display:flex;gap:8px;flex-wrap:wrap">
 <a class="btn ghost" href="?p=export&type=requests&dept='.esc($deptFilter).'">📤 Экспорт заявок (CSV)</a>
 <a class="btn ghost" href="?p=export&type=speakers">📥 Экспорт спикеров (CSV)</a>
@@ -1893,7 +1921,7 @@ if($p==='fund'){
 require_role('fund'); $tab=$_GET['tab']??'queue';
 if(empty($u['active'])){ layout('Кабинет фонда','<div class="head"><h2>Подразделение на проверке</h2></div><div class="card pad"><p>Регистрация подразделения отправлена на подтверждение головному фонду.</p><p class="muted">После подтверждения откроется доступ.</p></div>'); exit; }
 if($tab==='speakers'){
-$body='<div class="head"><h2>Спикеры Фонда</h2><a class="btn ghost" href="?p=fund">← в кабинет</a></div><h4 style="margin-top:6px">На подтверждении</h4>';
+$body='<div class="head"><h2>Спикеры Фонда</h2></div><h4 style="margin-top:6px">На подтверждении</h4>';
 $pend=pending_speakers($u); if(!$pend) $body.='<div class="card pad muted" style="margin-bottom:14px">Новых заявок на регистрацию спикеров нет.</div>';
 foreach($pend as $s){ $ag=''; foreach(ages() as $k=>$v) $ag.='<label class="chk"><input type="checkbox" name="groups['.esc($k).']" '.(in_array($k,explode(',',$s['age_groups']))?'checked':'').'> '.esc($v).'</label>';
 $body.='<div class="card pad" style="margin-bottom:10px"><b>'.esc($s['display_name']).'</b> <span class="muted">(логин: '.esc($s['login']).' · район: '.esc($s['district']?:'—').' · тел.: '.esc($s['phone']?:'—').')</span>'
@@ -2117,7 +2145,7 @@ layout('Кабинет спикера',$body); exit;
 if($p==='speaker_anketas'){
 require_role('speaker');
 if(!$u['active']){ redirect('?p=speaker'); }
-$body='<div class="head"><h2>Анкеты</h2><a class="btn ghost" href="?p=speaker">← в кабинет</a></div>';
+$body='<div class="head"><h2>Анкеты</h2></div>';
 $body.='<div class="block"><h4>🎓 Допуск к возрастным группам</h4><p class="muted">На заявки этой группы вас предложат фонду, только если группа допущена. Заполните анкету по нужной группе — фонд примет решение о допуске по её результатам. Заполнить можно в любой момент, повторно — тоже.</p>';
 $pOverview=speaker_psych_readiness_overview($u);
 $body.='<div class="materials-grid">';
@@ -2179,7 +2207,7 @@ $blockKey=$_GET['block']??'';
 $blocks=readiness_blocks();
 if(!array_key_exists($blockKey,$blocks)){ layout('Анкета','<div class="card pad">Блок анкеты не найден. <a href="?p=speaker">Назад</a></div>'); exit; }
 $block=$blocks[$blockKey];
-$body='<div class="head"><h2>Анкета самооценки: «'.esc($block['label']).'»</h2><a class="btn ghost" href="?p=speaker">← в кабинет</a></div>';
+$body='<div class="head"><h2>Анкета самооценки: «'.esc($block['label']).'»</h2></div>';
 $body.='<p class="muted">Честный ответ не снижает ваш статус в программе — он определяет, с какой аудиторией и в каком формате комфортнее начать. Результат видят фонд и оператор как рабочий ориентир, а не автоматический запрет.</p>';
 $body.='<form method="post" class="card pad">'.csrf_field().'<input type="hidden" name="action" value="submit_readiness"><input type="hidden" name="block_key" value="'.esc($blockKey).'">';
 $shuffledQ=readiness_questions_shuffled($block);
@@ -2206,7 +2234,7 @@ $ageGroup=$_GET['group']??'';
 $blocks=psych_readiness_blocks();
 if(!array_key_exists($ageGroup,$blocks)){ layout('Анкета','<div class="card pad">Возрастная группа не найдена. <a href="?p=speaker">Назад</a></div>'); exit; }
 $block=$blocks[$ageGroup]; $intro=psych_readiness_intro();
-$body='<div class="head"><h2>Анкета самооценки психологической готовности: «'.esc($block['label']).'»</h2><a class="btn ghost" href="?p=speaker">← в кабинет</a></div>';
+$body='<div class="head"><h2>Анкета самооценки психологической готовности: «'.esc($block['label']).'»</h2></div>';
 $body.='<div class="card pad" style="margin-bottom:14px"><p style="margin-top:0">'.esc($intro['purpose']).'</p><p>'.esc($intro['howto']).'</p><p class="muted" style="font-size:12.5px;margin-bottom:0">'.esc($intro['why3']).'</p></div>';
 $body.='<div class="hint-warn"><b>Особенность аудитории.</b> '.esc($block['audience']).'</div>';
 $body.='<form method="post" class="card pad">'.csrf_field().'<input type="hidden" name="action" value="submit_psych_readiness"><input type="hidden" name="age_group" value="'.esc($ageGroup).'">';
@@ -2383,7 +2411,7 @@ $info.='</dl>';
 [$turnWho,$turnAct]=whose_turn($r);
 $turnMine=($u['role']==='school'&&$turnWho==='Заявитель')||($u['role']==='fund'&&$turnWho==='Фонд')||($u['role']==='operator'&&$turnWho==='Оператор');
 $turnHtml=($turnAct && !in_array($r['status'],['closed','cancelled'])) ? '<div class="turn-banner '.($turnMine?'turn-you':'turn-other').'"><b>Сейчас ход за: '.esc($turnWho).'.</b> '.esc($turnAct).'</div>' : '';
-$body='<div class="head"><h2>Заявка '.esc($r['code']).' '.pill($r['status']).'</h2><div><a class="btn ghost" href="?p=audit&target_type=requests&target_id='.$r['id'].'">📋 История</a> <a class="btn ghost" href="?p='.$u['role'].'">← в кабинет</a></div></div><div class="card pad">'.$turnHtml.$info.($r['status']==='cancelled' ? '<div class="block"><div style="background:#fdecea;color:#b23b2c;border:1px solid #f5c6c0;border-radius:8px;padding:12px"><b>Урок не состоялся.</b> Причина: '.esc($r['cancel_reason']?:'не указана').($r['cancelled_at']?' · '.esc($r['cancelled_at']):'').'</div></div>' : '<div class="block"><h4>Этапы</h4>'.stepper($r['status']).'</div>');
+$body='<div class="head"><h2>Заявка '.esc($r['code']).' '.pill($r['status']).'</h2></div><div class="card pad">'.$turnHtml.$info.($r['status']==='cancelled' ? '<div class="block"><div style="background:#fdecea;color:#b23b2c;border:1px solid #f5c6c0;border-radius:8px;padding:12px"><b>Урок не состоялся.</b> Причина: '.esc($r['cancel_reason']?:'не указана').($r['cancelled_at']?' · '.esc($r['cancelled_at']):'').'</div></div>' : '<div class="block"><h4>Этапы</h4>'.stepper($r['status']).'</div>');
 $listHtml='';
 foreach($rows as $row){ $badge=$row['confirmed']?'<span class="pill green">в составе</span>':'<span class="pill gray">кандидат</span>'; $org=speaker_org_name($row['speaker_user_id']); $listHtml.='<div class="fbsum"><b>'.esc($row['display_name']).'</b>'.($org!==''?' <span class="muted">· '.esc($org).'</span>':'').' '.$badge; if(trim((string)$row['vet_comment'])!=='') $listHtml.='<div class="cmt">отзыв спикера: '.esc($row['vet_comment']).'</div>'; $listHtml.='</div>'; }
 // ========== ГОТОВНОСТЬ СПИКЕРА К ЗАНЯТИЮ (проверка по теме) ==========
