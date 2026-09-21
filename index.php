@@ -1025,7 +1025,7 @@ layout('Политика обработки персональных данны�
 if($p==='home'){
 $newsItems=list_news(true,6);
 $covers=news_cover_images(array_column($newsItems,'id'));
-$body='<div class="pub-hero"><h1>Герои рассказывают — школьники слушают</h1><p>Ветераны специальной военной операции приходят в школы, колледжи и вузы Тюменской области, чтобы говорить с подростками о мужестве, долге и взаимовыручке. Платформа соединяет школы, фонды-координаторы и спикеров-ветеранов на одной платформе.</p></div>';
+$body='<div class="pub-hero"><h1>Герои рассказывают — школьники слушают</h1><p>Ветераны специальной военной операции приходят в школы, колледжи и вузы Тюменской области, чтобы говорить с подростками о мужестве, долге и взаимовыручке. Платформа соединяет школы, фонды-координаторы и спикеров-ветеранов на одной платформе.</p><a class="btn-pill" href="?p=register">Зарегистрироваться →</a></div>';
 $quoteItem=$newsItems[0]??null;
 if($quoteItem){
 $qtext=trim(preg_replace('/\s+/u',' ',(string)$quoteItem['body']));
@@ -1036,15 +1036,14 @@ $kpiRows=kpis(null);
 $body.='<div class="head"><h2>Статистика проекта</h2></div><div class="kpis">';
 foreach($kpiRows as $row) $body.='<div class="kpi"><div class="n">'.$row[1].'</div><div class="l">'.esc($row[0]).'</div></div>';
 $body.='</div>';
-$body.='<div class="head"><h2>Новости</h2>'.($newsItems?'<a href="?p=news">Все новости →</a>':'').'</div>';
+$body.='<div class="head"><h2>Новости</h2>'.($newsItems?'<a href="?p=news" class="btn-pill-outline">Все новости →</a>':'').'</div>';
 if(!$newsItems) $body.='<div class="card pad muted">Новостей пока нет.</div>';
 else { $body.='<div class="news-grid">'; foreach($newsItems as $n){
-$excerpt=mb_substr(trim(preg_replace('/\s+/u',' ',(string)$n['body'])),0,120);
 $cov=$covers[$n['id']]??null;
-$body.='<a href="?p=news&id='.$n['id'].'" class="news-card">'.($cov?'<img src="?p=news_image&id='.$cov['id'].'" alt="">':'<div class="news-card-ph"></div>').'<div class="news-card-body"><h4>'.esc($n['title']).'</h4><p>'.esc($excerpt).(mb_strlen((string)$n['body'])>120?'…':'').'</p></div></a>';
+$body.='<a href="?p=news&id='.$n['id'].'" class="news-card">'.($cov?'<img src="?p=news_image&id='.$cov['id'].'" alt="">':'<div class="news-card-ph"></div>').'<div class="news-card-body"><h4>'.esc($n['title']).'</h4></div></a>';
 } $body.='</div>'; }
 $body.=rospatriot_banner();
-$body.='<div class="pub-cta"><h3>Хотите стать частью программы?</h3><p>Подайте заявку на урок от имени школы или колледжа — либо зарегистрируйтесь как спикер-ветеран и делитесь своим опытом с подростками.</p><a class="btn primary btn-lg" href="?p=register">Зарегистрироваться</a></div>';
+$body.='<div class="pub-cta"><h3>Хотите стать частью программы?</h3><p>Подайте заявку на урок от имени школы или колледжа — либо зарегистрируйтесь как спикер-ветеран и делитесь своим опытом с подростками.</p><a class="btn-pill" href="?p=register">Зарегистрироваться</a></div>';
 layout('Урок Мужества 72',$body); exit;
 }
 if($p==='news'){
@@ -1087,9 +1086,8 @@ $covers=news_cover_images(array_column($items,'id'));
 $body='<div class="head"><h2>Новости</h2><a class="btn ghost" href="'.esc($u?role_home($u):'?p=home').'">← назад</a></div>';
 if(!$items) $body.='<div class="card pad muted">Новостей пока нет.</div>';
 else { $body.='<div class="news-grid">'; foreach($items as $n){
-$excerpt=mb_substr(trim(preg_replace('/\s+/u',' ',(string)$n['body'])),0,120);
 $cov=$covers[$n['id']]??null;
-$body.='<a href="?p=news&id='.$n['id'].'" class="news-card">'.($cov?'<img src="?p=news_image&id='.$cov['id'].'" alt="">':'<div class="news-card-ph"></div>').'<div class="news-card-body"><h4>'.esc($n['title']).'</h4><p>'.esc($excerpt).(mb_strlen((string)$n['body'])>120?'…':'').'</p></div></a>';
+$body.='<a href="?p=news&id='.$n['id'].'" class="news-card">'.($cov?'<img src="?p=news_image&id='.$cov['id'].'" alt="">':'<div class="news-card-ph"></div>').'<div class="news-card-body"><h4>'.esc($n['title']).'</h4></div></a>';
 } $body.='</div>'; }
 $body.=rospatriot_banner();
 layout('Новости',$body); exit;
@@ -1113,7 +1111,7 @@ $body.='<p>Проект реализуется в рамках регионал�
 $body.='<p>Как это работает: школа или колледж подаёт заявку на сайте — фонд-координатор подбирает и назначает спикера-ветерана с учётом района и возрастной группы аудитории — после урока школа и спикер оставляют отзывы о занятии.</p>';
 $body.='<p>Цель проекта — живое общение подростков с ветеранами СВО: рассказы о мужестве, воинском долге и взаимовыручке, которые формируют уважение к защитникам Отечества.</p>';
 $body.='</div>';
-$body.='<div class="pub-cta" style="margin-top:20px"><h3>Хотите стать частью программы?</h3><p>Подайте заявку на урок от имени школы или колледжа — либо зарегистрируйтесь как спикер-ветеран.</p><a class="btn primary btn-lg" href="?p=register">Зарегистрироваться</a></div>';
+$body.='<div class="pub-cta" style="margin-top:20px"><h3>Хотите стать частью программы?</h3><p>Подайте заявку на урок от имени школы или колледжа — либо зарегистрируйтесь как спикер-ветеран.</p><a class="btn-pill" href="?p=register">Зарегистрироваться</a></div>';
 layout('О проекте',$body); exit;
 }
 if($p==='faq'){
