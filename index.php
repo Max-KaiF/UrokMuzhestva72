@@ -594,7 +594,7 @@ $u=current_user();
 if(!$u && $p==='login') unset($_SESSION['pending_uid']);
 if(!$u && !empty($_SESSION['pending_uid']) && !in_array($p,['login','verify_otp'])) redirect('?p=verify_otp');
 if(!$u && $p==='') $p='home';
-if(!$u && !in_array($p,['login','register','reset_password','reset_request','privacy','guide','verify_otp','demo','home','news','news_image','about','faq','contacts'])) $p='login';
+if(!$u && !in_array($p,['login','register','reset_password','reset_request','privacy','guide','verify_otp','demo','home','news','news_image','about','faq','contacts','materials','material_download'])) $p='login';
 if($u && ($p===''||$p==='login'||$p==='register'||$p==='home')) $p=($u['role']==='admin')?'news_admin':$u['role'];
 // Спикер, зарегистрированный до появления этого поля, обязан ответить на вопрос о судимости
 // при первом же следующем входе — до этого никакие другие страницы кабинета не открываются.
@@ -1459,6 +1459,63 @@ document.querySelectorAll("#groups_wrap input[type=checkbox]").forEach(function(
 </script>';
 layout('Регистрация',$body); exit;
 }
+// ========== МАТЕРИАЛЫ ==========
+function material_size_label($bytes){ if(!$bytes) return ''; $mb=$bytes/1048576; return $mb>=1?round($mb,1).' МБ':round($bytes/1024,1).' КБ'; }
+if($p==='material_download'){
+$m=get_material((int)($_GET['id']??0));
+if(!$m || empty($m['file_path'])){ http_response_code(404); exit('Файл не найден.'); }
+$path=__DIR__.'/uploads/materials/'.$m['file_path'];
+if(!is_file($path)){ http_response_code(404); exit('Файл не найден.'); }
+header('Content-Type: application/octet-stream');
+header('Content-Disposition: attachment; filename="'.rawurlencode($m['file_name']?:$m['file_path']).'"');
+header('Content-Length: '.filesize($path));
+readfile($path); exit;
+}
+if($p==='materials'){
+$typeFilter=$_GET['type']??''; $topicParam=$_GET['topic']??null;
+$addHref='?p=material_edit'.($topicParam?'&topic='.urlencode($topicParam):'');
+$isOperator=$u && $u['role']==='operator';
+$body='<div class="head"><h2>Материалы</h2><div style="display:flex;gap:8px"><a class="btn ghost" href="'.esc($u?role_home($u):'?p=home').'">← '.($u?'в кабинет':'на главную').'</a>'.($isOperator?'<a class="btn primary" href="'.esc($addHref).'">+ Добавить материал</a>':'').'</div></div>';
+if($topicParam===null && $typeFilter==='' && empty($_GET['all'])){
+// ---- Папки по темам: техкарты, ролики и документы по одной теме лежат вместе ----
+$counts=material_topic_counts(); $topics=material_topics_all();
+if(!$topics && empty($counts[''])){
+$body.='<div class="empty-state"><div class="empty-icon">🗂️</div><h3>Материалов пока нет</h3><p class="muted">'.($isOperator?'Загрузите первый материал кнопкой выше.':'Департамент ещё не добавил ни одного материала.').'</p></div>';
+} else {
+$body.='<p class="muted">Материалы сгруппированы по темам занятий — в каждой папке техкарта, ролики и документы по одной теме вместе. <a href="?p=materials&all=1">Показать все материалы одним списком</a></p>';
+$body.='<div class="folders-grid">';
+foreach($topics as $t){ $c=$counts[$t]??0; $body.='<a class="folder-card" href="?p=materials&topic='.urlencode($t).'"><div class="folder-icon">📁</div><div class="folder-info"><div class="folder-title">'.esc($t).'</div><div class="folder-count">'.$c.' '.ru_plural($c,'материал','материала','материалов').'</div></div></a>'; }
+if(!empty($counts[''])){ $c=$counts['']; $body.='<a class="folder-card" href="?p=materials&topic=" style="border-style:dashed"><div class="folder-icon">🗂️</div><div class="folder-info"><div class="folder-title">Без темы</div><div class="folder-count">'.$c.' '.ru_plural($c,'материал','материала','материалов').'</div></div></a>'; }
+$body.='</div>';
+}
+layout('Материалы',$body); exit;
+}
+// ---- Внутри папки (или общий список по виду материала) ----
+$topicFilter=$topicParam??'';
+$rows=list_materials($typeFilter?:null,$topicParam);
+if($topicParam!==null) $body.='<div class="hint-ok" style="margin-bottom:10px">Папка: <b>'.($topicFilter!==''?esc($topicFilter):'без темы').'</b>. <a href="?p=materials">← ко всем темам</a></div>';
+$body.='<form method="get" style="margin-bottom:14px"><input type="hidden" name="p" value="materials">'.($topicParam!==null?'<input type="hidden" name="topic" value="'.esc($topicFilter).'">':'').'<label class="lbl" style="margin:0">Вид материала</label><select name="type" class="form-select" style="max-width:320px;display:inline-block;width:auto" onchange="this.form.submit()"><option value="">Все</option>';
+foreach(material_types() as $k=>$v) $body.='<option value="'.esc($k).'" '.($typeFilter===$k?'selected':'').'>'.esc($v).'</option>';
+$body.='</select></form>';
+if(!$rows){
+$body.='<div class="empty-state"><div class="empty-icon">🗂️</div><h3>Материалов пока нет</h3><p class="muted">'.($isOperator?'Загрузите первый материал кнопкой выше.':'Департамент ещё не добавил ни одного материала.').'</p></div>';
+} else {
+$body.='<div class="materials-grid">';
+foreach($rows as $m){
+$body.='<div class="material-card"><div class="material-header"><div class="material-icon">'.material_type_icon($m['type']).'</div><div class="material-info"><div class="material-title">'.esc($m['title']).'</div><div class="material-meta"><span class="material-type">'.esc(material_types()[$m['type']]??$m['type']).'</span><span>тема: '.esc($m['topic']?:'—').'</span></div></div></div>';
+$body.='<div class="material-body">';
+if(!empty($m['description'])) $body.='<div class="material-desc">'.nl2br(esc($m['description'])).'</div>';
+$body.='<div class="material-actions">';
+if(!empty($m['file_path'])) $body.='<a class="btn-download" href="?p=material_download&id='.$m['id'].'">⬇ Скачать'.($m['file_size']?' ('.material_size_label($m['file_size']).')':'').'</a>';
+if(!empty($m['link'])) $body.='<a class="btn ghost sm" href="'.esc($m['link']).'" target="_blank" rel="noopener">🔗 Ссылка</a>';
+if($isOperator) $body.='<a class="btn ghost sm" href="?p=material_edit&id='.$m['id'].'">✏️</a><form method="post" style="display:inline" onsubmit="return confirm(\'Удалить материал?\')">'.csrf_field().'<input type="hidden" name="action" value="delete_material"><input type="hidden" name="id" value="'.$m['id'].'"><button type="submit" class="btn-delete">Удалить</button></form>';
+$body.='</div><div class="muted" style="font-size:12px;margin-top:10px">загрузил: '.esc($m['uploader']?:'—').' · '.esc(substr((string)$m['created_at'],0,10)).'</div>';
+$body.='</div></div>';
+}
+$body.='</div>';
+}
+layout('Материалы',$body); exit;
+}
 require_login();
 // ========== ВОЙТИ КАК (только для суперпользователя) ==========
 if($p==='impersonate'){
@@ -1798,62 +1855,6 @@ header('Content-Type: '.($ext==='png'?'image/png':($ext==='webp'?'image/webp':'i
 header('Cache-Control: private, max-age=86400');
 header('Content-Length: '.filesize($path));
 readfile($path); exit;
-}
-// ========== МАТЕРИАЛЫ ==========
-function material_size_label($bytes){ if(!$bytes) return ''; $mb=$bytes/1048576; return $mb>=1?round($mb,1).' МБ':round($bytes/1024,1).' КБ'; }
-if($p==='material_download'){
-$m=get_material((int)($_GET['id']??0));
-if(!$m || empty($m['file_path'])){ http_response_code(404); exit('Файл не найден.'); }
-$path=__DIR__.'/uploads/materials/'.$m['file_path'];
-if(!is_file($path)){ http_response_code(404); exit('Файл не найден.'); }
-header('Content-Type: application/octet-stream');
-header('Content-Disposition: attachment; filename="'.rawurlencode($m['file_name']?:$m['file_path']).'"');
-header('Content-Length: '.filesize($path));
-readfile($path); exit;
-}
-if($p==='materials'){
-$typeFilter=$_GET['type']??''; $topicParam=$_GET['topic']??null;
-$addHref='?p=material_edit'.($topicParam?'&topic='.urlencode($topicParam):'');
-$body='<div class="head"><h2>Материалы</h2><div style="display:flex;gap:8px"><a class="btn ghost" href="'.esc(role_home($u)).'">← в кабинет</a>'.($u['role']==='operator'?'<a class="btn primary" href="'.esc($addHref).'">+ Добавить материал</a>':'').'</div></div>';
-if($topicParam===null && $typeFilter==='' && empty($_GET['all'])){
-// ---- Папки по темам: техкарты, ролики и документы по одной теме лежат вместе ----
-$counts=material_topic_counts(); $topics=material_topics_all();
-if(!$topics && empty($counts[''])){
-$body.='<div class="empty-state"><div class="empty-icon">🗂️</div><h3>Материалов пока нет</h3><p class="muted">'.($u['role']==='operator'?'Загрузите первый материал кнопкой выше.':'Департамент ещё не добавил ни одного материала.').'</p></div>';
-} else {
-$body.='<p class="muted">Материалы сгруппированы по темам занятий — в каждой папке техкарта, ролики и документы по одной теме вместе. <a href="?p=materials&all=1">Показать все материалы одним списком</a></p>';
-$body.='<div class="folders-grid">';
-foreach($topics as $t){ $c=$counts[$t]??0; $body.='<a class="folder-card" href="?p=materials&topic='.urlencode($t).'"><div class="folder-icon">📁</div><div class="folder-info"><div class="folder-title">'.esc($t).'</div><div class="folder-count">'.$c.' '.ru_plural($c,'материал','материала','материалов').'</div></div></a>'; }
-if(!empty($counts[''])){ $c=$counts['']; $body.='<a class="folder-card" href="?p=materials&topic=" style="border-style:dashed"><div class="folder-icon">🗂️</div><div class="folder-info"><div class="folder-title">Без темы</div><div class="folder-count">'.$c.' '.ru_plural($c,'материал','материала','материалов').'</div></div></a>'; }
-$body.='</div>';
-}
-layout('Материалы',$body); exit;
-}
-// ---- Внутри папки (или общий список по виду материала) ----
-$topicFilter=$topicParam??'';
-$rows=list_materials($typeFilter?:null,$topicParam);
-if($topicParam!==null) $body.='<div class="hint-ok" style="margin-bottom:10px">Папка: <b>'.($topicFilter!==''?esc($topicFilter):'без темы').'</b>. <a href="?p=materials">← ко всем темам</a></div>';
-$body.='<form method="get" style="margin-bottom:14px"><input type="hidden" name="p" value="materials">'.($topicParam!==null?'<input type="hidden" name="topic" value="'.esc($topicFilter).'">':'').'<label class="lbl" style="margin:0">Вид материала</label><select name="type" class="form-select" style="max-width:320px;display:inline-block;width:auto" onchange="this.form.submit()"><option value="">Все</option>';
-foreach(material_types() as $k=>$v) $body.='<option value="'.esc($k).'" '.($typeFilter===$k?'selected':'').'>'.esc($v).'</option>';
-$body.='</select></form>';
-if(!$rows){
-$body.='<div class="empty-state"><div class="empty-icon">🗂️</div><h3>Материалов пока нет</h3><p class="muted">'.($u['role']==='operator'?'Загрузите первый материал кнопкой выше.':'Департамент ещё не добавил ни одного материала.').'</p></div>';
-} else {
-$body.='<div class="materials-grid">';
-foreach($rows as $m){
-$body.='<div class="material-card"><div class="material-header"><div class="material-icon">'.material_type_icon($m['type']).'</div><div class="material-info"><div class="material-title">'.esc($m['title']).'</div><div class="material-meta"><span class="material-type">'.esc(material_types()[$m['type']]??$m['type']).'</span><span>тема: '.esc($m['topic']?:'—').'</span></div></div></div>';
-$body.='<div class="material-body">';
-if(!empty($m['description'])) $body.='<div class="material-desc">'.nl2br(esc($m['description'])).'</div>';
-$body.='<div class="material-actions">';
-if(!empty($m['file_path'])) $body.='<a class="btn-download" href="?p=material_download&id='.$m['id'].'">⬇ Скачать'.($m['file_size']?' ('.material_size_label($m['file_size']).')':'').'</a>';
-if(!empty($m['link'])) $body.='<a class="btn ghost sm" href="'.esc($m['link']).'" target="_blank" rel="noopener">🔗 Ссылка</a>';
-if($u['role']==='operator') $body.='<a class="btn ghost sm" href="?p=material_edit&id='.$m['id'].'">✏️</a><form method="post" style="display:inline" onsubmit="return confirm(\'Удалить материал?\')">'.csrf_field().'<input type="hidden" name="action" value="delete_material"><input type="hidden" name="id" value="'.$m['id'].'"><button type="submit" class="btn-delete">Удалить</button></form>';
-$body.='</div><div class="muted" style="font-size:12px;margin-top:10px">загрузил: '.esc($m['uploader']?:'—').' · '.esc(substr((string)$m['created_at'],0,10)).'</div>';
-$body.='</div></div>';
-}
-$body.='</div>';
-}
-layout('Материалы',$body); exit;
 }
 if($p==='material_edit'){
 require_role('operator');
