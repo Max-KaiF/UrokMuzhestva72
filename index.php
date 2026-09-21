@@ -38,6 +38,7 @@ if($u['role']==='operator'){
 $pendN=count(pending_applicants($u));
 return [
 ['Кабинет','?p=operator'],
+['Активные','?p=operator'],
 ['Архив','?p=operator&tab=archive'],
 ['Модерация заявителей'.($pendN?' ('.$pendN.')':''),'?p=operator&tab=moderation'],
 ['Реестр спикеров','?p=operator&tab=speakers'],
@@ -54,6 +55,7 @@ return [
 }
 if($u['role']==='fund') return [
 ['Кабинет','?p=fund'],
+['Активные','?p=fund'],
 ['Архив','?p=fund&tab=archive'],
 ['Спикеры Фонда','?p=fund&tab=speakers'],
 ['Управление спикерами','?p=users&role=speaker'],
