@@ -38,7 +38,6 @@ if($u['role']==='operator'){
 $pendN=count(pending_applicants($u));
 return [
 ['Кабинет','?p=operator'],
-['Активные','?p=operator'],
 ['Архив','?p=operator&tab=archive'],
 ['Модерация заявителей'.($pendN?' ('.$pendN.')':''),'?p=operator&tab=moderation'],
 ['Реестр спикеров','?p=operator&tab=speakers'],
@@ -75,6 +74,7 @@ if($u['role']==='school') return [
 ];
 if($u['role']==='speaker') return [
 ['Кабинет','?p=speaker'],
+['Архив','?p=speaker&tab=archive'],
 ['Анкеты','?p=speaker_anketas'],
 ['Моя статистика','?p=speaker_stats'],
 ['Календарь','?p=calendar'],
@@ -91,7 +91,7 @@ if(!$items) return '';
 $html='<nav class="sidebar-nav">';
 foreach($items as [$label,$href]){
 parse_str(parse_url($href,PHP_URL_QUERY)?:'',$hq);
-$active=(($hq['p']??'')===$curP) && (($hq['tab']??'')===$curTab) && (($hq['target_id']??'')===($_GET['target_id']??''));
+$active=$label!=='Кабинет' && (($hq['p']??'')===$curP) && (($hq['tab']??'')===$curTab) && (($hq['target_id']??'')===($_GET['target_id']??''));
 $html.='<a href="'.esc($href).'"'.($active?' class="active"':'').'>'.esc($label).'</a>';
 }
 $html.='</nav>';
@@ -2096,7 +2096,18 @@ layout('Кабинет заявителя',$body); exit;
 if($p==='speaker'){
 require_role('speaker');
 if(!$u['active']){ layout('Кабинет спикера','<div class="card pad"><h2>Ожидает подтверждения</h2><p class="muted">Ваша учётная запись ожидает подтверждения Фондом.</p></div>'); exit; }
-$rows=speaker_lessons($u['id']);
+$tab=$_GET['tab']??'';
+if($tab==='archive'){
+$rows=array_values(array_filter(speaker_lessons($u['id']),fn($r)=>in_array($r['status'],['closed','cancelled'],true)));
+if(!empty($_GET['sort'])) $rows=sort_requests($rows,$_GET['sort'],$_GET['dir']??'asc');
+else $rows=sort_requests($rows,'date','desc');
+$tr=''; foreach($rows as $r){ $tr.='<tr onclick="location=\'?p=request&id='.$r['id'].'\'"><td class="id"><a href="?p=request&id='.$r['id'].'">'.esc($r['code']).'</a></td><td>'.esc($r['org']).'</td><td>'.dt($r).'</td><td>'.pill($r['status']).'</td></tr>'; }
+$body='<div class="head"><h2>Архив</h2></div>';
+$body.='<p class="muted">Ваши закрытые и несостоявшиеся уроки.</p>';
+$body.= $rows ? '<table class="card-view"><thead><tr>'.sort_th('Код','code').sort_th('Организация','org').sort_th('Дата и время','date').sort_th('Статус','status').'</tr></thead><tbody>'.$tr.'</tbody></table>' : '<div class="card pad muted">Архив пуст.</div>';
+layout('Архив',$body); exit;
+}
+$rows=array_values(array_filter(speaker_lessons($u['id']),fn($r)=>!in_array($r['status'],['closed','cancelled'],true)));
 if(!empty($_GET['sort'])) $rows=sort_requests($rows,$_GET['sort'],$_GET['dir']??'asc');
 else $rows=sort_requests($rows,'date','asc');
 $daily=speaker_daily_count($u['id'],date('Y-m-d'));
