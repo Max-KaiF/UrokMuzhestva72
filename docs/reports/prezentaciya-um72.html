@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Доклад: платформа «Урок Мужества 72»</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:wght@400;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{background:#0c1622}
+section{width:1920px;min-height:1080px;margin:0 auto 24px;overflow:hidden}
+@media (max-width:1920px){
+  section{width:100%;min-height:auto}
+  section *{max-width:100% !important}
+  section > div{flex-wrap:wrap !important}
+}
+@media print{
+  body{background:#fff}
+  section{page-break-after:always;margin-bottom:0;width:auto;min-height:100vh}
+}
+</style>
+</head>
+<body>
+<section id="cover" data-transition="fade" style="background:#16233A; color:#F7F5F0; font-family:'IBM Plex Sans', Arial, sans-serif; padding:128px; display:flex; flex-direction:column; justify-content:space-between">
+<div style="display:flex; flex-direction:column; gap:28px">
+<p style="font-size:24px; font-weight:600; letter-spacing:2px; text-transform:uppercase; color:#7FA8C9">урокмужества72.рф</p>
+<h1 style="font-family:'Source Serif 4', Georgia, serif; font-size:120px; font-weight:700; line-height:1.05; color:#F7F5F0; width:1600px">Урок Мужества 72</h1>
+<p style="font-size:32px; line-height:1.45; color:#C9D3DE; width:1300px">Доклад о развитии платформы: от запуска до зрелого рабочего инструмента регионального департамента образования</p>
+</div>
+<div style="display:flex; justify-content:space-between; align-items:flex-end">
+<p style="font-size:24px; color:#8FA6BE">Региональная программа «Боевой кадровый резерв Тюменской области»</p>
+<p style="font-size:24px; color:#8FA6BE">29 сентября 2026</p>
+</div>
+</section>
+
+<section id="about" data-transition="fade" style="background:#F7F5F0; color:#16233A; font-family:'IBM Plex Sans', Arial, sans-serif; padding:128px 128px 160px; display:flex; flex-direction:column; gap:48px">
+<h2 style="font-family:'Source Serif 4', Georgia, serif; font-size:72px; font-weight:700; color:#16233A">О проекте</h2>
+<p style="font-size:38px; line-height:1.45; color:#3E4552; width:1550px">«Урок Мужества 72» связывает школы, колледжи и вузы Тюменской области со спикерами-ветеранами специальной военной операции — от подачи заявки школой до закрытого урока с отзывами обеих сторон.</p>
+<div style="display:flex; gap:32px">
+<div style="flex:1; display:flex; flex-direction:column; gap:16px; background:#FFFFFF; padding:40px; border:1px solid #E3E0D6; border-radius:16px">
+
+<h3 style="font-size:28px; font-weight:600; color:#16233A">Запущен 9 июля 2026</h3>
+<p style="font-size:24px; color:#6A7179; line-height:1.4">Три месяца непрерывной разработки, 104 коммита</p>
+</div>
+<div style="flex:1; display:flex; flex-direction:column; gap:16px; background:#FFFFFF; padding:40px; border:1px solid #E3E0D6; border-radius:16px">
+
+<h3 style="font-size:28px; font-weight:600; color:#16233A">Пять ролей</h3>
+<p style="font-size:24px; color:#6A7179; line-height:1.4">Заявитель, Фонд, Спикер, Оператор, Администратор новостей</p>
+</div>
+<div style="flex:1; display:flex; flex-direction:column; gap:16px; background:#FFFFFF; padding:40px; border:1px solid #E3E0D6; border-radius:16px">
+
+<h3 style="font-size:28px; font-weight:600; color:#16233A">Рабочий инструмент</h3>
+<p style="font-size:24px; color:#6A7179; line-height:1.4">Департамента образования и фондов-координаторов</p>
+</div>
+</div>
+</section>
+
+<section id="timeline" data-transition="fade" style="background:#F7F5F0; color:#16233A; font-family:'IBM Plex Sans', Arial, sans-serif; padding:128px 128px 160px; display:flex; flex-direction:column; gap:48px">
+<div style="display:flex; flex-direction:column; gap:12px">
+<h2 style="font-family:'Source Serif 4', Georgia, serif; font-size:72px; font-weight:700; color:#16233A">Три волны за три месяца</h2>
+<p style="font-size:26px; color:#6A7179">104 коммита, 9 июля — 29 сентября 2026</p>
+</div>
+<div style="display:flex; gap:32px; flex:1">
+<div style="flex:1; display:flex; flex-direction:column; gap:20px; background:#FFFFFF; padding:44px; border:1px solid #E3E0D6; border-radius:20px">
+<p style="font-size:22px; font-weight:600; letter-spacing:1px; text-transform:uppercase; color:#2F6B9E">9 – 28 июля</p>
+<h3 style="font-size:40px; font-weight:600; color:#16233A">Июль</h3>
+<p style="font-size:26px; line-height:1.5; color:#3E4552">Запуск платформы: пять ролей, воронка заявок, обязательная 2FA, первая версия сайта.</p>
+<p style="font-size:24px; color:#6A7179">28 июля — первый аудит по Приказу ФСТЭК №117</p>
+</div>
+<div style="flex:1; display:flex; flex-direction:column; gap:20px; background:#FFFFFF; padding:44px; border:1px solid #E3E0D6; border-radius:20px">
+<p style="font-size:22px; font-weight:600; letter-spacing:1px; text-transform:uppercase; color:#2F6B9E">12 – 31 августа</p>
+<h3 style="font-size:40px; font-weight:600; color:#16233A">Август</h3>
+<p style="font-size:26px; line-height:1.5; color:#3E4552">Трёхэтапный технический аудит, PWA-приложение, push-уведомления, автоархивация заявок.</p>
+<p style="font-size:24px; color:#6A7179">Допуск спикеров к возрастным группам по анкете</p>
+</div>
+<div style="flex:1; display:flex; flex-direction:column; gap:20px; background:#EAF1F8; padding:44px; border:2px solid #2F6B9E; border-radius:20px">
+<p style="font-size:22px; font-weight:600; letter-spacing:1px; text-transform:uppercase; color:#2F6B9E">6 – 29 сентября</p>
+<h3 style="font-size:40px; font-weight:600; color:#16233A">Сентябрь</h3>
+<p style="font-size:26px; line-height:1.5; color:#3E4552">Публичный сайт с новостями, редизайн интерфейса, единая боковая панель у всех ролей.</p>
+<p style="font-size:24px; font-weight:600; color:#2F6B9E">Текущая фаза</p>
+</div>
+</div>
+</section>
+
+<section id="roles" data-transition="fade" style="background:#F7F5F0; color:#16233A; font-family:'IBM Plex Sans', Arial, sans-serif; padding:128px 128px 160px; display:flex; flex-direction:column; gap:44px">
+<h2 style="font-family:'Source Serif 4', Georgia, serif; font-size:72px; font-weight:700; color:#16233A">Пять ролей</h2>
+<table style="font-family:'IBM Plex Sans', Arial, sans-serif; font-size:26px; color:#3E4552">
+<tr>
+<th style="width:22%; text-align:left; color:#16233A; font-weight:600; font-size:26px">Роль</th>
+<th style="width:78%; text-align:left; color:#16233A; font-weight:600; font-size:26px">Что делает</th>
+</tr>
+<tr style="background:#FFFFFF">
+<td style="text-align:left; font-weight:600; color:#2F6B9E">Заявитель</td>
+<td style="text-align:left">Подаёт заявку, выбирает спикера, подтверждает готовность, отмечает урок проведённым, оставляет отзыв со ссылкой на пост</td>
+</tr>
+<tr>
+<td style="text-align:left; font-weight:600; color:#2F6B9E">Фонд-координатор</td>
+<td style="text-align:left">Берёт заявку в обработку, подбирает и подтверждает спикера, при необходимости заменяет</td>
+</tr>
+<tr style="background:#FFFFFF">
+<td style="text-align:left; font-weight:600; color:#2F6B9E">Спикер-ветеран</td>
+<td style="text-align:left">Видит назначенные уроки, проходит допуск по возрастным группам, отмечает недоступные даты, оставляет отзыв</td>
+</tr>
+<tr>
+<td style="text-align:left; font-weight:600; color:#2F6B9E">Оператор</td>
+<td style="text-align:left">Модерирует заявителей и спикеров, ведёт реестры, закрывает заявки, формирует отчёты и CSV-экспорт</td>
+</tr>
+<tr style="background:#FFFFFF">
+<td style="text-align:left; font-weight:600; color:#2F6B9E">Администратор новостей</td>
+<td style="text-align:left">Ведёт ленту новостей на публичной части сайта</td>
+</tr>
+</table>
+</section>
+
+<section id="features" data-transition="fade" style="background:#16233A; color:#F7F5F0; font-family:'IBM Plex Sans', Arial, sans-serif; padding:128px 128px 160px; display:flex; flex-direction:column; gap:48px">
+<h2 style="font-family:'Source Serif 4', Georgia, serif; font-size:72px; font-weight:700; color:#F7F5F0">Сквозной функционал</h2>
+<div style="display:grid; grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr 1fr; gap:28px; flex:1">
+<div style="display:flex; gap:20px; align-items:flex-start; background:#1D2E48; padding:32px; border-radius:16px">
+
+<p style="font-size:26px; line-height:1.4; color:#DCE4EC">Воронка заявки от «Новой» до «Закрытой» с промежуточными статусами</p>
+</div>
+<div style="display:flex; gap:20px; align-items:flex-start; background:#1D2E48; padding:32px; border-radius:16px">
+
+<p style="font-size:26px; line-height:1.4; color:#DCE4EC">Лимиты нагрузки на спикера — 2 урока в день, 7 в неделю, со снятием в памятные даты</p>
+</div>
+<div style="display:flex; gap:20px; align-items:flex-start; background:#1D2E48; padding:32px; border-radius:16px">
+
+<p style="font-size:26px; line-height:1.4; color:#DCE4EC">Журнал действий по каждой заявке и по каждой роли</p>
+</div>
+<div style="display:flex; gap:20px; align-items:flex-start; background:#1D2E48; padding:32px; border-radius:16px">
+
+<p style="font-size:26px; line-height:1.4; color:#DCE4EC">Email- и push-уведомления о статусе заявки и завтрашних уроках</p>
+</div>
+<div style="display:flex; gap:20px; align-items:flex-start; background:#1D2E48; padding:32px; border-radius:16px">
+
+<p style="font-size:26px; line-height:1.4; color:#DCE4EC">PWA — сайт устанавливается как приложение, работает офлайн-страница</p>
+</div>
+<div style="display:flex; gap:20px; align-items:flex-start; background:#1D2E48; padding:32px; border-radius:16px">
+
+<p style="font-size:26px; line-height:1.4; color:#DCE4EC">Публичная часть сайта — новости, материалы, статистика без входа</p>
+</div>
+</div>
+</section>
+
+<section id="stats" data-transition="fade" style="background:#F7F5F0; color:#16233A; font-family:'IBM Plex Sans', Arial, sans-serif; padding:128px 128px 160px; display:flex; flex-direction:column; gap:44px">
+<div style="display:flex; flex-direction:column; gap:12px">
+<h2 style="font-family:'Source Serif 4', Georgia, serif; font-size:72px; font-weight:700; color:#16233A">Статистика и результаты</h2>
+<p style="font-size:28px; color:#6A7179">21 из 24 заявок доведены до конца — 87,5% результативность</p>
+</div>
+<div style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr; grid-template-rows:1fr 1fr; gap:24px; flex:1">
+<div style="display:flex; flex-direction:column; gap:8px; justify-content:center; background:#FFFFFF; padding:32px; border:1px solid #E3E0D6; border-radius:16px">
+<p style="font-size:64px; font-weight:700; color:#16233A; font-family:'Source Serif 4', Georgia, serif">24</p>
+<p style="font-size:22px; color:#6A7179">Всего заявок</p>
+</div>
+<div style="display:flex; flex-direction:column; gap:8px; justify-content:center; background:#FFFFFF; padding:32px; border:1px solid #E3E0D6; border-radius:16px">
+<p style="font-size:64px; font-weight:700; color:#2F6B9E; font-family:'Source Serif 4', Georgia, serif">2</p>
+<p style="font-size:22px; color:#6A7179">В работе</p>
+</div>
+<div style="display:flex; flex-direction:column; gap:8px; justify-content:center; background:#EAF1F8; padding:32px; border:2px solid #2F6B9E; border-radius:16px">
+<p style="font-size:64px; font-weight:700; color:#2F6B9E; font-family:'Source Serif 4', Georgia, serif">21</p>
+<p style="font-size:22px; color:#16233A; font-weight:600">Проведено и закрыто</p>
+</div>
+<div style="display:flex; flex-direction:column; gap:8px; justify-content:center; background:#FFFFFF; padding:32px; border:1px solid #E3E0D6; border-radius:16px">
+<p style="font-size:64px; font-weight:700; color:#A83226; font-family:'Source Serif 4', Georgia, serif">1</p>
+<p style="font-size:22px; color:#6A7179">Не состоялось</p>
+</div>
+<div style="display:flex; flex-direction:column; gap:8px; justify-content:center; background:#FFFFFF; padding:32px; border:1px solid #E3E0D6; border-radius:16px">
+<p style="font-size:64px; font-weight:700; color:#16233A; font-family:'Source Serif 4', Georgia, serif">12</p>
+<p style="font-size:22px; color:#6A7179">Спикеров в реестре</p>
+</div>
+<div style="display:flex; flex-direction:column; gap:8px; justify-content:center; background:#FFFFFF; padding:32px; border:1px solid #E3E0D6; border-radius:16px">
+<p style="font-size:64px; font-weight:700; color:#16233A; font-family:'Source Serif 4', Georgia, serif">2151</p>
+<p style="font-size:22px; color:#6A7179">Охвачено детей</p>
+</div>
+<div style="display:flex; flex-direction:column; gap:8px; justify-content:center; background:#FFFFFF; padding:32px; border:1px solid #E3E0D6; border-radius:16px">
+<p style="font-size:64px; font-weight:700; color:#16233A; font-family:'Source Serif 4', Georgia, serif">19</p>
+<p style="font-size:22px; color:#6A7179">Отзывы заявителей</p>
+</div>
+<div style="display:flex; flex-direction:column; gap:8px; justify-content:center; background:#FFFFFF; padding:32px; border:1px solid #E3E0D6; border-radius:16px">
+<p style="font-size:64px; font-weight:700; color:#16233A; font-family:'Source Serif 4', Georgia, serif">11</p>
+<p style="font-size:22px; color:#6A7179">Отзывы спикеров</p>
+</div>
+</div>
+</section>
+
+<section id="architecture" data-transition="fade" style="background:#F7F5F0; color:#16233A; font-family:'IBM Plex Sans', Arial, sans-serif; padding:128px 128px 160px; display:flex; flex-direction:column; gap:44px">
+<h2 style="font-family:'Source Serif 4', Georgia, serif; font-size:72px; font-weight:700; color:#16233A">Техническая архитектура</h2>
+<div style="display:flex; gap:32px; flex:1">
+<div style="flex:1; display:flex; flex-direction:column; gap:24px">
+<div style="display:flex; flex-direction:column; gap:8px; background:#FFFFFF; padding:32px; border:1px solid #E3E0D6; border-radius:16px">
+
+<h3 style="font-size:28px; font-weight:600; color:#16233A">Стек</h3>
+<p style="font-size:24px; line-height:1.4; color:#6A7179">PHP без фреймворка — index.php (маршрутизация) + lib.php (бизнес-логика), около 5800 строк</p>
+</div>
+<div style="display:flex; flex-direction:column; gap:8px; background:#FFFFFF; padding:32px; border:1px solid #E3E0D6; border-radius:16px">
+
+<h3 style="font-size:28px; font-weight:600; color:#16233A">База данных</h3>
+<p style="font-size:24px; line-height:1.4; color:#6A7179">PDO, два драйвера — MySQL в проде, SQLite для разработки; идемпотентные миграции</p>
+</div>
+</div>
+<div style="flex:1; display:flex; flex-direction:column; gap:24px">
+<div style="display:flex; flex-direction:column; gap:8px; background:#FFFFFF; padding:32px; border:1px solid #E3E0D6; border-radius:16px">
+
+<h3 style="font-size:28px; font-weight:600; color:#16233A">Безопасность кода</h3>
+<p style="font-size:24px; line-height:1.4; color:#6A7179">Параметризованные запросы, экранирование вывода, CSRF-токены, пароли — bcrypt</p>
+</div>
+<div style="display:flex; flex-direction:column; gap:8px; background:#FFFFFF; padding:32px; border:1px solid #E3E0D6; border-radius:16px">
+
+<h3 style="font-size:28px; font-weight:600; color:#16233A">Аутентификация</h3>
+<p style="font-size:24px; line-height:1.4; color:#6A7179">Логин/пароль + обязательный одноразовый код на email для всех ролей, блокировка после 5 попыток</p>
+</div>
+</div>
+</div>
+</section>
+
+<section id="security" data-transition="fade" style="background:#F7F5F0; color:#16233A; font-family:'IBM Plex Sans', Arial, sans-serif; padding:128px 128px 160px; display:flex; flex-direction:column; gap:36px">
+<div style="display:flex; flex-direction:column; gap:8px">
+<h2 style="font-family:'Source Serif 4', Georgia, serif; font-size:64px; font-weight:700; color:#16233A">Защита данных: аудит по Приказу ФСТЭК №117</h2>
+<p style="font-size:24px; color:#6A7179">Техническая самооценка 28.07.2026 · 22 пункта требований</p>
+</div>
+<div style="display:flex; gap:24px">
+<div style="flex:1; display:flex; flex-direction:column; gap:4px; background:#E5F0E9; padding:24px; border-radius:14px">
+<p style="font-size:48px; font-weight:700; color:#2F6B4F; font-family:'Source Serif 4', Georgia, serif">10</p>
+<p style="font-size:22px; color:#2F6B4F; font-weight:600">Выполнено</p>
+</div>
+<div style="flex:1; display:flex; flex-direction:column; gap:4px; background:#FBF0DC; padding:24px; border-radius:14px">
+<p style="font-size:48px; font-weight:700; color:#8A5A00; font-family:'Source Serif 4', Georgia, serif">1</p>
+<p style="font-size:22px; color:#8A5A00; font-weight:600">Частично</p>
+</div>
+<div style="flex:1; display:flex; flex-direction:column; gap:4px; background:#F7E6E4; padding:24px; border-radius:14px">
+<p style="font-size:48px; font-weight:700; color:#A83226; font-family:'Source Serif 4', Georgia, serif">11</p>
+<p style="font-size:22px; color:#A83226; font-weight:600">Отсутствует</p>
+</div>
+</div>
+<div style="display:flex; gap:32px; flex:1">
+<div style="flex:1; display:flex; flex-direction:column; gap:14px; background:#FFFFFF; padding:36px; border:1px solid #E3E0D6; border-radius:16px">
+<h3 style="font-size:26px; font-weight:600; color:#2F6B4F">Исправлено на уровне кода</h3>
+<ul style="font-size:22px; line-height:1.5; color:#3E4552">
+<li>Пароль — минимум 10 символов вместо 5</li>
+<li>Cookie сессии Secure, принудительный HTTPS</li>
+<li>Заголовки Content-Security-Policy, HSTS</li>
+<li>Собственный обработчик ошибок</li>
+<li>Проверка реального содержимого загружаемых фото</li>
+<li>Блокировка входа после 5 неверных паролей</li>
+</ul>
+</div>
+<div style="flex:1; display:flex; flex-direction:column; gap:14px; background:#FFFFFF; padding:36px; border:1px solid #E3E0D6; border-radius:16px">
+<h3 style="font-size:26px; font-weight:600; color:#A83226">Требует решения департамента</h3>
+<ul style="font-size:22px; line-height:1.5; color:#3E4552">
+<li>Утверждение политики защиты информации</li>
+<li>Назначение ответственного лица</li>
+<li>Акт классификации системы</li>
+<li>Аттестация и сертифицированные СЗИ — при необходимости</li>
+<li>Регламенты уязвимостей и резервного копирования</li>
+</ul>
+</div>
+</div>
+<p style="font-size:22px; color:#6A7179; line-height:1.4">Применимость Приказа №117 к этой системе не определена — решение принимает оператор (департамент), при необходимости с лицензиатом ФСТЭК.</p>
+</section>
+
+<section id="closing" data-transition="fade" style="background:#16233A; color:#F7F5F0; font-family:'IBM Plex Sans', Arial, sans-serif; padding:128px; display:flex; flex-direction:column; justify-content:space-between">
+<div style="display:flex; flex-direction:column; gap:32px">
+<h2 style="font-family:'Source Serif 4', Georgia, serif; font-size:80px; font-weight:700; color:#F7F5F0; width:1550px">От MVP до зрелого инструмента — за три месяца</h2>
+<p style="font-size:34px; line-height:1.5; color:#C9D3DE; width:1500px">Пять ролей, полная воронка заявки, мобильное приложение, уведомления, публичный сайт — и техническая самооценка по требованиям информационной безопасности.</p>
+</div>
+<div style="display:flex; gap:64px; align-items:flex-end">
+<div style="display:flex; flex-direction:column; gap:4px">
+<p style="font-size:88px; font-weight:700; color:#7FA8C9; font-family:'Source Serif 4', Georgia, serif">87,5%</p>
+<p style="font-size:24px; color:#8FA6BE">заявок доведены до конца</p>
+</div>
+<div style="display:flex; flex-direction:column; gap:4px">
+<p style="font-size:88px; font-weight:700; color:#7FA8C9; font-family:'Source Serif 4', Georgia, serif">2151</p>
+<p style="font-size:24px; color:#8FA6BE">ребёнок охвачен уроками</p>
+</div>
+<div style="display:flex; flex-direction:column; gap:4px">
+<p style="font-size:88px; font-weight:700; color:#7FA8C9; font-family:'Source Serif 4', Georgia, serif">104</p>
+<p style="font-size:24px; color:#8FA6BE">коммита за три месяца</p>
+</div>
+</div>
+</section>
+
+</body>
+</html>
