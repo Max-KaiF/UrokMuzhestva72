@@ -1744,7 +1744,7 @@ if(!empty($_GET['from_date'])) $afil['from_date']=$_GET['from_date'];
 if(!empty($_GET['to_date'])) $afil['to_date']=$_GET['to_date'];
 $rows=get_requests_list($afil);
 if(!empty($_GET['sort'])) $rows=sort_requests($rows,$_GET['sort'],$_GET['dir']??'asc');
-$body='<div class="head"><h2>Архив заявок</h2></div>';
+$body='<div class="head"><h2>Архив заявок</h2><form method="get" style="display:inline"><input type="hidden" name="p" value="archive_run"><button class="btn ghost" onclick="return confirm(\'Архивировать?\')">🗄️ Запустить архивацию</button></form></div>';
 $body.='<p class="muted">Закрытые заявки автоматически переносятся в архив через 5 рабочих дней после закрытия.</p>';
 $body.='<form method="get" class="card pad" style="margin-bottom:14px;display:flex;gap:10px;flex-wrap:wrap;align-items:end"><input type="hidden" name="p" value="operator"><input type="hidden" name="tab" value="archive">'
 .'<label class="lbl" style="margin:0">Организация</label><input name="org" value="'.esc($_GET['org']??'').'" placeholder="Поиск">'
@@ -1864,28 +1864,6 @@ $body.='</tbody></table>';
 layout($type==='app'?'Отзывы заявителей':'Отзывы спикеров',$body); exit;
 }
 // ========== ИНСТРУМЕНТЫ ОПЕРАТОРА ==========
-if($p==='operator_tools'){
-require_role('operator');
-$pendN=count(pending_applicants($u));
-$deptFilter=(($u['op_group']??'')==='school')?'school':'';
-$body='<div class="head"><h2>Инструменты</h2></div>';
-$body.='<div style="display:flex;gap:8px;flex-wrap:wrap">
-<a class="btn ghost" href="?p=export&type=requests&dept='.esc($deptFilter).'">📤 Экспорт заявок (CSV)</a>
-<a class="btn ghost" href="?p=export&type=speakers">📥 Экспорт спикеров (CSV)</a>
-<a class="btn ghost" href="?p=export&type=report&dept='.esc($deptFilter).'">📊 Отчёт для департамента (CSV)</a>
-<a class="btn ghost" href="?p=operator&tab=moderation">👤 Модерация заявителей'.($pendN?' ('.$pendN.')':'').'</a>
-<a class="btn ghost" href="?p=users">👥 Пользователи</a>
-<a class="btn ghost" href="?p=districts">🗺️ Районы</a>
-<a class="btn ghost" href="?p=audit">📋 Журнал действий</a>
-<a class="btn ghost" href="?p=calendar">📅 Календарь</a>
-<a class="btn ghost" href="?p=operator&tab=archive">🗄️ Архив</a>
-<form method="get" style="display:inline"><input type="hidden" name="p" value="archive_run"><button class="btn ghost" onclick="return confirm(\'Архивировать?\')">🗄️ Запустить архивацию</button></form>
-<a class="btn ghost" href="?p=operator&tab=speakers">Реестр спикеров</a>
-<a class="btn ghost" href="?p=materials">🗂️ Материалы</a>
-<a class="btn ghost" href="?p=lesson_readiness_admin">📘 Проверка готовности к занятиям</a>
-</div>';
-layout('Инструменты',$body); exit;
-}
 // ========== ФОТО СПИКЕРА ==========
 if($p==='speaker_photo'){
 require_login();
