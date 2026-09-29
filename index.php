@@ -2100,10 +2100,10 @@ if($tab==='archive'){
 $rows=array_values(array_filter(speaker_lessons($u['id']),fn($r)=>in_array($r['status'],['closed','cancelled'],true)));
 if(!empty($_GET['sort'])) $rows=sort_requests($rows,$_GET['sort'],$_GET['dir']??'asc');
 else $rows=sort_requests($rows,'date','desc');
-$tr=''; foreach($rows as $r){ $tr.='<tr onclick="location=\'?p=request&id='.$r['id'].'\'"><td class="id"><a href="?p=request&id='.$r['id'].'">'.esc($r['code']).'</a></td><td>'.esc($r['org']).'</td><td>'.dt($r).'</td><td>'.pill($r['status']).'</td></tr>'; }
+$tr=''; foreach($rows as $r){ $postUrl=trim((string)($r['fb_post_url']??'')); $postCell=$postUrl!==''?'<a href="'.esc($postUrl).'" target="_blank" rel="noopener" onclick="event.stopPropagation()">🔗 ссылка</a>':'<span class="muted">—</span>'; $tr.='<tr onclick="location=\'?p=request&id='.$r['id'].'\'"><td class="id"><a href="?p=request&id='.$r['id'].'">'.esc($r['code']).'</a></td><td>'.esc($r['org']).'</td><td>'.dt($r).'</td><td>'.pill($r['status']).'</td><td data-label="Пост о занятии">'.$postCell.'</td></tr>'; }
 $body='<div class="head"><h2>Архив</h2></div>';
 $body.='<p class="muted">Ваши закрытые и несостоявшиеся уроки.</p>';
-$body.= $rows ? '<table class="card-view"><thead><tr>'.sort_th('Код','code').sort_th('Организация','org').sort_th('Дата и время','date').sort_th('Статус','status').'</tr></thead><tbody>'.$tr.'</tbody></table>' : '<div class="card pad muted">Архив пуст.</div>';
+$body.= $rows ? '<table class="card-view"><thead><tr>'.sort_th('Код','code').sort_th('Организация','org').sort_th('Дата и время','date').sort_th('Статус','status').'<th>Пост о занятии</th></tr></thead><tbody>'.$tr.'</tbody></table>' : '<div class="card pad muted">Архив пуст.</div>';
 layout('Архив',$body); exit;
 }
 $rows=array_values(array_filter(speaker_lessons($u['id']),fn($r)=>!in_array($r['status'],['closed','cancelled'],true)));
@@ -2111,7 +2111,7 @@ if(!empty($_GET['sort'])) $rows=sort_requests($rows,$_GET['sort'],$_GET['dir']??
 else $rows=sort_requests($rows,'date','asc');
 $daily=speaker_daily_count($u['id'],date('Y-m-d'));
 $weekly=speaker_weekly_count($u['id'],date('Y-m-d'));
-$tr=''; foreach($rows as $r){ $mark=$r['cfd']?'<span style="color:var(--green);font-weight:600">в составе</span>':(st_index($r['status'])>=st_index('confirmed')?'<span class="muted">не выбран</span>':'<span class="muted">кандидат</span>'); [$turnWho,$turnWhat]=whose_turn($r); $tr.='<tr onclick="location=\'?p=request&id='.$r['id'].'\'"><td class="id"><a href="?p=request&id='.$r['id'].'">'.esc($r['code']).'</a></td><td>'.esc($r['org']).'</td><td>'.dt($r).'</td><td>'.$mark.'</td><td title="'.esc($turnWho.($turnWhat?' — '.$turnWhat:'')).'">'.pill($r['status']).'</td></tr>'; }
+$tr=''; foreach($rows as $r){ $mark=$r['cfd']?'<span style="color:var(--green);font-weight:600">в составе</span>':(st_index($r['status'])>=st_index('confirmed')?'<span class="muted">не выбран</span>':'<span class="muted">кандидат</span>'); [$turnWho,$turnWhat]=whose_turn($r); $postUrl=trim((string)($r['fb_post_url']??'')); $postCell=$postUrl!==''?'<a href="'.esc($postUrl).'" target="_blank" rel="noopener" onclick="event.stopPropagation()">🔗 ссылка</a>':'<span class="muted">—</span>'; $tr.='<tr onclick="location=\'?p=request&id='.$r['id'].'\'"><td class="id"><a href="?p=request&id='.$r['id'].'">'.esc($r['code']).'</a></td><td>'.esc($r['org']).'</td><td>'.dt($r).'</td><td>'.$mark.'</td><td title="'.esc($turnWho.($turnWhat?' — '.$turnWhat:'')).'">'.pill($r['status']).'</td><td data-label="Пост о занятии">'.$postCell.'</td></tr>'; }
 $body='<div class="head"><h2>Мои уроки</h2></div>';
 if(speaker_has_criminal_record($u)) $body.='<div class="hint-warn">'.nl2br(esc(criminal_record_notice())).'</div>';
 $dPct=$daily/2; $wPct=$weekly/7;
@@ -2120,7 +2120,7 @@ $wCls='kpi'.($wPct>=1?' warn':($wPct>=0.8?' caution':''));
 $body.='<div class="kpis"><div class="'.$dCls.'"><div class="n">'.$daily.' / 2</div><div class="l">Загрузка сегодня</div></div><div class="'.$wCls.'"><div class="n">'.$weekly.' / 7</div><div class="l">Загрузка на неделе</div></div><div class="kpi"><div class="n">'.count($rows).'</div><div class="l">Всего назначено</div></div></div>';
 $body.='<p class="muted" style="margin-top:-8px;font-size:12.5px">Загрузка — активные уроки в пределах лимита (2 в день / 7 в неделю). Проведённые уроки и статистика — в разделе «Моя статистика».</p>';
 if($todayExempt=speaker_load_exempt_label(date('Y-m-d'))) $body.='<div class="hint-ok" style="margin-top:8px">📅 Сегодня — «'.esc($todayExempt).'». Ограничение по нагрузке (2 урока в день / 7 в неделю) в этот день не действует.</div>';
-$body.= $rows ? '<table class="card-view"><thead><tr>'.sort_th('Код','code').sort_th('Организация','org').sort_th('Дата и время','date').'<th>Роль на уроке</th>'.sort_th('Статус','status').'</tr></thead><tbody>'.$tr.'</tbody></table>' : '<div class="card pad muted">Назначенных уроков пока нет.</div>';
+$body.= $rows ? '<table class="card-view"><thead><tr>'.sort_th('Код','code').sort_th('Организация','org').sort_th('Дата и время','date').'<th>Роль на уроке</th>'.sort_th('Статус','status').'<th>Пост о занятии</th></tr></thead><tbody>'.$tr.'</tbody></table>' : '<div class="card pad muted">Назначенных уроков пока нет.</div>';
 $pool=fund_pool_requests_for_speaker($u);
 if($pool){ $body.='<div class="block" style="margin-top:20px"><h4>📋 Заявки вашего фонда в обработке</h4><p class="muted">Ваш Фонд взял эти заявки в работу и подбирает спикера. Как только он назначит конкретного спикера, заявка появится в разделе «Мои уроки» у него.</p>';
 $body.='<table class="card-view"><thead><tr><th>Код</th><th>Организация</th><th>Дата и время</th></tr></thead><tbody>';
@@ -2565,6 +2565,8 @@ $body.=$r['needs_replacement']
 :'<div class="block"><h4>Не сможете провести?</h4><p class="muted">Если вы не можете провести этот урок, сообщите — Фонд назначит другого спикера.</p><form method="post"><input type="hidden" name="action" value="speaker_decline">'.csrf_field().'<input type="hidden" name="id" value="'.$r['id'].'"><button class="btn ghost sm" style="color:#b23b2c;border-color:#f5c6c0">Не смогу провести</button></form></div>';
 }
 if($row['confirmed'] && st_index($r['status'])>=st_index('done')){
+$postUrl=trim((string)($r['fb_post_url']??''));
+$body.='<div class="block"><h4>Пост заявителя о занятии</h4><p class="muted" style="margin-top:-4px">'.($postUrl!==''?'<a href="'.esc($postUrl).'" target="_blank" rel="noopener">🔗 '.esc($postUrl).'</a>':'Заявитель ещё не оставил ссылку на пост.').'</p></div>';
 $body.='<div class="block"><h4>Ваш отзыв</h4><form method="post">'.csrf_field().'<input type="hidden" name="action" value="feedback"><input type="hidden" name="id" value="'.$r['id'].'"><label class="lbl">Комментарий</label><textarea name="comment" required>'.esc($row['vet_comment']).'</textarea><button class="btn primary sm" style="margin-top:10px">'.(trim((string)$row['vet_comment'])!==''?'Обновить отзыв':'Отправить отзыв').'</button></form></div>';
 } elseif($row['confirmed']) { $body.='<div class="block muted">Отзыв можно оставить после проведения урока.</div>'; }
 }
