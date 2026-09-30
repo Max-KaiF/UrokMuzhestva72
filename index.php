@@ -668,7 +668,8 @@ flash_set("Архивировано заявок: $n");
 redirect('?p=operator&tab=archive');
 }
 function layout($title,$body){
-$u=current_user(); if($u && $u['role']==='admin' && ($_GET['p']??'')==='home' && !empty($_GET['preview'])) $u=null;
+$u=current_user();
+$previewingAsAnon=$u && $u['role']==='admin' && ($_GET['p']??'')==='home' && !empty($_GET['preview']);
 $c=cfg(); $sess='';
 $fullLabel='';
 if(!$u) $sess='<a class="btn-login-ring" href="?p=login">Вход</a>';
@@ -683,7 +684,7 @@ $admin=find_user_by_id((int)$_SESSION['impersonator_id']);
 echo '<div style="background:#b23b2c;color:#fff;text-align:center;padding:9px 14px;font-size:13.5px;position:sticky;top:0;z-index:1000">⚠ Вы вошли как <b>'.esc($u['display_name']?:$u['org_name']?:$u['login']).'</b> ('.esc($u['role']).') от имени <b>'.esc($admin['login']??'?').'</b>. <form method="post" style="display:inline;margin-left:8px">'.csrf_field().'<input type="hidden" name="action" value="impersonate_stop"><button type="submit" style="background:#fff;color:#b23b2c;border:none;border-radius:6px;padding:5px 12px;cursor:pointer;font-weight:600;font-size:13px">Вернуться к своей учётке</button></form></div>';
 }
 echo '<header class="top"><div class="topbar"><div class="mark"><img src="favicon.png" alt="" style="width:100%;height:100%;object-fit:contain"></div><div class="brand"><h1>Урок Мужества</h1><p class="brand-full">Проект разработан в рамках региональной программы «Боевой кадровый резерв Тюменской области»</p><p class="brand-short">В рамках региональной программы «БКР ТО»</p></div><div class="session">'.$sess.'</div></div>'.($fullLabel!==''?'<div class="rolebadge-full-mobile">'.esc($fullLabel).'</div>':'').'</header>';
-$sideNav=render_sidebar($u);
+$sideNav=render_sidebar($previewingAsAnon?null:$u);
 echo '<div class="shell">';
 if($sideNav) echo '<aside class="sidebar">'.$sideNav.'</aside>';
 echo '<main class="wrap">'; if($f) echo '<div class="flash">'.esc($f).'</div>';
