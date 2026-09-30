@@ -33,7 +33,7 @@ return [
 ['Вход','?p=login'],
 ];
 }
-if($u['role']==='admin') return [['Новости сайта','?p=news_admin']];
+if($u['role']==='admin') return [['Новости сайта','?p=news_admin'],['Просмотр сайта','?p=home&preview=1','_blank']];
 if($u['role']==='operator'){
 $pendN=count(pending_applicants($u));
 return [
@@ -88,10 +88,11 @@ $curP=$_GET['p']??''; $curTab=$_GET['tab']??'';
 if($u && $curP==='request' && !empty($_GET['id'])) $items[]=['История заявки','?p=audit&target_type=requests&target_id='.(int)$_GET['id']];
 if(!$items) return '';
 $html='<nav class="sidebar-nav">';
-foreach($items as [$label,$href]){
+foreach($items as $it){
+[$label,$href]=$it; $target=$it[2]??'';
 parse_str(parse_url($href,PHP_URL_QUERY)?:'',$hq);
 $active=$label!=='Кабинет' && (($hq['p']??'')===$curP) && (($hq['tab']??'')===$curTab) && (($hq['target_id']??'')===($_GET['target_id']??''));
-$html.='<a href="'.esc($href).'"'.($active?' class="active"':'').'>'.esc($label).'</a>';
+$html.='<a href="'.esc($href).'"'.($active?' class="active"':'').($target?' target="'.esc($target).'" rel="noopener"':'').'>'.esc($label).'</a>';
 }
 $html.='</nav>';
 return $html;
@@ -611,7 +612,7 @@ if(!$u && $p==='login') unset($_SESSION['pending_uid']);
 if(!$u && !empty($_SESSION['pending_uid']) && !in_array($p,['login','verify_otp'])) redirect('?p=verify_otp');
 if(!$u && $p==='') $p='home';
 if(!$u && !in_array($p,['login','register','reset_password','reset_request','privacy','guide','verify_otp','demo','home','news','news_image','about','faq','contacts','materials','material_download'])) $p='login';
-if($u && ($p===''||$p==='login'||$p==='register'||$p==='home')) $p=($u['role']==='admin')?'news_admin':$u['role'];
+if($u && ($p===''||$p==='login'||$p==='register'||($p==='home' && empty($_GET['preview'])))) $p=($u['role']==='admin')?'news_admin':$u['role'];
 // Спикер, зарегистрированный до появления этого поля, обязан ответить на вопрос о судимости
 // при первом же следующем входе — до этого никакие другие страницы кабинета не открываются.
 if($u && speaker_criminal_answer_needed($u) && $p!=='speaker_criminal_check') $p='speaker_criminal_check';
@@ -667,7 +668,8 @@ flash_set("Архивировано заявок: $n");
 redirect('?p=operator&tab=archive');
 }
 function layout($title,$body){
-$u=current_user(); $c=cfg(); $sess='';
+$u=current_user(); if($u && $u['role']==='admin' && ($_GET['p']??'')==='home' && !empty($_GET['preview'])) $u=null;
+$c=cfg(); $sess='';
 $fullLabel='';
 if(!$u) $sess='<a class="btn-login-ring" href="?p=login">Вход</a>';
 if($u){ $nm=($u['role']==='school')?(school_effective($u)['org_name']?:$u['display_name']):$u['display_name']; $fullLabel=trim((string)$nm);
@@ -714,6 +716,7 @@ echo '<div id="um72-cookie" role="dialog" aria-live="polite" aria-label="Уве�
 echo '</body></html>';
 }
 function pill($k){ $m=st_meta($k); if($k==='cancelled') return '<span class="pill" style="background:#fdecea;color:#b23b2c">'.esc($m['label']).'</span>'; return '<span class="pill '.$m['color'].'">'.esc($m['label']).'</span>'; }
+function news_card_media($cov){ if(!$cov) return '<div class="news-card-ph"></div>'; $src='?p=news_image&id='.$cov['id']; return '<div class="news-media" style="background-image:url(\''.esc($src).'\')"><div class="news-media-bg"></div><img src="'.esc($src).'" alt=""></div>'; }
 function speaker_bio_card($sp){
 $g=array_map(fn($k)=>ages()[$k]??$k,array_filter(explode(',',$sp['age_groups']??'')));
 $h='<div class="card pad" style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:10px">';
@@ -1051,7 +1054,7 @@ $body.='<div class="head"><h2>Новости</h2>'.($newsItems?'<a href="?p=news
 if(!$newsItems) $body.='<div class="card pad muted">Новостей пока нет.</div>';
 else { $body.='<div class="news-grid">'; foreach($newsItems as $n){
 $cov=$covers[$n['id']]??null;
-$body.='<a href="?p=news&id='.$n['id'].'" class="news-card">'.($cov?'<img src="?p=news_image&id='.$cov['id'].'" alt="">':'<div class="news-card-ph"></div>').'<div class="news-card-body"><h4>'.esc($n['title']).'</h4></div></a>';
+$body.='<a href="?p=news&id='.$n['id'].'" class="news-card">'.news_card_media($cov).'<div class="news-card-body"><h4>'.esc($n['title']).'</h4></div></a>';
 } $body.='</div>'; }
 $body.=rospatriot_banner();
 $body.='<div class="pub-cta"><h3>Хотите стать частью программы?</h3><p>Подайте заявку на урок от имени школы или колледжа — либо зарегистрируйтесь как спикер-ветеран и делитесь своим опытом с подростками.</p><a class="btn-pill" href="?p=register">Зарегистрироваться</a></div>';
@@ -1086,7 +1089,7 @@ $others=array_slice($others,0,5);
 if($others){
 $oCovers=news_cover_images(array_column($others,'id'));
 $body.='<div class="head" style="margin-top:28px"><h2>Другие новости</h2></div><div class="news-grid">';
-foreach($others as $o){ $oc=$oCovers[$o['id']]??null; $body.='<a href="?p=news&id='.$o['id'].'" class="news-card">'.($oc?'<img src="?p=news_image&id='.$oc['id'].'" alt="">':'<div class="news-card-ph"></div>').'<div class="news-card-body"><h4>'.esc($o['title']).'</h4></div></a>'; }
+foreach($others as $o){ $oc=$oCovers[$o['id']]??null; $body.='<a href="?p=news&id='.$o['id'].'" class="news-card">'.news_card_media($oc).'<div class="news-card-body"><h4>'.esc($o['title']).'</h4></div></a>'; }
 $body.='</div>';
 }
 $body.=rospatriot_banner();
@@ -1098,7 +1101,7 @@ $body='<div class="head"><h2>Новости</h2><a class="btn ghost" href="'.esc
 if(!$items) $body.='<div class="card pad muted">Новостей пока нет.</div>';
 else { $body.='<div class="news-grid">'; foreach($items as $n){
 $cov=$covers[$n['id']]??null;
-$body.='<a href="?p=news&id='.$n['id'].'" class="news-card">'.($cov?'<img src="?p=news_image&id='.$cov['id'].'" alt="">':'<div class="news-card-ph"></div>').'<div class="news-card-body"><h4>'.esc($n['title']).'</h4></div></a>';
+$body.='<a href="?p=news&id='.$n['id'].'" class="news-card">'.news_card_media($cov).'<div class="news-card-body"><h4>'.esc($n['title']).'</h4></div></a>';
 } $body.='</div>'; }
 $body.=rospatriot_banner();
 layout('Новости',$body); exit;
@@ -2443,6 +2446,8 @@ $body.='<div class="block"><h4>После урока</h4><p class="muted">Отм
 if(st_index($r['status'])>=st_index('done')){
 $hasFeedback=trim((string)$r['fb_app_comment'])!=='' && trim((string)($r['fb_post_url']??''))!=='';
 $body.='<div class="block"><h4>Ваш отзыв</h4><p class="muted">Ссылка на пост о проведённом занятии обязательна — без неё заявка не закрывается.</p><form method="post">'.csrf_field().'<input type="hidden" name="action" value="feedback"><input type="hidden" name="id" value="'.$r['id'].'"><label class="lbl">Комментарий</label><textarea name="comment" required>'.esc($r['fb_app_comment']).'</textarea><label class="lbl">Ссылка на пост о проведённом занятии <span style="color:#d11">*</span></label><input type="url" name="post_url" required placeholder="https://..." value="'.esc($r['fb_post_url']??'').'"><button class="btn primary sm" style="margin-top:10px">'.($hasFeedback?'Обновить отзыв':'Отправить отзыв').'</button></form></div>';
+$confSp=req_confirmed_rows($r['id']);
+$body.='<div class="block"><h4>Отзывы спикеров</h4>'.($confSp?implode('',array_map(fn($row)=>fbline($row['display_name'],$row['vet_comment']),$confSp)):'<p class="muted">Спикеры пока не подтверждены.</p>').'</div>';
 }
 }
 elseif($u['role']==='fund'){
@@ -2545,6 +2550,9 @@ $body.=$r['needs_replacement']
 if($row['confirmed'] && st_index($r['status'])>=st_index('done')){
 $postUrl=trim((string)($r['fb_post_url']??''));
 $body.='<div class="block"><h4>Пост заявителя о занятии</h4><p class="muted" style="margin-top:-4px">'.($postUrl!==''?'<a href="'.esc($postUrl).'" target="_blank" rel="noopener">🔗 '.esc($postUrl).'</a>':'Заявитель ещё не оставил ссылку на пост.').'</p></div>';
+$body.='<div class="block"><h4>Отзыв заявителя</h4>'.fbline('Заявитель',$r['fb_app_comment']).'</div>';
+$otherSp=array_values(array_filter(req_confirmed_rows($r['id']),fn($row2)=>(int)$row2['speaker_user_id']!==(int)$u['id']));
+if($otherSp) $body.='<div class="block"><h4>Отзывы других спикеров</h4>'.implode('',array_map(fn($row2)=>fbline($row2['display_name'],$row2['vet_comment']),$otherSp)).'</div>';
 $body.='<div class="block"><h4>Ваш отзыв</h4><form method="post">'.csrf_field().'<input type="hidden" name="action" value="feedback"><input type="hidden" name="id" value="'.$r['id'].'"><label class="lbl">Комментарий</label><textarea name="comment" required>'.esc($row['vet_comment']).'</textarea><button class="btn primary sm" style="margin-top:10px">'.(trim((string)$row['vet_comment'])!==''?'Обновить отзыв':'Отправить отзыв').'</button></form></div>';
 } elseif($row['confirmed']) { $body.='<div class="block muted">Отзыв можно оставить после проведения урока.</div>'; }
 }
