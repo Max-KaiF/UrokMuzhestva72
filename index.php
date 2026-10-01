@@ -340,6 +340,16 @@ if(!filter_var($email,FILTER_VALIDATE_EMAIL)){ flash_set('Укажите кор�
 if(!$ok){ flash_set($res); redirect('?p=users'); }
 flash_set('Учётная запись администратора сайта создана.'); redirect('?p=users&role=admin');
 }
+if($a==='create_operator_account'){
+require_role('operator'); $u=current_user();
+$login=trim($_POST['login']??''); $pass=$_POST['pass']??''; $dn=trim($_POST['display_name']??''); $email=trim($_POST['email']??'');
+if(strlen($login)<3||strlen($pass)<10){ flash_set('Логин от 3 символов, пароль от 10 символов.'); redirect('?p=users'); }
+if($dn===''){ flash_set('Укажите ФИО.'); redirect('?p=users'); }
+if(!filter_var($email,FILTER_VALIDATE_EMAIL)){ flash_set('Укажите корректный email.'); redirect('?p=users'); }
+[$ok,$res]=create_user('operator',$login,$pass,['display_name'=>$dn,'email'=>$email,'active'=>1,'op_group'=>$u['op_group']??'']);
+if(!$ok){ flash_set($res); redirect('?p=users'); }
+flash_set('Учётная запись оператора создана.'); redirect('?p=users&role=operator');
+}
 if($a==='save_district_neighbors'){ require_role('operator'); update_district_neighbors(trim($_POST['name']??''), explode(',',$_POST['neighbors']??'')); flash_set('Соседние районы сохранены.'); redirect('?p=districts'); }
 if($a==='add_district_admin'){ require_role('operator'); $n=ensure_district(trim($_POST['name']??'')); flash_set($n?('Район добавлен: '.$n):'Укажите название района.'); redirect('?p=districts'); }
 require_login(); $u=current_user();
@@ -1213,6 +1223,7 @@ if(!empty($sp['photo_path'])) $body.='<img src="?p=speaker_photo&id='.$sp['id'].
 else $body.='<div class="muted" style="width:140px;height:140px;border-radius:12px;border:1px dashed var(--line2);display:flex;align-items:center;justify-content:center;flex:0 0 auto">нет фото</div>';
 $body.='<dl class="kv" style="flex:1 1 300px"><dt>Организация (Фонд)</dt><dd>'.esc(speaker_org_name($sp['id'])?:'—').'</dd><dt>Район</dt><dd>'.esc($sp['district']?:'—').'</dd><dt>Телефон</dt><dd>'.esc($sp['phone']?:'—').'</dd><dt>Возрастные группы</dt><dd>'.esc(implode(', ',$g)?:'—').'</dd><dt>Звание</dt><dd>'.esc($sp['sp_rank']?:'—').'</dd><dt>Род войск / где служил</dt><dd>'.esc($sp['sp_branch']?:'—').'</dd></dl>';
 $body.='</div>';
+if(!empty($sp['criminal_cert_path'])) $body.='<div class="block"><h4>Справка о несудимости</h4><p class="muted" style="margin:0 0 8px">Дата справки: '.esc($sp['criminal_cert_date']?:'—').'</p><a class="btn ghost sm" href="?p=speaker_cert&id='.$sp['id'].'" target="_blank" rel="noopener">📄 Открыть справку</a></div>';
 if(!empty($sp['sp_awards'])) $body.='<div class="block"><h4>Награды</h4><p>'.nl2br(esc($sp['sp_awards'])).'</p></div>';
 if(!empty($sp['sp_achievements'])) $body.='<div class="block"><h4>Достижения</h4><p>'.nl2br(esc($sp['sp_achievements'])).'</p></div>';
 if(!empty($sp['sp_hobbies'])) $body.='<div class="block"><h4>Увлечения, хобби</h4><p>'.esc($sp['sp_hobbies']).'</p></div>';
@@ -1324,7 +1335,7 @@ $body.='<label class="lbl">Коротко о себе</label><textarea name="sp_
 $body.='<h4 style="margin-top:16px">Судимость</h4><p class="muted" style="margin:0 0 8px">Обязательно по закону (ст. 351.1 ТК РФ) для допуска к работе с детьми. Текущий ответ: <b>'.($u['criminal_record']==='yes'?'есть судимость':($u['criminal_record']==='no'?'судимости нет':'не указано')).'</b>.</p>';
 $body.='<label class="lbl">Есть ли у Вас судимость (снятая или непогашенная)?</label><select name="criminal_record" id="pcrim_sel" onchange="pcrimSw()"><option value="">— не менять —</option><option value="no"'.(($u['criminal_record']??'')==='no'?' selected':'').'>Нет</option><option value="yes"'.(($u['criminal_record']??'')==='yes'?' selected':'').'>Да</option></select>';
 $body.='<div id="pcrim_no_fields" style="display:none"><label class="lbl">Дата справки о несудимости</label><input type="date" name="criminal_cert_date" value="'.esc($u['criminal_cert_date']??'').'">';
-if(!empty($u['criminal_cert_path'])) $body.='<p class="muted" style="margin:4px 0">Справка уже загружена (от '.esc($u['criminal_cert_date']??'—').'). Загрузите новый файл, только если нужно её заменить.</p>';
+if(!empty($u['criminal_cert_path'])) $body.='<p class="muted" style="margin:4px 0">Справка уже загружена (от '.esc($u['criminal_cert_date']??'—').'). <a href="?p=speaker_cert&id='.$u['id'].'" target="_blank" rel="noopener">Открыть</a> — загрузите новый файл, только если нужно её заменить.</p>';
 $body.='<label class="lbl">Справка о несудимости (PDF/JPG/PNG)</label><input type="file" name="criminal_cert" accept=".pdf,.jpg,.jpeg,.png"></div>';
 $body.='<script>function pcrimSw(){var v=document.getElementById("pcrim_sel").value;document.getElementById("pcrim_no_fields").style.display=(v==="no")?"block":"none";}pcrimSw();</script>';
 }
@@ -1597,6 +1608,16 @@ $body.='<div><label class="lbl">Пароль</label><input type="password" name=
 $body.='<div><label class="lbl">ФИО</label><input name="display_name" required></div>';
 $body.='<div><label class="lbl">Email</label><input type="email" name="email" required></div>';
 $body.='<button class="btn primary sm">Создать</button></form></div>';
+if($u['role']==='operator'){
+$body.='<div class="card pad" style="margin-top:12px;border-left:4px solid var(--rf-blue,var(--navy))"><h4 style="margin:0 0 4px">+ Создать учётную запись оператора (сотрудника)</h4>';
+$body.='<p class="muted" style="margin:0 0 10px">Коллега с тем же доступом, что и у вас'.(($u['op_group']??'')!==''?' (департамент: '.esc(operator_label_for_group($u['op_group'])).')':'').'.</p>';
+$body.='<form method="post" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end">'.csrf_field().'<input type="hidden" name="action" value="create_operator_account">';
+$body.='<div><label class="lbl">Логин</label><input name="login" required minlength="3"></div>';
+$body.='<div><label class="lbl">Пароль</label><input type="password" name="pass" required minlength="10"></div>';
+$body.='<div><label class="lbl">ФИО</label><input name="display_name" required></div>';
+$body.='<div><label class="lbl">Email</label><input type="email" name="email" required></div>';
+$body.='<button class="btn primary sm">Создать</button></form></div>';
+}
 $body.='<div class="table-scroll"><table class="card-view resizable"><thead><tr><th>Логин</th>'.sort_th('ФИО/Орг','name').sort_th('Роль','role').sort_th('Email','email').sort_th('ФИО контактного лица','contact_name').sort_th('Должность','position').sort_th('Телефон','phone').sort_th('Адрес местонахождения','address').sort_th('№ корпуса','building').sort_th('Статус','status').'<th>Действия</th></tr></thead><tbody>';
 foreach($users as $x){
 $status=$x['active']?'<span class="pill green">активен</span>':'<span class="pill gray">ожидает</span>';
@@ -1878,6 +1899,21 @@ if(!is_file($path)){ http_response_code(404); exit; }
 $ext=strtolower(pathinfo($path,PATHINFO_EXTENSION));
 header('Content-Type: '.($ext==='png'?'image/png':($ext==='webp'?'image/webp':'image/jpeg')));
 header('Cache-Control: private, max-age=86400');
+header('Content-Length: '.filesize($path));
+readfile($path); exit;
+}
+if($p==='speaker_cert'){
+require_login();
+$sp=find_user_by_id((int)($_GET['id']??0));
+if(!$sp || $sp['role']!=='speaker' || empty($sp['criminal_cert_path'])){ http_response_code(404); exit; }
+$allowed=$u['role']==='operator' || ($u['role']==='fund' && in_array((int)($sp['fund_user_id']??0),fund_scope_ids($u),true)) || (int)$u['id']===(int)$sp['id'];
+if(!$allowed){ http_response_code(403); exit('Нет доступа.'); }
+$path=__DIR__.'/uploads/certs/'.$sp['criminal_cert_path'];
+if(!is_file($path)){ http_response_code(404); exit; }
+$ext=strtolower(pathinfo($path,PATHINFO_EXTENSION));
+header('Content-Type: '.($ext==='pdf'?'application/pdf':($ext==='png'?'image/png':'image/jpeg')));
+header('Content-Disposition: inline; filename="cert_'.$sp['id'].'.'.$ext.'"');
+header('Cache-Control: private, max-age=0, no-cache');
 header('Content-Length: '.filesize($path));
 readfile($path); exit;
 }
