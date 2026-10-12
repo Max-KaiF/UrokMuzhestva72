@@ -2362,7 +2362,7 @@ foreach($confirmed as $row){
 $sp=find_user_by_id((int)$row['speaker_user_id']);
 if($sp) $speakerContacts[]=['id'=>$sp['id'],'email'=>$sp['email']??'','name'=>$sp['display_name']?:'спикер'];
 }
-$pushUrl='?p=request&id='.$r['id'];
+$pushUrl=$reqUrl;
 $subject=''; $body='';
 switch($type){
 case 'confirmed':
@@ -2793,7 +2793,7 @@ $reqUrl=$url.'?p=request&id='.$r['id'];
 $subject="[$site] Напоминание: урок по заявке {$r['code']} завтра";
 $time=$r['utime'].(!empty($r['utime_end'])?"–{$r['utime_end']}":'');
 $body="Здравствуйте!\r\n\r\nНапоминаем: урок по заявке {$r['code']} («{$schoolName}») запланирован на завтра, {$r['udate']} в {$time}.\r\nТема: ".($r['topic']?:'не указана')."\r\n\r\nПодробнее: $reqUrl\r\n\r\nЭто автоматическое напоминание.\r\n";
-$pushUrl='?p=request&id='.$r['id'];
+$pushUrl=$reqUrl;
 if($schoolEmail){ @send_smtp_email($schoolEmail,$schoolName,$subject,$body); $n++; }
 if($school) notify_push($school['id'],'Урок завтра',"Заявка {$r['code']}, завтра в $time.",$pushUrl);
 foreach(req_confirmed_rows($r['id']) as $row){
