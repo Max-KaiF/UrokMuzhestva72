@@ -370,6 +370,9 @@ if(school_daily_limit_reached($u)){ fail_redirect('Ваша организаци
 $dsid=(int)($_POST['desired_speaker_id']??0);
 if($dsid){ $dsp=find_user_by_id($dsid); if(!$dsp||$dsp['role']!=='speaker'||!$dsp['active']) $dsid=0; }
 $f['desired_speaker_id']=$dsid;
+$dsid2=(int)($_POST['desired_speaker_id2']??0);
+if($dsid2){ $dsp2=find_user_by_id($dsid2); if(!$dsp2||$dsp2['role']!=='speaker'||!$dsp2['active']||$dsid2===$dsid) $dsid2=0; }
+$f['desired_speaker_id2']=$dsid2;
 $id=create_request($eff,$f); flash_set('Заявка отправлена всем фондам. Как только фонд назначит спикера, вы увидите его здесь.'); redirect('?p=request&id='.$id);
 }
 // ========== РЕДАКТИРОВАНИЕ ЗАЯВКИ ==========
@@ -2053,10 +2056,18 @@ $o='<option value="">— без предпочтения —</option>';
 foreach(active_speakers() as $s){ $ags=array_map(fn($k)=>ages()[$k]??$k,array_filter(explode(',',$s['age_groups']))); $o.='<option value="'.$s['id'].'"'.($cur===(int)$s['id']?' selected':'').'>'.esc($s['display_name']).' — '.esc($s['district']?:'район не указан').' ('.esc(implode(', ',$ags)).')</option>'; }
 return '<select name="desired_speaker_id">'.$o.'</select><p class="muted" style="margin:4px 0 0">Это пожелание для фонда, не гарантия назначения именно этого спикера.</p>';
 })().'
+<div id="ds2_wrap" style="display:none">
+<label class="lbl">Желаемый спикер 2 (необязательно)</label>'.(function() use($src){
+$cur=(int)($src['desired_speaker_id2']??0);
+$o='<option value="">— без предпочтения —</option>';
+foreach(active_speakers() as $s){ $ags=array_map(fn($k)=>ages()[$k]??$k,array_filter(explode(',',$s['age_groups']))); $o.='<option value="'.$s['id'].'"'.($cur===(int)$s['id']?' selected':'').'>'.esc($s['display_name']).' — '.esc($s['district']?:'район не указан').' ('.esc(implode(', ',$ags)).')</option>'; }
+return '<select name="desired_speaker_id2">'.$o.'</select><p class="muted" style="margin:4px 0 0">Если спикеры из разных фондов — каждый фонд сможет назначить своего.</p>';
+})().'
+</div>
 <label class="lbl">Особые условия</label><textarea name="notes">'.esc($src['notes']??'').'</textarea>
 <label class="chk" style="margin-top:8px"><input type="checkbox" name="consent" required> Согласие на обработку ПДн <span style="color:#d11">*</span> (<a href="?p=privacy" target="_blank">политика 152-ФЗ</a>)</label>
 <button class="btn primary" style="margin-top:12px">Отправить заявку</button></form>
-<script>function snHint(){var n=parseInt(document.getElementById("speakers_needed_sel").value);var h=document.getElementById("sn_hint");if(h)h.style.display=(n>=2)?"block":"none";}snHint();</script>';
+<script>function snHint(){var n=parseInt(document.getElementById("speakers_needed_sel").value);var h=document.getElementById("sn_hint");if(h)h.style.display=(n>=2)?"block":"none";var d=document.getElementById("ds2_wrap");if(d)d.style.display=(n>=2)?"block":"none";}snHint();</script>';
 layout('Подать заявку',$body); exit;
 }
 $scopeIds=school_scope_ids($u); $scopeIn=implode(',',array_fill(0,count($scopeIds),'?'));
@@ -2389,6 +2400,11 @@ if($r['status']==='new'){
 $dsOpt='<option value="">— без предпочтения —</option>';
 foreach(active_speakers() as $s){ $ags=array_map(fn($k)=>ages()[$k]??$k,array_filter(explode(',',$s['age_groups']))); $dsOpt.='<option value="'.$s['id'].'"'.((int)($r['desired_speaker_id']??0)===(int)$s['id']?' selected':'').'>'.esc($s['display_name']).' — '.esc($s['district']?:'район не указан').' ('.esc(implode(', ',$ags)).')</option>'; }
 $body.='<label class="lbl">Желаемый спикер (необязательно)</label><select name="desired_speaker_id">'.$dsOpt.'</select>';
+if((int)$r['speakers_needed']>=2){
+$dsOpt2='<option value="">— без предпочтения —</option>';
+foreach(active_speakers() as $s){ $ags=array_map(fn($k)=>ages()[$k]??$k,array_filter(explode(',',$s['age_groups']))); $dsOpt2.='<option value="'.$s['id'].'"'.((int)($r['desired_speaker_id2']??0)===(int)$s['id']?' selected':'').'>'.esc($s['display_name']).' — '.esc($s['district']?:'район не указан').' ('.esc(implode(', ',$ags)).')</option>'; }
+$body.='<label class="lbl">Желаемый спикер 2 (необязательно)</label><select name="desired_speaker_id2">'.$dsOpt2.'</select><p class="muted" style="margin:4px 0 0">Если спикеры из разных фондов — каждый фонд сможет назначить своего.</p>';
+}
 }
 $body.='<label class="lbl">Особые условия</label><textarea name="notes">'.esc($r['notes']??'').'</textarea>';
 $body.='<button class="btn primary" style="margin-top:12px">Сохранить изменения</button></form>';
@@ -2433,7 +2449,8 @@ $cName=(($appl['contact_name']??'')!=='')?$appl['contact_name']:$r['contact_name
 $cPos=$appl['position']??''; $cPhone=(($appl['phone']??'')!=='')?$appl['phone']:$r['phone'];
 $cLine=($cName!==''?esc($cName):'—').($cPos!==''?' <span class="muted">('.esc($cPos).')</span>':'').($cPhone!==''?' · <a href="tel:'.esc(preg_replace('/[^0-9+]/','',$cPhone)).'">'.esc($cPhone).'</a>':'');
 $info='<dl class="kv"><dt>Код</dt><dd class="id">'.esc($r['code']).'</dd><dt>Организация</dt><dd>'.esc($r['org']).'</dd><dt>Оператор</dt><dd>'.esc($r['operator']).'</dd><dt>Аудитория</dt><dd>'.esc(ages()[$r['age_group']]??'').'</dd><dt>Дата и время</dt><dd>'.dt($r).'</dd><dt>Число участников</dt><dd>'.esc($r['participants']?:'—').'</dd><dt>Нужно спикеров</dt><dd>'.$need.'</dd>';
-if(!empty($r['desired_speaker_id'])){ $ds=find_user_by_id($r['desired_speaker_id']); if($ds) $info.='<dt>Желаемый спикер</dt><dd>'.esc($ds['display_name']).($ds?' <span class="muted">(пожелание заявителя, не гарантия)</span>':'').'</dd>'; }
+if(!empty($r['desired_speaker_id'])){ $ds=find_user_by_id($r['desired_speaker_id']); if($ds) $info.='<dt>Желаемый спикер</dt><dd>'.esc($ds['display_name']).' <span class="muted">(пожелание заявителя, не гарантия)</span></dd>'; }
+if(!empty($r['desired_speaker_id2'])){ $ds2=find_user_by_id($r['desired_speaker_id2']); if($ds2) $info.='<dt>Желаемый спикер 2</dt><dd>'.esc($ds2['display_name']).' <span class="muted">(пожелание заявителя, не гарантия)</span></dd>'; }
 $info.='<dt>Контактное лицо</dt><dd>'.$cLine.'</dd>';
 if(!empty($r['topic'])) $info.='<dt>Тема</dt><dd>'.esc($r['topic']).'</dd>';
 if(!empty($r['notes'])) $info.='<dt>Особые условия</dt><dd style="background:#fffbea;padding:6px 10px;border-radius:6px;border-left:3px solid #C77700">'.nl2br(esc($r['notes'])).'</dd>';
@@ -2491,8 +2508,10 @@ elseif($u['role']==='fund'){
 $scope=fund_scope_ids($u);
 $claimedByMe=!empty($r['claimed_fund_id']) && in_array((int)$r['claimed_fund_id'],$scope,true);
 $claimedByOther=!empty($r['claimed_fund_id']) && !$claimedByMe;
-if($claimedByOther){
+if($claimedByOther && $need<=1){
 $body.='<div class="hint-warn"><b>Заявка в обработке другого фонда:</b> '.esc(fund_name_by_id($r['claimed_fund_id'])?:'—').'. Вы можете наблюдать за ней, но назначать спикеров может только этот фонд.</div>';
+} elseif($claimedByOther && $need>1){
+$body.='<div class="hint-warn"><b>Заявке нужно '.$need.' спикера(ов), первым её взял в обработку фонд:</b> '.esc(fund_name_by_id($r['claimed_fund_id'])?:'—').'. Вы можете назначить своего спикера на оставшееся место ниже.</div>';
 } elseif($claimedByMe){
 $body.='<div class="block" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span class="pill green">В обработке вашего фонда</span>';
 if($r['status']==='new' && !$rows) $body.='<form method="post" onsubmit="return confirm(\'Вернуть заявку в общий список? Другие фонды смогут её взять.\')">'.csrf_field().'<input type="hidden" name="action" value="release_request"><input type="hidden" name="id" value="'.$r['id'].'"><button class="btn ghost sm">↩️ Вернуть в обработку</button></form>';
@@ -2521,17 +2540,18 @@ $body.='</div>'; }
 if(in_array($r['status'],['chosen','confirmed'])){
 $body.='<div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap">';
 $body.='<a class="btn ghost sm" href="?p=fund_request_edit&id='.$r['id'].'">✏️ Редактировать заявку</a>';
-if($r['status']==='chosen' && $confN>=1 && $confN<$need){
+if($r['status']==='chosen' && $confN>=1 && $confN<$need && !$claimedByOther){
 $body.='<form method="post" style="display:inline" onsubmit="return confirm(\'Закрыть состав с '.$confN.' спикером(ами) из '.$need.'? Заявка пойдёт дальше.\')">'.csrf_field().'<input type="hidden" name="action" value="fund_finalize"><input type="hidden" name="id" value="'.$r['id'].'"><button class="btn primary sm">Состав готов — закрыть и передать дальше</button></form>';
 }
 $body.='</div>';
 if($r['status']==='chosen') $body.='<p class="muted" style="margin-top:8px">Как только нужное число спикеров подтверждено, состав закрывается автоматически. Если спикеров не хватает — можно закрыть состав вручную кнопкой выше.</p>';
 }
-if(!$claimedByOther && in_array($r['status'],['new','chosen'])){ $fassign=replacement_speakers($u,$r,0);
+if((!$claimedByOther || $need>1) && in_array($r['status'],['new','chosen'])){ $fassign=replacement_speakers($u,$r,0);
 $body.='<div style="margin-top:10px;border-top:1px solid #eee;padding-top:10px"><h4>Назначить спикера</h4>';
 if(!empty($r['desired_speaker_id'])){ $ds=find_user_by_id($r['desired_speaker_id']); if($ds) $body.='<p class="muted">Заявитель пожелал видеть: <b>'.esc($ds['display_name']).'</b>'.(speaker_org_name($ds['id'])!==''?' ('.esc(speaker_org_name($ds['id'])).')':'').'.</p>'; }
+if(!empty($r['desired_speaker_id2'])){ $ds2=find_user_by_id($r['desired_speaker_id2']); if($ds2) $body.='<p class="muted">Заявитель также пожелал видеть: <b>'.esc($ds2['display_name']).'</b>'.(speaker_org_name($ds2['id'])!==''?' ('.esc(speaker_org_name($ds2['id'])).')':'').'.</p>'; }
 if(!$fassign) $body.='<p class="muted">Нет свободных подходящих спикеров вашей организации на эту дату.</p>';
-else { $fo='<option value="">— выберите спикера —</option>'; foreach($fassign as $s){ $star=((int)($r['desired_speaker_id']??0)===(int)$s['id'])?'⭐ ':''; $fo.='<option value="'.$s['id'].'">'.$star.esc($s['display_name']).' ('.esc($s['district']?:'—').')</option>'; }
+else { $fo='<option value="">— выберите спикера —</option>'; foreach($fassign as $s){ $star=(in_array((int)$s['id'],[(int)($r['desired_speaker_id']??0),(int)($r['desired_speaker_id2']??0)],true))?'⭐ ':''; $fo.='<option value="'.$s['id'].'">'.$star.esc($s['display_name']).' ('.esc($s['district']?:'—').')</option>'; }
 $body.='<form method="post">'.csrf_field().'<input type="hidden" name="action" value="fund_assign_speaker"><input type="hidden" name="id" value="'.$r['id'].'"><select name="speaker_user_id" required>'.$fo.'</select> <button class="btn primary sm">Назначить спикера</button></form><p class="muted" style="margin-top:6px">Назначенного спикера затем нужно рекомендовать/подтвердить в списке выше.</p>'; }
 $body.='</div>'; }
 if($r['fund_confirmed_at'] && !in_array($r['status'],['done','closed','cancelled'])) $body.='<form method="post" style="margin-top:8px">'.csrf_field().'<input type="hidden" name="action" value="fund_briefing"><input type="hidden" name="id" value="'.$r['id'].'"><label class="lbl">Инструктаж проведён (не позже даты урока '.esc($r['udate']).')</label><input type="date" name="bdate" max="'.esc(substr((string)$r['udate'],0,10)).'" value="'.esc($r['briefing_date']).'"> <button class="btn primary sm">'.($r['briefing_done']?'Обновить дату инструктажа':'Отметить инструктаж проведённым').'</button>'.($r['briefing_done']?' <span class="pill green">✓ проведён '.esc($r['briefing_date']).'</span>':'').'</form><p class="muted">Инструктаж не задерживает заявку — заявитель может подтверждать готовность параллельно.</p>';

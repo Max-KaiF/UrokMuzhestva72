@@ -147,6 +147,7 @@ foreach([
 "ALTER TABLE requests ADD COLUMN claimed_fund_id INTEGER",
 "ALTER TABLE requests ADD COLUMN claimed_at VARCHAR(40)",
 "ALTER TABLE requests ADD COLUMN desired_speaker_id INTEGER",
+"ALTER TABLE requests ADD COLUMN desired_speaker_id2 INTEGER",
 "ALTER TABLE requests ADD COLUMN fb_post_url VARCHAR(500)",
 "ALTER TABLE users ADD COLUMN certified_age_groups VARCHAR(255)",
 "ALTER TABLE users ADD COLUMN criminal_record VARCHAR(10)",
@@ -1818,9 +1819,9 @@ function create_request($schoolUser,$f){
 $lvl=$f['level'];
 $og=school_dept_group($schoolUser);
 $lps=max(1,min(2,(int)($f['lessons_per_speaker']??1)));
-$st=db()->prepare('INSERT INTO requests(code,school_user_id,org,level,op_group,operator,contact_name,phone,email,udate,utime,utime_end,age_group,participants,speakers_needed,lessons_per_speaker,topic,notes,status,created_at,district,desired_speaker_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
+$st=db()->prepare('INSERT INTO requests(code,school_user_id,org,level,op_group,operator,contact_name,phone,email,udate,utime,utime_end,age_group,participants,speakers_needed,lessons_per_speaker,topic,notes,status,created_at,district,desired_speaker_id,desired_speaker_id2) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
 $st->execute([gen_code(),$schoolUser['id'],$schoolUser['org_name'],$lvl,$og,operator_label_for_group($og),
-$f['contact_name'],$f['phone'],$f['email']??'',$f['udate'],$f['utime']??'',$f['utime_end']??'',$f['age_group'],$f['participants']??'',max(1,(int)($f['speakers_needed']??1)),$lps,$f['topic']??'',$f['notes']??'','new',now(),$schoolUser['district']??'',$f['desired_speaker_id']?:null]);
+$f['contact_name'],$f['phone'],$f['email']??'',$f['udate'],$f['utime']??'',$f['utime_end']??'',$f['age_group'],$f['participants']??'',max(1,(int)($f['speakers_needed']??1)),$lps,$f['topic']??'',$f['notes']??'','new',now(),$schoolUser['district']??'',$f['desired_speaker_id']?:null,$f['desired_speaker_id2']?:null]);
 $rid=db()->lastInsertId();
 log_action($schoolUser['id'],'school','request_create','requests',$rid,"Создана заявка {$f['udate']}");
 return $rid;
@@ -1865,6 +1866,9 @@ if($r['status']==='new'){
 $dsid=(int)($f['desired_speaker_id']??0);
 if($dsid){ $dsp=find_user_by_id($dsid); if(!$dsp||$dsp['role']!=='speaker'||!$dsp['active']) $dsid=0; }
 $allowed['desired_speaker_id']=$dsid?:null;
+$dsid2=(int)($f['desired_speaker_id2']??0);
+if($dsid2){ $dsp2=find_user_by_id($dsid2); if(!$dsp2||$dsp2['role']!=='speaker'||!$dsp2['active']||$dsid2===$dsid) $dsid2=0; }
+$allowed['desired_speaker_id2']=$dsid2?:null;
 }
 $rescheduled=false;
 if(reschedulable_status($r) && isset($f['udate'])){
@@ -1967,8 +1971,11 @@ $res=[];
 $appDistrict=request_district($r);
 $allowed=allowed_speaker_districts($appDistrict);
 $lps=max(1,(int)($r['lessons_per_speaker']??1));
+// Заявке с одним нужным спикером заявка остаётся эксклюзивной за взявшим её фондом.
+// Если спикеров нужно несколько, разные фонды должны суметь назначить каждый своего —
+// поэтому для speakers_needed>1 пул кандидатов не сужаем до фонда, взявшего заявку первым.
 $claimScope=null;
-if(!empty($r['claimed_fund_id'])){ $cf=find_user_by_id((int)$r['claimed_fund_id']); if($cf) $claimScope=fund_scope_ids($cf); }
+if(!empty($r['claimed_fund_id']) && (int)($r['speakers_needed']??1)<=1){ $cf=find_user_by_id((int)$r['claimed_fund_id']); if($cf) $claimScope=fund_scope_ids($cf); }
 foreach(active_speakers() as $s){
 if(is_candidate($r['id'],$s['id'])) continue;
 if(speaker_has_criminal_record($s)) continue;
@@ -2009,6 +2016,9 @@ function fund_return_to_processing($fund,$r,$reason=''){
 $scope=fund_scope_ids($fund);
 if(empty($r['claimed_fund_id']) || !in_array((int)$r['claimed_fund_id'],$scope,true)) return [false,'Эта заявка не в вашей обработке.'];
 if(!fund_returnable_status($r)) return [false,'Вернуть в обработку можно на этапах «Спикеры выбраны», «Состав подтверждён Фондом», «Готовность подтверждена» или «Проведён».'];
+// Когда нужно несколько спикеров, кандидатов в заявке могли добавить и другие фонды —
+// одностороннее «вернуть в обработку» удалило бы их кандидатов без согласия.
+foreach(req_speaker_rows($r['id']) as $row){ $spFund=speaker_fund_of($row['speaker_user_id']); if(!$spFund || !in_array((int)$spFund['id'],$scope,true)) return [false,'По заявке уже есть кандидат другого фонда — отклоните или замените только своих кандидатов, либо обратитесь к оператору.']; }
 notify_event('returned_to_processing',$r,['reason'=>trim((string)$reason)]);
 db()->prepare("DELETE FROM request_speakers WHERE request_id=?")->execute([$r['id']]);
 upd($r['id'],['status'=>'new','claimed_fund_id'=>null,'claimed_at'=>null,'fund_confirmed_at'=>null,'briefing_done'=>0,'briefing_date'=>null,'needs_replacement'=>0,'prep_confirmed_at'=>null]);
@@ -2069,8 +2079,21 @@ function fund_requests($fund){ $ids=fund_scope_ids($fund); if(!$ids) return []; 
 function fund_dashboard_requests($fund){
 $ids=fund_scope_ids($fund); if(!$ids) return [];
 $in=implode(',',array_fill(0,count($ids),'?'));
-$st=db()->prepare("SELECT * FROM requests WHERE (archived=0 OR archived IS NULL) AND ((status='new' AND claimed_fund_id IS NULL) OR claimed_fund_id IN ($in)) ORDER BY id DESC");
-$st->execute($ids); return $st->fetchAll();
+// Помимо заявок, которые взял в обработку сам фонд (или ещё никто), сюда же попадают:
+// заявки, где у фонда уже есть кандидат-спикер (даже если заявку первым взял другой фонд —
+// актуально, когда заявителю нужно несколько спикеров из разных фондов), и заявки, где
+// заявитель пожелал видеть спикера именно этого фонда — чтобы фонд вообще узнал о такой заявке.
+$sql="SELECT DISTINCT r.* FROM requests r WHERE (r.archived=0 OR r.archived IS NULL) AND (
+(r.status='new' AND r.claimed_fund_id IS NULL)
+OR r.claimed_fund_id IN ($in)
+OR EXISTS (SELECT 1 FROM request_speakers rs JOIN users su ON su.id=rs.speaker_user_id WHERE rs.request_id=r.id AND su.fund_user_id IN ($in))
+OR (r.speakers_needed>1 AND r.status IN ('new','chosen') AND (
+(r.desired_speaker_id IS NOT NULL AND r.desired_speaker_id IN (SELECT id FROM users WHERE fund_user_id IN ($in)))
+OR (r.desired_speaker_id2 IS NOT NULL AND r.desired_speaker_id2 IN (SELECT id FROM users WHERE fund_user_id IN ($in)))
+))
+) ORDER BY r.id DESC";
+$st=db()->prepare($sql);
+$st->execute(array_merge($ids,$ids,$ids,$ids)); return $st->fetchAll();
 }
 function fund_pool_requests_for_speaker($speaker){
 if(empty($speaker['fund_user_id'])) return [];
@@ -2081,7 +2104,14 @@ $st->execute($ids); return $st->fetchAll();
 }
 function fund_actionable($fund){ $res=[]; foreach(fund_requests($fund) as $r){ if($r['status']!=='chosen') continue; foreach(req_speaker_rows($r['id']) as $row){ $a=candidate_action($fund,$row); if($a==='recommend'||$a==='confirm'){ $res[]=$r; break; } } } return $res; }
 function fund_briefing($fund,$r,$date){
-if(!empty($r['claimed_fund_id']) && !in_array((int)$r['claimed_fund_id'],fund_scope_ids($fund),true)) return [false,'Эта заявка закреплена за другим фондом.'];
+$scope=fund_scope_ids($fund);
+$isPrimary=empty($r['claimed_fund_id']) || in_array((int)$r['claimed_fund_id'],$scope,true);
+if(!$isPrimary){
+// При нескольких нужных спикерах из разных фондов инструктаж отмечает любой фонд,
+// у которого в заявке есть свой кандидат — не только тот, что взял заявку первым.
+$hasStake=false; foreach(req_speaker_rows($r['id']) as $row){ $spFund=speaker_fund_of($row['speaker_user_id']); if($spFund && in_array((int)$spFund['id'],$scope,true)){ $hasStake=true; break; } }
+if(!((int)($r['speakers_needed']??1)>1 && $hasStake)) return [false,'Эта заявка закреплена за другим фондом.'];
+}
 if(!$r['fund_confirmed_at']) return [false,'Инструктаж отмечается после подтверждения состава.'];
 if(in_array($r['status'],['closed','cancelled'])) return [false,'Заявка уже завершена.'];
 $d=DateTime::createFromFormat('Y-m-d',substr((string)$date,0,10));
