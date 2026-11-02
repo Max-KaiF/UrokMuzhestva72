@@ -1,0 +1,86 @@
+# ============================================
+# ПРИНУДИТЕЛЬНЫЙ ПЕРЕХОД НА HTTPS
+# ============================================
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteCond %{HTTPS} !=on
+    RewriteCond %{HTTP:X-Forwarded-Proto} !https
+    RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+</IfModule>
+
+# ============================================
+# НАСТРОЙКИ ЗАГРУЗКИ ФАЙЛОВ (до 1 ГБ)
+# ============================================
+php_value upload_max_filesize 1024M
+php_value post_max_size 1100M
+php_value memory_limit 1280M
+php_value max_execution_time 3600
+php_value max_input_time 3600
+
+# ============================================
+# ЗАЩИТА КОНФИГУРАЦИОННЫХ ФАЙЛОВ
+# ============================================
+<FilesMatch "^(config\.php|secrets\.local\.php|\.env|\.gitignore)$">
+    Order allow,deny
+    Deny from all
+</FilesMatch>
+
+# ============================================
+# ЗАЩИТА ПАПКИ UPLOADS
+# ============================================
+<Directory "uploads">
+    # Запрет выполнения PHP в папке uploads
+    <FilesMatch "\.php$">
+        Order allow,deny
+        Deny from all
+    </FilesMatch>
+    
+    # Разрешить скачивание файлов
+    <FilesMatch "\.(pdf|doc|docx|ppt|pptx|xls|xlsx|mp4|avi|mov|mkv|zip|rar|7z|jpg|jpeg|png|txt|webm|flv|wmv)$">
+        Order allow,deny
+        Allow from all
+    </FilesMatch>
+    
+    # Запрет просмотра содержимого директории
+    Options -Indexes
+</Directory>
+
+# ============================================
+# БЕЗОПАСНОСТЬ
+# ============================================
+<IfModule mod_headers.c>
+    Header set X-Content-Type-Options "nosniff"
+    Header set X-Frame-Options "SAMEORIGIN"
+    Header set X-XSS-Protection "1; mode=block"
+    Header set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'"
+    Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
+</IfModule>
+
+# Запрет доступа к служебным файлам
+<FilesMatch "\.(log|ini|sql|sh|md)$">
+    Order allow,deny
+    Deny from all
+</FilesMatch>
+
+# ============================================
+# СЖАТИЕ GZIP (кроме видео и архивов)
+# ============================================
+<IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE text/html text/plain text/xml text/css text/javascript application/javascript application/json application/xml application/xml+rss
+</IfModule>
+
+# ============================================
+# КЭШИРОВАНИЕ
+# ============================================
+<IfModule mod_expires.c>
+    ExpiresActive On
+    ExpiresByType image/jpg "access plus 1 year"
+    ExpiresByType image/jpeg "access plus 1 year"
+    ExpiresByType image/gif "access plus 1 year"
+    ExpiresByType image/png "access plus 1 year"
+    ExpiresByType image/svg+xml "access plus 1 year"
+    ExpiresByType text/css "access plus 1 month"
+    ExpiresByType application/javascript "access plus 1 month"
+    ExpiresByType application/pdf "access plus 1 month"
+    ExpiresByType font/woff2 "access plus 1 year"
+</IfModule>

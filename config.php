@@ -29,6 +29,10 @@ return [
 'operator_signup_code' => $get('UM_OP_CODE', ''),
 'fund_signup_code'     => $get('UM_FUND_CODE', ''),
 'cron_key'             => $get('UM_CRON_KEY', ''),
+'support_email'        => $get('UM_SUPPORT_EMAIL', 'task@урокмужества72.рф'),
+// Логины, которым разрешено «войти как» другой пользователь без пароля (см. ?p=impersonate).
+// Список через запятую, например: UM_SUPERUSER_LOGINS=ivanov
+'superuser_logins'     => array_values(array_filter(array_map('trim', explode(',', $get('UM_SUPERUSER_LOGINS', ''))))),
 // Настройки почты (SMTP).
 'smtp' => [
 'host' => $get('UM_SMTP_HOST', 'mail.xn--72-6kchof1aqqtqmfe.xn--p1ai'),
@@ -36,6 +40,13 @@ return [
 'user' => $get('UM_SMTP_USER', 'task@урокмужества72.рф'),
 'pass' => $get('UM_SMTP_PASS', ''),
 'secure' => $get('UM_SMTP_SECURE', ''),
+],
+// Push-уведомления (Web Push). Пока ключи не заданы — функция просто выключена,
+// на остальную работу сайта никак не влияет.
+'vapid' => [
+'public'  => $get('UM_VAPID_PUBLIC', ''),
+'private' => $get('UM_VAPID_PRIVATE', ''),
+'subject' => $get('UM_VAPID_SUBJECT', 'mailto:'.$get('UM_SUPPORT_EMAIL', 'task@урокмужества72.рф')),
 ],
 'site_title' => 'Уроки мужества 72',
 ];
